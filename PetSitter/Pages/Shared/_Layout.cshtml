@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - PetSitter</title>
+    <!-- Add Bootstrap or your custom CSS links here in the future -->
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f8f9fa; }
+        header { background-color: #343a40; color: white; padding: 1rem; text-align: center; }
+        main { padding: 2rem; max-width: 1200px; margin: 0 auto; }
+        footer { text-align: center; padding: 1rem; background-color: #343a40; color: white; position: fixed; bottom: 0; width: 100%; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>PetSitter Web Portal</h1>
+    </header>
+    <main role="main">
+        @RenderBody()
+    </main>
+    <footer>
+        <p>&copy; 2026 - PetSitter</p>
+    </footer>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>
