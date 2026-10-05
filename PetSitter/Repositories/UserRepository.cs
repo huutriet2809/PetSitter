@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+using MongoDB.Driver;
 using PetSitter.Models;
 
 namespace PetSitter.Repositories
@@ -11,12 +11,12 @@ namespace PetSitter.Repositories
 
         public async Task<User?> GetUserByEmailAsync(string email)
         {
-            return await _dbSet.FirstOrDefaultAsync(u => u.Email == email);
+            return await _collection.Find(u => u.Email == email).FirstOrDefaultAsync();
         }
 
         public async Task<bool> UserExistsAsync(string email)
         {
-            return await _dbSet.AnyAsync(u => u.Email == email);
+            return await _collection.Find(u => u.Email == email).AnyAsync();
         }
     }
 }

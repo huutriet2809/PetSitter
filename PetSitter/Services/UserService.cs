@@ -55,8 +55,6 @@ namespace PetSitter.Services
             };
 
             await _userRepository.AddAsync(user);
-            await _userRepository.SaveChangesAsync();
-
             var token = _tokenService.GenerateToken(user);
 
             return new UserDto
@@ -69,7 +67,7 @@ namespace PetSitter.Services
             };
         }
 
-        public async Task<User?> GetUserByIdAsync(int id)
+        public async Task<User?> GetUserByIdAsync(string id)
         {
             return await _userRepository.GetByIdAsync(id);
         }

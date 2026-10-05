@@ -7,6 +7,6 @@ namespace PetSitter.Services
     {
         Task<UserDto?> AuthenticateAsync(LoginDto loginDto);
         Task<UserDto?> RegisterAsync(RegisterDto registerDto);
-        Task<User?> GetUserByIdAsync(int id);
+        Task<User?> GetUserByIdAsync(string id);
     }
 }

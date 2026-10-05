@@ -1,17 +1,21 @@
 using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
 
 namespace PetSitter.Models
 {
     public class Review
     {
-        [Key]
-        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-        public int ReviewId { get; set; }
+        [BsonId]
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string ReviewId { get; set; } = ObjectId.GenerateNewId().ToString();
 
-        public int BookingId { get; set; }
-        public int OwnerId { get; set; }
-        public int SitterId { get; set; }
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string BookingId { get; set; } = string.Empty;
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string OwnerId { get; set; } = string.Empty;
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string SitterId { get; set; } = string.Empty;
 
         public int Rating { get; set; }
 
@@ -21,13 +25,13 @@ namespace PetSitter.Models
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         // Navigation properties
-        [ForeignKey("BookingId")]
+        [BsonIgnore]
         public Booking? Booking { get; set; }
 
-        [ForeignKey("OwnerId")]
+        [BsonIgnore]
         public User? Owner { get; set; }
 
-        [ForeignKey("SitterId")]
+        [BsonIgnore]
         public SitterProfile? Sitter { get; set; }
     }
 }

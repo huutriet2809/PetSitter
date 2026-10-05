@@ -1,23 +1,27 @@
 using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
 
 namespace PetSitter.Models
 {
     public class Booking
     {
-        [Key]
-        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-        public int BookingId { get; set; }
+        [BsonId]
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string BookingId { get; set; } = ObjectId.GenerateNewId().ToString();
 
-        public int OwnerId { get; set; }
-        public int SitterId { get; set; }
-        public int PetId { get; set; }
-        public int SitterServiceId { get; set; }
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string OwnerId { get; set; } = string.Empty;
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string SitterId { get; set; } = string.Empty;
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string PetId { get; set; } = string.Empty;
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string SitterServiceId { get; set; } = string.Empty;
 
         public DateTime StartDatetime { get; set; }
         public DateTime EndDatetime { get; set; }
 
-        [Column(TypeName = "decimal(12, 2)")]
         public decimal TotalPrice { get; set; }
 
         [Required]
@@ -30,19 +34,21 @@ namespace PetSitter.Models
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         // Navigation properties
-        [ForeignKey("OwnerId")]
+        [BsonIgnore]
         public User? Owner { get; set; }
 
-        [ForeignKey("SitterId")]
+        [BsonIgnore]
         public SitterProfile? Sitter { get; set; }
 
-        [ForeignKey("PetId")]
+        [BsonIgnore]
         public Pet? Pet { get; set; }
 
-        [ForeignKey("SitterServiceId")]
+        [BsonIgnore]
         public SitterService? SitterService { get; set; }
 
+        [BsonIgnore]
         public Payment? Payment { get; set; }
+        [BsonIgnore]
         public Review? Review { get; set; }
     }
 }

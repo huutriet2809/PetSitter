@@ -1,17 +1,18 @@
 using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
 
 namespace PetSitter.Models
 {
     public class Payment
     {
-        [Key]
-        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-        public int PaymentId { get; set; }
+        [BsonId]
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string PaymentId { get; set; } = ObjectId.GenerateNewId().ToString();
 
-        public int BookingId { get; set; }
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string BookingId { get; set; } = string.Empty;
 
-        [Column(TypeName = "decimal(12, 2)")]
         public decimal Amount { get; set; }
 
         [Required]
@@ -29,7 +30,7 @@ namespace PetSitter.Models
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         // Navigation properties
-        [ForeignKey("BookingId")]
+        [BsonIgnore]
         public Booking? Booking { get; set; }
     }
 }

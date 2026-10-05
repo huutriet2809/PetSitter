@@ -1,13 +1,14 @@
 using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
 
 namespace PetSitter.Models
 {
     public class Service
     {
-        [Key]
-        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-        public int ServiceId { get; set; }
+        [BsonId]
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string ServiceId { get; set; } = ObjectId.GenerateNewId().ToString();
 
         [Required]
         [MaxLength(100)]
@@ -19,6 +20,7 @@ namespace PetSitter.Models
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         // Navigation properties
+        [BsonIgnore]
         public ICollection<SitterService> SitterServices { get; set; } = new List<SitterService>();
     }
 }

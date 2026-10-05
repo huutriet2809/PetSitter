@@ -1,15 +1,17 @@
 using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
 
 namespace PetSitter.Models
 {
     public class Pet
     {
-        [Key]
-        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-        public int PetId { get; set; }
+        [BsonId]
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string PetId { get; set; } = ObjectId.GenerateNewId().ToString();
 
-        public int OwnerId { get; set; }
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string OwnerId { get; set; } = string.Empty;
 
         [Required]
         [MaxLength(100)]
@@ -25,10 +27,8 @@ namespace PetSitter.Models
         [MaxLength(10)]
         public string? Gender { get; set; } // MALE, FEMALE
 
-        [Column(TypeName = "date")]
         public DateTime? DateOfBirth { get; set; }
 
-        [Column(TypeName = "decimal(6, 2)")]
         public decimal? Weight { get; set; }
 
         [MaxLength(1000)]
@@ -43,7 +43,7 @@ namespace PetSitter.Models
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         // Navigation properties
-        [ForeignKey("OwnerId")]
+        [BsonIgnore]
         public User? Owner { get; set; }
     }
 }

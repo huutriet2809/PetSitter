@@ -1,63 +1,86 @@
-using Microsoft.EntityFrameworkCore;
+using MongoDB.Driver;
 
 namespace PetSitter.Models
 {
-    public class PetSitterContext : DbContext
+    public sealed class PetSitterContext
     {
-        public PetSitterContext(DbContextOptions<PetSitterContext> options) : base(options)
+        private readonly IMongoDatabase _database;
+
+        public PetSitterContext(string connectionString, string databaseName)
         {
+            var client = new MongoClient(connectionString);
+            _database = client.GetDatabase(databaseName);
         }
 
-        public DbSet<User> Users { get; set; }
-        public DbSet<SitterProfile> SitterProfiles { get; set; }
-        public DbSet<Service> Services { get; set; }
-        public DbSet<SitterService> SitterServices { get; set; }
-        public DbSet<SitterAvailability> SitterAvailabilities { get; set; }
-        public DbSet<Pet> Pets { get; set; }
-        public DbSet<Booking> Bookings { get; set; }
-        public DbSet<Payment> Payments { get; set; }
-        public DbSet<Conversation> Conversations { get; set; }
-        public DbSet<Review> Reviews { get; set; }
-        public DbSet<SitterVerification> SitterVerifications { get; set; }
-
-        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        public IMongoCollection<T> GetCollection<T>()
         {
-            base.OnModelCreating(modelBuilder);
+            return _database.GetCollection<T>(CollectionName<T>());
+        }
 
-            // Configure Unique Constraints and cascade rules if needed
-            modelBuilder.Entity<User>()
-                .HasIndex(u => u.Email)
-                .IsUnique();
+        public async Task EnsureIndexesAsync(CancellationToken cancellationToken = default)
+        {
+            await GetCollection<User>().Indexes.CreateOneAsync(
+                new CreateIndexModel<User>(
+                    Builders<User>.IndexKeys.Ascending(user => user.Email),
+                    new CreateIndexOptions { Unique = true, Name = "ux_users_email" }),
+                cancellationToken: cancellationToken);
 
-            modelBuilder.Entity<SitterProfile>()
-                .HasIndex(sp => sp.UserId)
-                .IsUnique();
+            await GetCollection<SitterProfile>().Indexes.CreateOneAsync(
+                new CreateIndexModel<SitterProfile>(
+                    Builders<SitterProfile>.IndexKeys.Ascending(profile => profile.UserId),
+                    new CreateIndexOptions { Unique = true, Name = "ux_sitter_profiles_user_id" }),
+                cancellationToken: cancellationToken);
 
-            modelBuilder.Entity<Service>()
-                .HasIndex(s => s.ServiceName)
-                .IsUnique();
+            await GetCollection<Service>().Indexes.CreateOneAsync(
+                new CreateIndexModel<Service>(
+                    Builders<Service>.IndexKeys.Ascending(service => service.ServiceName),
+                    new CreateIndexOptions { Unique = true, Name = "ux_services_name" }),
+                cancellationToken: cancellationToken);
 
-            modelBuilder.Entity<SitterService>()
-                .HasIndex(ss => new { ss.SitterId, ss.ServiceId })
-                .IsUnique();
+            await GetCollection<SitterService>().Indexes.CreateOneAsync(
+                new CreateIndexModel<SitterService>(
+                    Builders<SitterService>.IndexKeys
+                        .Ascending(service => service.SitterId)
+                        .Ascending(service => service.ServiceId),
+                    new CreateIndexOptions { Unique = true, Name = "ux_sitter_services_sitter_service" }),
+                cancellationToken: cancellationToken);
 
-            modelBuilder.Entity<Payment>()
-                .HasIndex(p => p.BookingId)
-                .IsUnique();
+            await GetCollection<Payment>().Indexes.CreateOneAsync(
+                new CreateIndexModel<Payment>(
+                    Builders<Payment>.IndexKeys.Ascending(payment => payment.BookingId),
+                    new CreateIndexOptions { Unique = true, Name = "ux_payments_booking_id" }),
+                cancellationToken: cancellationToken);
 
-            modelBuilder.Entity<Review>()
-                .HasIndex(r => r.BookingId)
-                .IsUnique();
-                
-            modelBuilder.Entity<SitterVerification>()
-                .HasIndex(sv => sv.SitterId)
-                .IsUnique();
+            await GetCollection<Review>().Indexes.CreateOneAsync(
+                new CreateIndexModel<Review>(
+                    Builders<Review>.IndexKeys.Ascending(review => review.BookingId),
+                    new CreateIndexOptions { Unique = true, Name = "ux_reviews_booking_id" }),
+                cancellationToken: cancellationToken);
 
-            // Set Delete behaviors to Restrict to avoid multiple cascade paths, typical for complex schemas
-            foreach (var relationship in modelBuilder.Model.GetEntityTypes().SelectMany(e => e.GetForeignKeys()))
+            await GetCollection<SitterVerification>().Indexes.CreateOneAsync(
+                new CreateIndexModel<SitterVerification>(
+                    Builders<SitterVerification>.IndexKeys.Ascending(verification => verification.SitterId),
+                    new CreateIndexOptions { Unique = true, Name = "ux_sitter_verifications_sitter_id" }),
+                cancellationToken: cancellationToken);
+        }
+
+        private static string CollectionName<T>()
+        {
+            return typeof(T) switch
             {
-                relationship.DeleteBehavior = DeleteBehavior.Restrict;
-            }
+                var type when type == typeof(User) => "users",
+                var type when type == typeof(SitterProfile) => "sitterProfiles",
+                var type when type == typeof(Service) => "services",
+                var type when type == typeof(SitterService) => "sitterServices",
+                var type when type == typeof(SitterAvailability) => "sitterAvailabilities",
+                var type when type == typeof(Pet) => "pets",
+                var type when type == typeof(Booking) => "bookings",
+                var type when type == typeof(Payment) => "payments",
+                var type when type == typeof(Conversation) => "conversations",
+                var type when type == typeof(Review) => "reviews",
+                var type when type == typeof(SitterVerification) => "sitterVerifications",
+                _ => throw new InvalidOperationException($"No MongoDB collection is configured for {typeof(T).Name}.")
+            };
         }
     }
 }

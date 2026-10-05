@@ -1,15 +1,17 @@
 using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
 
 namespace PetSitter.Models
 {
     public class SitterVerification
     {
-        [Key]
-        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-        public int VerificationId { get; set; }
+        [BsonId]
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string VerificationId { get; set; } = ObjectId.GenerateNewId().ToString();
 
-        public int SitterId { get; set; }
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string SitterId { get; set; } = string.Empty;
 
         [Required]
         [MaxLength(50)]
@@ -33,7 +35,7 @@ namespace PetSitter.Models
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         // Navigation properties
-        [ForeignKey("SitterId")]
+        [BsonIgnore]
         public SitterProfile? Sitter { get; set; }
     }
 }

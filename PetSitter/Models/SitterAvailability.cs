@@ -1,17 +1,18 @@
 using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
 
 namespace PetSitter.Models
 {
     public class SitterAvailability
     {
-        [Key]
-        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-        public int AvailabilityId { get; set; }
+        [BsonId]
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string AvailabilityId { get; set; } = ObjectId.GenerateNewId().ToString();
 
-        public int SitterId { get; set; }
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string SitterId { get; set; } = string.Empty;
 
-        [Column(TypeName = "date")]
         public DateTime AvailableDate { get; set; }
 
         public TimeSpan StartTime { get; set; }
@@ -20,7 +21,7 @@ namespace PetSitter.Models
         public bool IsAvailable { get; set; } = true;
 
         // Navigation properties
-        [ForeignKey("SitterId")]
+        [BsonIgnore]
         public SitterProfile? Sitter { get; set; }
     }
 }

@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using PetSitter.Models;
 using PetSitter.Repositories;
@@ -12,9 +11,19 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddRazorPages(); // Add Razor Pages for FE
 
-// Configure EF Core DbContext
-builder.Services.AddDbContext<PetSitterContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+var mongoConnectionString = builder.Configuration.GetConnectionString("MongoDb");
+if (string.IsNullOrWhiteSpace(mongoConnectionString))
+{
+    throw new InvalidOperationException("Set ConnectionStrings:MongoDb to your MongoDB connection string.");
+}
+
+var mongoDatabaseName = builder.Configuration["MongoDb:Database"];
+if (string.IsNullOrWhiteSpace(mongoDatabaseName))
+{
+    throw new InvalidOperationException("Set MongoDb:Database to your MongoDB database name.");
+}
+
+builder.Services.AddSingleton(new PetSitterContext(mongoConnectionString, mongoDatabaseName));
 
 // Configure Dependency Injection for Repositories and Services
 builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
@@ -49,6 +58,8 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
+
+await app.Services.GetRequiredService<PetSitterContext>().EnsureIndexesAsync();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
