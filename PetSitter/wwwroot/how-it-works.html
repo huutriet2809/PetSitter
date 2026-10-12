@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <!-- ===== SEO ===== -->
+  <title>Cách hoạt động | PawStay Đà Nẵng</title>
+  <meta name="description" content="Tìm hiểu quy trình 4 bước gửi thú cưng đơn giản, an toàn và chuyên nghiệp tại PawStay Đà Nẵng." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>" />
+  
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="assets/style.css" />
+  
+  <style>
+    /* =====================================================
+       PAGE-SPECIFIC STYLES: HOW IT WORKS (v2)
+       ===================================================== */
+    .how-wrapper {
+      padding: 60px 24px 100px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    /* Hero section */
+    .how-hero {
+      text-align: center;
+      margin-bottom: 60px;
+    }
+
+    /* Steps Timeline/Grid */
+    .steps-container {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 28px;
+      margin-bottom: 80px;
+      position: relative;
+    }
+
+    @media (max-width: 992px) {
+      .steps-container {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 32px;
+      }
+    }
+
+    @media (max-width: 600px) {
+      .steps-container {
+        grid-template-columns: 1fr;
+        gap: 28px;
+      }
+    }
+
+    /* Connective Line (Desktop only) */
+    .steps-container::before {
+      content: '';
+      position: absolute;
+      top: 130px;
+      left: 12%;
+      right: 12%;
+      height: 2px;
+      background: linear-gradient(90deg, var(--accent) 0%, var(--border) 100%);
+      z-index: 0;
+    }
+
+    @media (max-width: 992px) {
+      .steps-container::before {
+        display: none;
+      }
+    }
+
+    /* Card Step styling */
+    .step-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 36px 24px;
+      text-align: center;
+      position: relative;
+      z-index: 1;
+      transition: all var(--transition);
+      box-shadow: var(--shadow-card);
+    }
+
+    .step-card:hover {
+      transform: translateY(-8px);
+      border-color: var(--border-accent);
+      box-shadow: var(--shadow-accent);
+    }
+
+    .step-number {
+      position: absolute;
+      top: 16px;
+      left: 20px;
+      font-size: 0.95rem;
+      font-weight: 800;
+      color: var(--accent);
+      opacity: 0.85;
+      font-family: monospace;
+    }
+
+    .step-icon-wrap {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: var(--bg-secondary);
+      border: 2px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 24px;
+      font-size: 2.2rem;
+      transition: all var(--transition);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .step-card:hover .step-icon-wrap {
+      background: var(--accent-glow);
+      border-color: var(--accent);
+      transform: scale(1.1);
+    }
+
+    .step-title {
+      font-size: 1.12rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 12px;
+    }
+
+    .step-desc {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      line-height: 1.55;
+    }
+
+    /* CTA Section */
+    .how-cta {
+      background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-secondary) 100%);
+      border: 1px solid var(--border-accent);
+      border-radius: var(--radius-xl);
+      padding: 48px 36px;
+      text-align: center;
+      margin-bottom: 80px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .how-cta::after {
+      content: '🐾';
+      position: absolute;
+      bottom: -20px;
+      right: -20px;
+      font-size: 8rem;
+      opacity: 0.04;
+      pointer-events: none;
+    }
+
+    .how-cta-title {
+      font-size: 1.6rem;
+      font-weight: 800;
+      margin-bottom: 12px;
+    }
+
+    .how-cta-desc {
+      font-size: 0.95rem;
+      color: var(--text-secondary);
+      max-width: 500px;
+      margin: 0 auto 28px;
+      line-height: 1.6;
+    }
+
+    /* FAQ accordion styling */
+    .faq-section {
+      max-width: 760px;
+      margin: 0 auto;
+    }
+
+    .faq-title {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+
+    .faq-list {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .faq-item {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      transition: all var(--transition);
+    }
+
+    .faq-item:hover {
+      border-color: rgba(255,255,255,0.12);
+    }
+
+    .faq-header {
+      padding: 20px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .faq-question {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      padding-right: 20px;
+    }
+
+    .faq-toggle-icon {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      transition: transform var(--transition);
+    }
+
+    .faq-body {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease;
+      background: rgba(0,0,0,0.1);
+    }
+
+    .faq-answer {
+      padding: 0 24px 20px;
+      font-size: 0.88rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    .faq-item.active {
+      border-color: var(--border-accent);
+    }
+
+    .faq-item.active .faq-toggle-icon {
+      transform: rotate(180deg);
+      color: var(--accent);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ===================== MAIN LAYOUT ===================== -->
+  <main class="how-wrapper">
+    
+    <!-- Hero Title -->
+    <section class="how-hero">
+      <p class="section-label">Quy trình chuyên nghiệp</p>
+      <h1 class="section-title">Cách hoạt động của PawStay</h1>
+      <div class="section-divider"></div>
+      <p style="color: var(--text-secondary); max-width: 540px; margin: 0 auto; font-size: 0.95rem;">
+        Kết nối chủ thú cưng với pet-sitter uy tín chỉ trong vài bước đơn giản. An toàn hơn, nhanh chóng hơn và tràn ngập tình yêu thương.
+      </p>
+    </section>
+
+    <!-- 4 Steps -->
+    <section class="steps-container" aria-label="Quy trình 4 bước">
+      
+      <!-- Step 1 -->
+      <article class="step-card animate-in">
+        <span class="step-number">STEP 01</span>
+        <div class="step-icon-wrap" aria-hidden="true">🔍</div>
+        <h2 class="step-title">1. Tìm Sitter</h2>
+        <p class="step-desc">
+          Duyệt danh sách sitter gần bạn ở Đà Nẵng. Lọc dễ dàng theo quận, loại pet, khoảng giá và xem hồ sơ chi tiết.
+        </p>
+      </article>
+
+      <!-- Step 2 -->
+      <article class="step-card animate-in">
+        <span class="step-number">STEP 02</span>
+        <div class="step-icon-wrap" aria-hidden="true">📅</div>
+        <h2 class="step-title">2. Đặt Lịch</h2>
+        <p class="step-desc">
+          Chọn ngày, khai báo thông tin pet và chọn các dịch vụ bổ sung. Xác nhận đặt lịch và giữ chỗ qua ví Escrow an toàn.
+        </p>
+      </article>
+
+      <!-- Step 3 -->
+      <article class="step-card animate-in">
+        <span class="step-number">STEP 03</span>
+        <div class="step-icon-wrap" aria-hidden="true">❤️</div>
+        <h2 class="step-title">3. Chăm Sóc</h2>
+        <p class="step-desc">
+          Bé được chăm sóc chu đáo bởi sitter yêu thú cưng. Nhận cập nhật báo cáo hình ảnh/video đều đặn hàng ngày.
+        </p>
+      </article>
+
+      <!-- Step 4 -->
+      <article class="step-card animate-in">
+        <span class="step-number">STEP 04</span>
+        <div class="step-icon-wrap" aria-hidden="true">⭐</div>
+        <h2 class="step-title">4. Đánh Giá</h2>
+        <p class="step-desc">
+          Nhận lại pet vui khoẻ khi kết thúc lịch. Để lại đánh giá và nhận điểm tích luỹ ưu đãi cho lần gửi tiếp theo.
+        </p>
+      </article>
+
+    </section>
+
+    <!-- CTA Section -->
+    <section class="how-cta animate-in">
+      <h2 class="how-cta-title">Sẵn sàng trải nghiệm dịch vụ?</h2>
+      <p class="how-cta-desc">
+        Tìm kiếm người trông giữ phù hợp nhất để chăm sóc cho thành viên nhỏ của gia đình bạn ngay hôm nay.
+      </p>
+      <a href="sitters.html" class="btn btn-primary btn-lg" id="how-cta-btn">
+        🐾 Tìm Pet-sitter ngay
+      </a>
+    </section>
+
+    <!-- FAQ Accordion Section -->
+    <section class="faq-section animate-in">
+      <div class="faq-title">
+        <p class="section-label">Giải đáp thắc mắc</p>
+        <h2 class="section-title" style="margin-bottom: 8px;">Câu hỏi thường gặp</h2>
+        <div class="section-divider"></div>
+      </div>
+
+      <div class="faq-list" id="faq-accordion-list">
+        <!-- Rendered dynamically from FAQ_DATA in data.js -->
+        <div style="text-align: center; color: var(--text-muted); padding: 20px;">
+          Đang tải câu hỏi thường gặp...
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ===================== JAVASCRIPT ===================== -->
+  <script src="assets/data.js"></script>
+  <script src="assets/api.js"></script>
+  <script src="assets/components.js"></script>
+  
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      renderFAQ();
+    });
+
+    // Render FAQ Accordion from data.js
+    function renderFAQ() {
+      const faqList = document.getElementById('faq-accordion-list');
+      if (!faqList || !FAQ_DATA.length) return;
+
+      // Chọn lọc ra 5 câu hỏi thông dụng nhất
+      const selectedFaqs = FAQ_DATA.slice(0, 5);
+
+      faqList.innerHTML = selectedFaqs.map(faq => `
+        <div class="faq-item" id="faq-item-${/* safe */ faq.id}">
+          <div class="faq-header" onclick="toggleFaq(${/* safe */ faq.id})">
+            <span class="faq-question">${escapeHtml(faq.cauHoi)}</span>
+            <span class="faq-toggle-icon">▼</span>
+          </div>
+          <div class="faq-body" id="faq-body-${/* safe */ faq.id}">
+            <div class="faq-answer">${escapeHtml(faq.traLoi)}</div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // Toggle FAQ accordion item
+    window.toggleFaq = function(id) {
+      const item = document.getElementById(`faq-item-${id}`);
+      const body = document.getElementById(`faq-body-${id}`);
+      if (!item || !body) return;
+
+      const isActive = item.classList.contains('active');
+
+      // Đóng tất cả các accordion khác (nếu muốn đóng dạng accordion chuẩn)
+      document.querySelectorAll('.faq-item').forEach(el => {
+        el.classList.remove('active');
+        const b = el.querySelector('.faq-body');
+        if (b) b.style.maxHeight = null;
+      });
+
+      // Mở item hiện tại nếu nó chưa mở trước đó
+      if (!isActive) {
+        item.classList.add('active');
+        body.style.maxHeight = body.scrollHeight + 'px';
+      }
+    };
+  </script>
+</body>
+</html>

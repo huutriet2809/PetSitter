@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <!-- ===== SEO ===== -->
+  <title>Liên hệ | PawStay Đà Nẵng</title>
+  <meta name="description" content="Liên hệ với PawStay Đà Nẵng để được tư vấn dịch vụ gửi thú cưng và nhận hỗ trợ kỹ thuật 24/7." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>" />
+  
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="assets/style.css" />
+  
+  <style>
+    /* =====================================================
+       PAGE-SPECIFIC STYLES: CONTACT PAGE (v2)
+       ===================================================== */
+    .contact-wrapper {
+      padding: 60px 24px 100px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .contact-hero {
+      text-align: center;
+      margin-bottom: 50px;
+    }
+
+    /* Grid Layout */
+    .contact-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.1fr;
+      gap: 40px;
+      align-items: start;
+    }
+
+    @media (max-width: 900px) {
+      .contact-grid {
+        grid-template-columns: 1fr;
+        gap: 36px;
+      }
+    }
+
+    /* Contact Details Card */
+    .contact-info-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 36px;
+      box-shadow: var(--shadow-card);
+    }
+
+    .info-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .info-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .info-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      flex-shrink: 0;
+    }
+
+    .info-content h3 {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+    }
+
+    .info-content p {
+      font-size: 0.88rem;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    /* Stylized Map Card */
+    .map-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      margin-top: 32px;
+      position: relative;
+      height: 200px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      overflow: hidden;
+    }
+
+    /* Mock Grid Map Lines */
+    .map-grid-bg {
+      position: absolute;
+      inset: 0;
+      background-image: 
+        linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+      background-size: 20px 20px;
+      opacity: 0.8;
+      z-index: 0;
+    }
+
+    .map-marker {
+      position: absolute;
+      top: 40%;
+      left: 45%;
+      transform: translate(-50%, -50%);
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .marker-pin {
+      font-size: 2.2rem;
+      line-height: 1;
+      filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));
+      animation: bounce 2s infinite;
+    }
+
+    .marker-pulse {
+      width: 14px;
+      height: 6px;
+      background: rgba(201, 123, 132, 0.4);
+      border-radius: 50%;
+      margin-top: -6px;
+      animation: pulse-ring 2s infinite;
+    }
+
+    .map-details {
+      position: relative;
+      z-index: 3;
+      background: rgba(30, 30, 39, 0.95);
+      border: 1px solid var(--border-accent);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      font-size: 0.78rem;
+      color: var(--text-primary);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+    }
+
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-8px); }
+    }
+
+    /* Contact Form Card */
+    .contact-form-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 36px;
+      box-shadow: var(--shadow-card);
+    }
+
+    @media (max-width: 600px) {
+      .contact-form-card {
+        padding: 24px 16px;
+      }
+    }
+
+    .form-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 24px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .form-group {
+      margin-bottom: 24px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+
+    label .required {
+      color: var(--accent);
+      margin-left: 3px;
+    }
+
+    /* Controls */
+    input[type="text"],
+    input[type="email"],
+    textarea {
+      width: 100%;
+      background: var(--bg-secondary);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px 16px;
+      color: var(--text-primary);
+      font-family: var(--font-main);
+      font-size: 0.92rem;
+      transition: all var(--transition);
+      outline: none;
+    }
+
+    input:focus, textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+      background: var(--bg-primary);
+    }
+
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+      line-height: 1.6;
+    }
+
+    .submit-btn {
+      width: 100%;
+      padding: 16px;
+      font-size: 1rem;
+      font-weight: 700;
+      border-radius: var(--radius-lg);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ===================== MAIN LAYOUT ===================== -->
+  <main class="contact-wrapper">
+    
+    <!-- Hero Header -->
+    <section class="contact-hero">
+      <p class="section-label">Liên lạc với chúng tôi</p>
+      <h1 class="section-title">Kết nối với PawStay</h1>
+      <div class="section-divider"></div>
+      <p style="color: var(--text-secondary); max-width: 500px; margin: 0 auto; font-size: 0.95rem;">
+        Mọi ý kiến đóng góp, thắc mắc về dịch vụ hoặc yêu cầu hỗ trợ khẩn cấp, xin vui lòng gửi tin nhắn hoặc gọi điện trực tiếp.
+      </p>
+    </section>
+
+    <!-- Content Grid -->
+    <div class="contact-grid">
+      
+      <!-- Column 1: Info Card -->
+      <section class="contact-info-card animate-in">
+        <h2 style="font-size: 1.15rem; font-weight: 700; margin-bottom: 24px; display: flex; align-items: center; gap: 8px;">
+          <span>📞</span> Thông tin liên hệ
+        </h2>
+
+        <!-- Address -->
+        <div class="info-item">
+          <div class="info-icon" aria-hidden="true">📍</div>
+          <div class="info-content">
+            <h3>Địa chỉ văn phòng</h3>
+            <p>120 Trần Phú, Quận Hải Châu, Đà Nẵng, Việt Nam.</p>
+          </div>
+        </div>
+
+        <!-- Phone -->
+        <div class="info-item">
+          <div class="info-icon" aria-hidden="true">☎️</div>
+          <div class="info-content">
+            <h3>Số điện thoại</h3>
+            <p>0236 312 3456 <span style="font-size:0.75rem; color:var(--text-muted);">(Giờ làm việc)</span></p>
+            <p style="color: var(--accent); font-weight: 500; font-size: 0.8rem; margin-top: 2px;">Hotline cứu hộ: 0905 123 456 (24/7)</p>
+          </div>
+        </div>
+
+        <!-- Email -->
+        <div class="info-item">
+          <div class="info-icon" aria-hidden="true">📨</div>
+          <div class="info-content">
+            <h3>Hộp thư điện tử</h3>
+            <p>support@pawstay.vn</p>
+          </div>
+        </div>
+
+        <!-- Styled visual map card -->
+        <div class="map-card" role="img" aria-label="Bản đồ chỉ dẫn tới văn phòng PawStay tại Hải Châu, Đà Nẵng">
+          <div class="map-grid-bg"></div>
+          <div class="map-marker">
+            <div class="marker-pin">📍</div>
+            <div class="marker-pulse"></div>
+          </div>
+          <div class="map-details">
+            <strong>PawStay Đà Nẵng</strong><br/>
+            120 Trần Phú, Hải Châu, Đà Nẵng
+          </div>
+        </div>
+      </section>
+
+      <!-- Column 2: Form Card -->
+      <section class="contact-form-card animate-in">
+        <h2 class="form-title">✉️ Gửi tin nhắn cho chúng tôi</h2>
+        
+        <form id="contact-form">
+          <div class="form-group">
+            <label for="contact-name">Họ và tên <span class="required">*</span></label>
+            <input type="text" id="contact-name" placeholder="Nhập họ tên của bạn..." required />
+          </div>
+
+          <div class="form-group">
+            <label for="contact-email">Địa chỉ Email <span class="required">*</span></label>
+            <input type="email" id="contact-email" placeholder="Nhập địa chỉ email liên hệ..." required />
+          </div>
+
+                    <div class="form-group">
+            <label for="contact-subject">Tiêu đề <span class="required">*</span></label>
+            <input type="text" id="contact-subject" placeholder="Nhập tiêu đề..." required />
+          </div>
+
+          <!-- Honeypot -->
+          <div class="form-group" style="display:none;" aria-hidden="true">
+            <label for="contact-website">Website</label>
+            <input type="text" id="contact-website" tabindex="-1" autocomplete="off" />
+          </div>
+
+          <div class="form-group">
+            <label for="contact-message">Nội dung tin nhắn <span class="required">*</span></label>
+            <textarea id="contact-message" placeholder="Nhập thắc mắc hoặc nội dung cần liên hệ..." required></textarea>
+          </div>
+
+          <button type="submit" class="btn btn-primary submit-btn">
+            📨 Gửi tin nhắn ngay
+          </button>
+        </form>
+      </section>
+
+    </div>
+
+  </main>
+
+  <!-- ===================== JAVASCRIPT ===================== -->
+    <script src="assets/api.js"></script>
+  <script src="assets/components.js"></script>
+  
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const form = document.getElementById('contact-form');
+
+      form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const name = document.getElementById('contact-name').value.trim();
+        const email = document.getElementById('contact-email').value.trim();
+        const subject = document.getElementById('contact-subject').value.trim();
+        const message = document.getElementById('contact-message').value.trim();
+        const website = document.getElementById('contact-website').value;
+        const btn = form.querySelector('button[type="submit"]');
+
+        btn.disabled = true;
+        btn.innerHTML = 'Đang gửi...';
+
+        try {
+            const res = await apiFetch('/contact', {
+                method: 'POST',
+                body: JSON.stringify({ name, email, subject, message, website })
+            });
+            alert(res.message);
+            form.reset();
+        } catch (err) {
+            alert(err.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '📩 Gửi tin nhắn ngay';
+        }
+      });
+    });
+  </script>
+</body>
+</html>

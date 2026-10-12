@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <!-- ===== SEO ===== -->
+  <title>Đặt lịch thành công | PawStay Đà Nẵng</title>
+  <meta name="description" content="Đặt lịch chăm sóc thú cưng của bạn đã được tiếp nhận thành công. Sitter sẽ liên hệ phản hồi sớm nhất." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>" />
+  
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="assets/style.css" />
+  
+  <style>
+    /* =====================================================
+       PAGE-SPECIFIC STYLES: CONFIRMATION PAGE (v2)
+       ===================================================== */
+    .confirmation-wrapper {
+      min-height: calc(100vh - var(--navbar-h) - 300px);
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 60px 24px 80px;
+    }
+
+    .confirmation-inner {
+      max-width: 640px;
+      width: 100%;
+    }
+
+    /* Success Icon Animation */
+    .success-icon-wrap {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 28px;
+      animation: popIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    }
+
+    .success-circle {
+      width: 90px;
+      height: 90px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--accent-light));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.5rem;
+      color: #0f0f12;
+      box-shadow: 0 0 0 12px rgba(201, 123, 132, 0.12),
+                  0 0 0 24px rgba(201, 123, 132, 0.06);
+      position: relative;
+    }
+
+    .success-circle::after {
+      content: '';
+      position: absolute;
+      inset: -16px;
+      border-radius: 50%;
+      border: 2px solid rgba(201, 123, 132, 0.15);
+      animation: pulse-ring 2.2s ease-out infinite;
+    }
+
+    @keyframes pulse-ring {
+      0%   { transform: scale(0.9); opacity: 1; }
+      100% { transform: scale(1.35); opacity: 0; }
+    }
+
+    @keyframes popIn {
+      from { transform: scale(0.6); opacity: 0; }
+      to   { transform: scale(1);   opacity: 1; }
+    }
+
+    /* Heading Text */
+    .success-heading {
+      text-align: center;
+      margin-bottom: 12px;
+      animation: fadeSlideUp 0.5s 0.15s ease both;
+    }
+
+    .success-heading h1 {
+      font-size: clamp(1.8rem, 5vw, 2.4rem);
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: var(--text-primary);
+      margin-bottom: 10px;
+    }
+
+    .success-heading p {
+      font-size: 0.95rem;
+      color: var(--text-secondary);
+      max-width: 480px;
+      margin: 0 auto;
+      line-height: 1.6;
+    }
+
+    /* Booking code display block */
+    .booking-code-wrap {
+      text-align: center;
+      margin-bottom: 28px;
+      animation: fadeSlideUp 0.5s 0.25s ease both;
+    }
+
+    .booking-code-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 6px;
+    }
+
+    .booking-code-inner {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--bg-card);
+      border: 1.5px dashed var(--border-accent);
+      border-radius: var(--radius-md);
+      padding: 10px 20px;
+    }
+
+    .booking-code {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--accent-light);
+    }
+
+    .copy-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: color var(--transition);
+      display: flex;
+      align-items: center;
+      padding: 2px;
+    }
+
+    .copy-btn:hover {
+      color: var(--accent);
+    }
+
+    /* Summary Card Container */
+    .summary-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      overflow: hidden;
+      margin-bottom: 32px;
+      box-shadow: var(--shadow-card);
+      animation: fadeSlideUp 0.5s 0.35s ease both;
+    }
+
+    .summary-header {
+      background: linear-gradient(135deg, rgba(201, 123, 132, 0.1) 0%, rgba(201, 123, 132, 0.02) 100%);
+      padding: 22px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .summary-avatar {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      font-weight: 800;
+      color: rgba(15,15,18,0.7);
+      flex-shrink: 0;
+      border: 2px solid var(--border-accent);
+    }
+
+    .summary-sitter-name {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .summary-sitter-meta {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+
+    /* Status Badge styling */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(245, 200, 66, 0.08);
+      border: 1px solid rgba(245, 200, 66, 0.25);
+      color: #f5c842;
+      border-radius: 50px;
+      padding: 5px 14px;
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      background: #f5c842;
+      border-radius: 50%;
+      animation: statusBlink 1.2s ease-in-out infinite;
+    }
+
+    @keyframes statusBlink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.2; }
+    }
+
+    /* Table Rows */
+    .summary-body {
+      padding: 8px 0;
+    }
+
+    .summary-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 24px;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.88rem;
+      gap: 16px;
+    }
+
+    .summary-row:last-child {
+      border-bottom: none;
+    }
+
+    .summary-row-label {
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .summary-row-label span {
+      font-size: 1.1rem;
+    }
+
+    .summary-row-value {
+      font-weight: 600;
+      color: var(--text-primary);
+      text-align: right;
+    }
+
+    .summary-row.total {
+      background: rgba(201, 123, 132, 0.04);
+      margin-top: 8px;
+      border-top: 1px solid var(--border);
+      padding: 18px 24px;
+    }
+
+    .summary-row.total .summary-row-label {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .summary-row.total .summary-row-value {
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: var(--accent-light);
+    }
+
+    /* Actions Panel */
+    .confirmation-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 36px;
+      animation: fadeSlideUp 0.5s 0.45s ease both;
+    }
+
+    @media (max-width: 500px) {
+      .confirmation-actions {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Next Steps Info Box */
+    .tips-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      animation: fadeSlideUp 0.5s 0.5s ease both;
+    }
+
+    .tips-title {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .tip-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      margin-bottom: 14px;
+      line-height: 1.5;
+    }
+
+    .tip-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .tip-icon {
+      font-size: 1.1rem;
+      flex-shrink: 0;
+    }
+
+    /* Animations */
+    @keyframes fadeSlideUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ===================== MAIN LAYOUT ===================== -->
+  <div class="confirmation-wrapper">
+    <div class="confirmation-inner">
+      
+      <div id="confirmation-content">
+        <!-- Rendered dynamically by JS -->
+        <div style="text-align: center; padding: 80px 0;">
+          <span style="font-size: 2rem;">🐾</span>
+          <p style="color: var(--text-muted); margin-top: 12px;">Đang tải thông tin xác nhận...</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ===================== JAVASCRIPT ===================== -->
+  <script src="assets/data.js"></script>
+  <script src="assets/api.js"></script>
+  <script src="assets/components.js"></script>
+  
+  <script>
+    document.addEventListener('DOMContentLoaded', async function() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const bookingId = urlParams.get('id');
+      const container = document.getElementById('confirmation-content');
+
+      if (!bookingId) {
+        renderNoBookingData(container, "Không tìm thấy mã đặt lịch.");
+        return;
+      }
+
+      try {
+        const booking = await apiFetch(`/bookings/${bookingId}`);
+        renderConfirmation(container, booking);
+      } catch (error) {
+        if (error.status === 404) {
+          renderNoBookingData(container, "Booking không tồn tại hoặc đã bị xóa.");
+        } else if (error.status === 403 || (error.message && error.message.includes('quyền'))) {
+          renderNoBookingData(container, "Bạn không có quyền xem thông tin đặt lịch này.");
+        } else {
+          renderNoBookingData(container, error.message || "Đã có lỗi xảy ra.");
+        }
+      }
+    });
+
+    // Render state when directly accessing without booking
+    function renderNoBookingData(container, message) {
+      container.innerHTML = `
+        <div style="padding: 60px 24px; text-align: center; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-xl);">
+          <p style="font-size: 3rem; margin-bottom: 16px;">🔍</p>
+          <h2 style="font-size: 1.3rem; font-weight: 700; margin-bottom: 12px;">Lỗi truy xuất</h2>
+          <p style="color: var(--text-secondary); font-size: 0.9rem; max-width: 320px; margin: 0 auto 24px; line-height: 1.6;">${escapeHtml(message)}</p>
+          <a href="sitters.html" class="btn btn-primary">
+            Đặt lịch ngay
+          </a>
+        </div>
+      `;
+    }
+
+    // Render detailed confirmation details
+    function renderConfirmation(container, booking) {
+      const initials = getInitials(booking.sitterName || "?");
+      const avatarColor = booking.sitterAvatarUrl ? 'transparent' : '#888';
+
+      // Format dates
+      const formatNgayDep = (str) => {
+        const d = new Date(str);
+        const thu = ['Chủ Nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'][d.getDay()];
+        return `${thu}, ngày ${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
+      };
+
+        // Addons details
+      let addonsHtml = '';
+      if (booking.addons && booking.addons.length > 0) {
+        addonsHtml = booking.addons.map(add => {
+          const detailSuffix = add.isDaily ? ` (${formatTien(add.donGia)} × ${/* safe */ booking.soNgay} ngày)` : '';
+          return `
+            <div class="summary-row">
+              <span class="summary-row-label">
+                <span>✨</span>
+                <div>
+                  <span>${escapeHtml(add.ten)}</span>
+                  <small style="display: block; font-size: 0.72rem; color: var(--text-muted); margin-top: 1px;">
+                    Dịch vụ bổ sung${/* safe */ detailSuffix}
+                  </small>
+                </div>
+              </span>
+              <span class="summary-row-value">+${formatTien(add.thanhTien)}</span>
+            </div>
+          `;
+        }).join('');
+      }
+
+      const avatarHtml = booking.sitterAvatarUrl 
+        ? `<img src="${/* safe */ booking.sitterAvatarUrl}" alt="Avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">` 
+        : escapeHtml(initials);
+        
+      const noteHtml = booking.ghiChu ? `
+        <div class="summary-row" style="align-items: flex-start;">
+          <span class="summary-row-label">
+            <span>📝</span> Ghi chú
+          </span>
+          <span class="summary-row-value" style="text-align: right; max-width: 60%; font-size: 0.85rem; font-style: italic; color: var(--text-secondary);">
+            "${escapeHtml(booking.ghiChu)}"
+          </span>
+        </div>
+      ` : '';
+
+      container.innerHTML = `
+        <!-- Big Success Circle -->
+        <div class="success-icon-wrap">
+          <div class="success-circle">✓</div>
+        </div>
+
+        <!-- Heading text -->
+        <div class="success-heading">
+          <h1>Đặt lịch thành công! 🎉</h1>
+          <p>
+            Yêu cầu chăm sóc đã được gửi tới sitter. Sitter sẽ phản hồi và liên hệ xác nhận trong vòng <strong>2 giờ</strong>.
+          </p>
+        </div>
+
+        <!-- Booking Code Display -->
+        <div class="booking-code-wrap">
+          <p class="booking-code-label">Mã đặt lịch của bạn</p>
+          <div class="booking-code-value" id="booking-code">${escapeHtml(booking.maDatLich)}</div>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 8px;">
+            Vui lòng lưu lại mã này để tra cứu hoặc liên hệ hỗ trợ.
+          </p>
+        </div>
+
+        <!-- SUMMARY CARD -->
+        <div class="summary-card">
+          <div class="summary-header">
+            <h2 class="summary-title">Tóm tắt chuyến đi</h2>
+            <div class="summary-status">
+              <span class="status-dot"></span> ${escapeHtml(booking.trangThai || 'Chờ xác nhận')}
+            </div>
+          </div>
+
+          <!-- Sitter Info Box -->
+          <div class="sitter-info-box">
+            <div class="sitter-avatar-small" style="background: ${/* safe */ avatarColor};">
+              ${/* safe */ avatarHtml}
+            </div>
+            <div>
+              <p style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 2px;">
+                Pet-sitter
+              </p>
+              <p style="font-weight: 700; font-size: 1rem; color: var(--text-primary);">
+                ${escapeHtml(booking.sitterName)}
+              </p>
+            </div>
+            <a href="sitter-profile.html?id=${/* safe */ booking.sitterId}" class="btn btn-outline btn-sm" style="margin-left: auto;">
+              Xem hồ sơ
+            </a>
+          </div>
+
+          <!-- Divider -->
+          <div class="summary-divider"></div>
+
+          <!-- Dates & Pets -->
+          <div class="summary-row">
+            <span class="summary-row-label">
+              <span>📅</span> Thời gian
+            </span>
+            <span class="summary-row-value" style="text-align: right;">
+              ${formatNgayDep(booking.ngayBatDau)}<br/>
+              <span style="color: var(--text-muted); font-size: 0.8rem;">đến</span><br/>
+              ${formatNgayDep(booking.ngayKetThuc)}<br/>
+              <span style="color: var(--accent); font-size: 0.85rem;">(${/* safe */ booking.soNgay} ngày)</span>
+            </span>
+          </div>
+
+          <div class="summary-row">
+            <span class="summary-row-label">
+              <span>🐾</span> Thú cưng
+            </span>
+            <span class="summary-row-value">
+              ${escapeHtml(booking.pet?.tenPet || '')} (${escapeHtml(booking.pet?.loaiPet || '')}, ${escapeHtml(booking.pet?.kichCo || '')})
+            </span>
+          </div>
+          
+          ${/* safe */ addonsHtml}
+          ${/* safe */ noteHtml}
+
+          <div class="summary-divider"></div>
+
+          <!-- Prices -->
+          <div class="summary-row">
+            <span class="summary-row-label">Phí chăm sóc (${/* safe */ booking.soNgay} ngày)</span>
+            <span class="summary-row-value">${formatTien(booking.giaSitter)}</span>
+          </div>
+
+          ${/* safe */ (booking.tongAddons && booking.tongAddons > 0) ? `
+          <div class="summary-row">
+            <span class="summary-row-label">Dịch vụ bổ sung</span>
+            <span class="summary-row-value">${formatTien(booking.tongAddons)}</span>
+          </div>
+          ` : ''}
+
+          <div class="summary-divider"></div>
+
+          <!-- Total -->
+          <div class="summary-total">
+            <span>Chi phí ước tính</span>
+            <span>${formatTien(booking.tongTien)}</span>
+          </div>
+        </div>
+
+        <p style="text-align:center; color:var(--text-muted); font-size:0.9rem; margin:16px 0;">
+          💡 <em>PawStay là nền tảng kết nối trực tiếp. Sau khi Sitter xác nhận, hai bên sẽ tự liên hệ và thanh toán trực tiếp khi giao nhận thú cưng.</em>
+        </p>
+
+        <!-- Actions -->
+        <div class="action-buttons">
+          <a href="my-bookings.html" class="btn btn-outline btn-lg">
+            Xem lịch của tôi
+          </a>
+          <a href="index.html" class="btn btn-primary btn-lg">
+            Về trang chủ
+          </a>
+          <button class="btn btn-outline btn-lg" onclick="window.print()">
+            🖨️ In biên nhận
+          </button>
+        </div>
+      `;
+    }
+  </script>
+</body>
+</html>

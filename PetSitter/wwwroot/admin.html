@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin - Duyệt Sitter</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>">
+  <link rel="stylesheet" href="assets/style.css" />
+  <style>
+    .admin-container { max-width: 1000px; margin: 40px auto; padding: 20px; }
+    .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 20px; margin-bottom: 20px; }
+    .header-row { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 15px; }
+    .action-btns button { margin-left: 10px; }
+    #error-msg { background: rgba(239, 68, 68, 0.1); color: #ef4444; padding: 10px; border-radius: 4px; display: none; margin-bottom: 20px; }
+    .reject-container { margin-top: 10px; display: none; }
+    .reject-container input { width: 100%; padding: 8px; margin-bottom: 8px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <div class="admin-container">
+    <h1>Hồ sơ Sitter chờ duyệt</h1>
+    <div id="error-msg"></div>
+    <div id="list-container">Đang tải...</div>
+  </div>
+
+  <script src="assets/data.js"></script>
+  <script src="assets/api.js"></script>
+  <script src="assets/components.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', async () => {
+      // Check auth (assuming API restricts it, but we can do a quick check if needed)
+      if (!localStorage.getItem('pawstay_token')) {
+        window.location.href = 'login.html';
+        return;
+      }
+      loadApplications();
+    });
+
+    async function loadApplications() {
+      const container = document.getElementById('list-container');
+      try {
+        const apps = await apiFetch('/admin/sitter-applications?status=Pending');
+        if (apps.length === 0) {
+          container.innerHTML = '<p>Không có hồ sơ nào đang chờ duyệt.</p>';
+          return;
+        }
+
+        container.innerHTML = apps.map(app => `
+          <div class="card" id="app-${/* safe */ app.id}">
+            <div class="header-row">
+              <h3>${escapeHtml(app.fullName)} (Khu vực: ${escapeHtml(app.khuVuc)})</h3>
+              <div class="action-btns">
+                <button class="btn btn-primary btn-sm" onclick="approve('${/* safe */ app.id}')">Duyệt</button>
+                <button class="btn btn-outline btn-sm" onclick="showReject('${/* safe */ app.id}')">Từ chối</button>
+              </div>
+            </div>
+            <p><strong>Kinh nghiệm:</strong> ${/* safe */ app.kinhNghiem} năm</p>
+            <p><strong>Giá cơ bản:</strong> ${formatTien(app.giaMoiNgay)} / ngày</p>
+            <p><strong>Loại Pet nhận:</strong> ${(app.loaiPetNhan || []).map(escapeHtml).join(', ')}</p>
+            <p><strong>Tags:</strong> ${(app.tags || []).map(escapeHtml).join(', ')}</p>
+            <p><strong>Bio:</strong> ${escapeHtml(app.bio)}</p>
+            
+            <div class="reject-container" id="reject-${/* safe */ app.id}">
+              <input type="text" id="lydo-${/* safe */ app.id}" placeholder="Lý do từ chối..." />
+              <button class="btn btn-outline btn-sm" onclick="reject('${/* safe */ app.id}')">Xác nhận từ chối</button>
+            </div>
+          </div>
+        `).join('');
+      } catch (err) {
+        showError(err.message || 'Lỗi tải danh sách hồ sơ. Bạn có phải Admin không?');
+        container.innerHTML = '';
+      }
+    }
+
+    function showReject(id) {
+      document.getElementById(`reject-${id}`).style.display = 'block';
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('error-msg');
+      el.textContent = msg;
+      el.style.display = 'block';
+      setTimeout(() => el.style.display = 'none', 5000);
+    }
+
+    async function approve(id) {
+      try {
+        await apiFetch(`/admin/sitter-applications/${id}/approve`, { method: 'PATCH' });
+        document.getElementById(`app-${id}`).remove();
+      } catch (err) {
+        showError(err.message);
+      }
+    }
+
+    async function reject(id) {
+      const reason = document.getElementById(`lydo-${id}`).value;
+      if (!reason.trim()) {
+        showError('Vui lòng nhập lý do từ chối.');
+        return;
+      }
+      try {
+        await apiFetch(`/admin/sitter-applications/${id}/reject`, { 
+          method: 'PATCH',
+          body: JSON.stringify({ lyDo: reason })
+        });
+        document.getElementById(`app-${id}`).remove();
+      } catch (err) {
+        showError(err.message);
+      }
+    }
+  </script>
+</body>
+</html>

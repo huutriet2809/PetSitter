@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sửa hồ sơ Sitter | PawStay</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>">
+  <link rel="stylesheet" href="assets/style.css">
+  <style>
+    .container { max-width: 800px; margin: 100px auto; padding: 24px; }
+    .card { background: var(--bg-card); padding: 32px; border-radius: var(--radius-lg); border: 1px solid var(--border); }
+    .form-group { margin-bottom: 20px; }
+    label { display: block; margin-bottom: 8px; font-weight: 600; font-size: 0.9rem; }
+    input[type="text"], input[type="number"], textarea, select { width: 100%; padding: 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-primary); font-family: inherit; }
+    .checkbox-group { display: flex; gap: 12px; flex-wrap: wrap; }
+    .checkbox-item { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+    .btn-block { width: 100%; margin-top: 24px; }
+    .header-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+  </style>
+</head>
+<body>
+  <div class="container" id="main-content">
+    <div class="header-actions">
+      <h1>Hồ sơ Sitter</h1>
+      <a id="view-profile-btn" href="sitter-profile.html" target="_blank" class="btn btn-outline" style="display:none;">Xem trang hồ sơ</a>
+    </div>
+
+    <div class="card">
+      <form id="sitter-form">
+        <div class="form-group">
+          <label>Tiểu sử (Bio) *</label>
+          <textarea id="bio" required maxlength="1000" rows="5"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Giá một ngày (VNĐ) *</label>
+          <input type="number" id="gia" required min="10000" max="10000000" step="1000" />
+        </div>
+        <div class="form-group">
+          <label>Khu vực hoạt động *</label>
+          <select id="khuvuc" required>
+            <option value="Hải Châu">Hải Châu</option>
+            <option value="Thanh Khê">Thanh Khê</option>
+            <option value="Sơn Trà">Sơn Trà</option>
+            <option value="Ngũ Hành Sơn">Ngũ Hành Sơn</option>
+            <option value="Cẩm Lệ">Cẩm Lệ</option>
+            <option value="Liên Chiểu">Liên Chiểu</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Loại thú cưng nhận chăm sóc</label>
+          <div class="checkbox-group">
+            <label class="checkbox-item"><input type="checkbox" name="pet" value="Chó"> Chó</label>
+            <label class="checkbox-item"><input type="checkbox" name="pet" value="Mèo"> Mèo</label>
+            <label class="checkbox-item"><input type="checkbox" name="pet" value="Khác"> Khác</label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Tags (Cách nhau bằng dấu phẩy)</label>
+          <input type="text" id="tags" placeholder="Nhà có sân vườn, Yêu mèo..." />
+        </div>
+        <div class="form-group">
+          <label>Dịch vụ bổ sung</label>
+          <div id="services-container" class="checkbox-group">
+            <!-- Render từ API -->
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" id="btn-submit">Lưu thay đổi</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="assets/data.js"></script>
+  <script src="assets/api.js"></script>
+  <script src="assets/components.js"></script>
+  <script>
+    const user = getCurrentUser();
+    if (!user || user.role !== 'SITTER') {
+      document.body.innerHTML = '<div style="text-align:center; padding:100px;"><h2>Bạn không có quyền truy cập</h2><br><a href="index.html" class="btn btn-primary">Về trang chủ</a></div>';
+    } else {
+      init();
+    }
+
+    async function init() {
+      try {
+        const services = await apiFetch('/services');
+        const srvContainer = document.getElementById('services-container');
+        srvContainer.innerHTML = services.map(s => 
+          `<label class="checkbox-item"><input type="checkbox" name="dichvu" value="${/* safe */ s.id}"> ${escapeHtml(s.ten)}</label>`
+        ).join('');
+
+        const profile = await apiFetch('/sitter/profile');
+        if (profile) {
+          document.getElementById('bio').value = profile.bio || '';
+          
+          let basePrice = 100000;
+          if (profile.dichVu && profile.dichVu.length > 0) {
+              basePrice = profile.dichVu[0].gia;
+          }
+          document.getElementById('gia').value = basePrice;
+          
+          if (profile.khuVuc) document.getElementById('khuvuc').value = profile.khuVuc;
+          document.getElementById('tags').value = (profile.tags || []).join(', ');
+
+          const pets = (profile.tags || []).filter(t => ['Chó', 'Mèo', 'Khác'].includes(t));
+          document.querySelectorAll('input[name="pet"]').forEach(cb => {
+            if (pets.includes(cb.value)) cb.checked = true;
+          });
+
+          const selectedSrvIds = (profile.dichVu || []).map(d => d.id);
+          document.querySelectorAll('input[name="dichvu"]').forEach(cb => {
+             const srv = profile.dichVu.find(d => d.ten === cb.parentElement.textContent.trim());
+             if (srv) cb.checked = true;
+          });
+
+          const btnView = document.getElementById('view-profile-btn');
+          btnView.href = `sitter-profile.html?id=${profile.sitterId}`;
+          btnView.style.display = 'inline-flex';
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    document.getElementById('sitter-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn-submit');
+      btn.textContent = 'Đang lưu...';
+      btn.disabled = true;
+
+      const petChecked = Array.from(document.querySelectorAll('input[name="pet"]:checked')).map(cb => cb.value);
+      const srvChecked = Array.from(document.querySelectorAll('input[name="dichvu"]:checked')).map(cb => cb.value);
+      const tagsInput = document.getElementById('tags').value.split(',').map(t => t.trim()).filter(t => t);
+      const allTags = [...new Set([...petChecked, ...tagsInput])];
+
+      const payload = {
+        bio: document.getElementById('bio').value,
+        giaMoiNgay: parseInt(document.getElementById('gia').value),
+        khuVuc: document.getElementById('khuvuc').value,
+        loaiPetNhan: petChecked,
+        tags: allTags,
+        dichVuBoSung: srvChecked
+      };
+
+      try {
+        await apiFetch('/sitter/profile', { method: 'PUT', body: JSON.stringify(payload) });
+        showToast('Lưu hồ sơ thành công!', 3000, '✅');
+      } catch (err) {
+        showToast(err.message, 3000, '❌');
+      } finally {
+        btn.textContent = 'Lưu thay đổi';
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

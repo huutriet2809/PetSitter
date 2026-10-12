@@ -1,3 +1,5 @@
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -5,11 +7,12 @@ namespace PetSitter.Models
 {
     public class SitterProfile
     {
-        [Key]
-        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-        public int SitterId { get; set; }
+        [BsonId]
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string SitterId { get; set; }
 
-        public int UserId { get; set; }
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string UserId { get; set; }
 
         [MaxLength(1000)]
         public string? Bio { get; set; }
@@ -33,6 +36,14 @@ namespace PetSitter.Models
         [Column(TypeName = "decimal(3, 2)")]
         public decimal Rating { get; set; } = 0;
 
+        public string Status { get; set; } = "Pending"; // Pending, Approved, Rejected
+        public string? LyDoTuChoi { get; set; }
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime? ReviewedAt { get; set; }
+        
+        public List<string> Tags { get; set; } = new List<string>();
+        public List<string> LoaiPetNhan { get; set; } = new List<string>();
+
         public int TotalReviews { get; set; } = 0;
 
         // Navigation properties
@@ -42,3 +53,4 @@ namespace PetSitter.Models
         public ICollection<SitterAvailability> SitterAvailabilities { get; set; } = new List<SitterAvailability>();
     }
 }
+

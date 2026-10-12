@@ -1,48 +1,63 @@
-using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
+using System;
+using System.Collections.Generic;
 
 namespace PetSitter.Models
 {
+    public class BookingPet
+    {
+        public string TenPet { get; set; } = string.Empty;
+        public string LoaiPet { get; set; } = string.Empty;
+        public string KichCo { get; set; } = string.Empty;
+    }
+
+    public class BookingAddon
+    {
+        public string ServiceId { get; set; } = string.Empty;
+        public string Ten { get; set; } = string.Empty;
+        [BsonRepresentation(BsonType.Decimal128)]
+        public decimal DonGia { get; set; }
+        public bool IsDaily { get; set; }
+        [BsonRepresentation(BsonType.Decimal128)]
+        public decimal ThanhTien { get; set; }
+    }
+
+    [BsonIgnoreExtraElements]
     public class Booking
     {
-        [Key]
-        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-        public int BookingId { get; set; }
+        [BsonId]
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string BookingId { get; set; } = string.Empty;
 
-        public int OwnerId { get; set; }
-        public int SitterId { get; set; }
-        public int PetId { get; set; }
-        public int SitterServiceId { get; set; }
+        public string MaDatLich { get; set; } = string.Empty;
 
-        public DateTime StartDatetime { get; set; }
-        public DateTime EndDatetime { get; set; }
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string OwnerId { get; set; } = string.Empty;
+        
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string SitterId { get; set; } = string.Empty;
 
-        [Column(TypeName = "decimal(12, 2)")]
-        public decimal TotalPrice { get; set; }
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string? PetId { get; set; }
 
-        [Required]
-        [MaxLength(20)]
-        public string Status { get; set; } = "PENDING"; // PENDING, CONFIRMED, CANCELLED, COMPLETED, REJECTED
+        public DateTime NgayBatDau { get; set; }
+        public DateTime NgayKetThuc { get; set; }
+        public int SoNgay { get; set; }
+        public string? GhiChu { get; set; }
 
-        [MaxLength(1000)]
-        public string? Note { get; set; }
+        public BookingPet Pet { get; set; } = new BookingPet();
+        public List<BookingAddon> Addons { get; set; } = new List<BookingAddon>();
 
+        [BsonRepresentation(BsonType.Decimal128)]
+        public decimal GiaSitter { get; set; }
+        [BsonRepresentation(BsonType.Decimal128)]
+        public decimal TongAddons { get; set; }
+        [BsonRepresentation(BsonType.Decimal128)]
+        public decimal TongTien { get; set; } // Chi phí ước tính
+
+        public string TrangThai { get; set; } = "PENDING";
+        public string? LyDoTuChoi { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-
-        // Navigation properties
-        [ForeignKey("OwnerId")]
-        public User? Owner { get; set; }
-
-        [ForeignKey("SitterId")]
-        public SitterProfile? Sitter { get; set; }
-
-        [ForeignKey("PetId")]
-        public Pet? Pet { get; set; }
-
-        [ForeignKey("SitterServiceId")]
-        public SitterService? SitterService { get; set; }
-
-        public Payment? Payment { get; set; }
-        public Review? Review { get; set; }
     }
 }

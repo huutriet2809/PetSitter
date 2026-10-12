@@ -1,3 +1,5 @@
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -5,12 +7,14 @@ namespace PetSitter.Models
 {
     public class SitterService
     {
-        [Key]
-        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-        public int SitterServiceId { get; set; }
+        [BsonId]
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string SitterServiceId { get; set; }
 
-        public int SitterId { get; set; }
-        public int ServiceId { get; set; }
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string SitterId { get; set; }
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string ServiceId { get; set; }
 
         [Column(TypeName = "decimal(12, 2)")]
         public decimal Price { get; set; }
@@ -26,3 +30,4 @@ namespace PetSitter.Models
         public Service? Service { get; set; }
     }
 }
+

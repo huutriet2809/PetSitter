@@ -1,3 +1,5 @@
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -5,11 +7,12 @@ namespace PetSitter.Models
 {
     public class SitterAvailability
     {
-        [Key]
-        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-        public int AvailabilityId { get; set; }
+        [BsonId]
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string AvailabilityId { get; set; }
 
-        public int SitterId { get; set; }
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string SitterId { get; set; }
 
         [Column(TypeName = "date")]
         public DateTime AvailableDate { get; set; }
@@ -24,3 +27,4 @@ namespace PetSitter.Models
         public SitterProfile? Sitter { get; set; }
     }
 }
+

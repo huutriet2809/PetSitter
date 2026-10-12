@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <!-- ===== SEO ===== -->
+  <title>Về chúng tôi | PawStay Đà Nẵng</title>
+  <meta name="description" content="Khám phá câu chuyện khởi nghiệp, sứ mệnh giải quyết vấn đề gửi thú cưng và đội ngũ sáng lập của PawStay Đà Nẵng." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>" />
+  
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="assets/style.css" />
+  
+  <style>
+    /* =====================================================
+       PAGE-SPECIFIC STYLES: ABOUT PAGE (v2)
+       ===================================================== */
+    .about-wrapper {
+      padding: 60px 24px 100px;
+      max-width: 1050px;
+      margin: 0 auto;
+    }
+
+    .about-hero {
+      text-align: center;
+      margin-bottom: 60px;
+    }
+
+    /* Split Section: Story & Vision */
+    .about-split {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 48px;
+      align-items: center;
+      margin-bottom: 80px;
+    }
+
+    @media (max-width: 850px) {
+      .about-split {
+        grid-template-columns: 1fr;
+        gap: 36px;
+      }
+    }
+
+    .about-content h2 {
+      font-size: 1.6rem;
+      font-weight: 800;
+      margin-bottom: 18px;
+      color: var(--text-primary);
+      position: relative;
+    }
+
+    .about-content h2::after {
+      content: '';
+      position: absolute;
+      left: 0; bottom: -4px;
+      width: 40px; height: 3px;
+      background: var(--accent);
+      border-radius: 2px;
+    }
+
+    .about-content p {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      line-height: 1.65;
+      margin-bottom: 20px;
+    }
+
+    .about-content strong {
+      color: var(--text-primary);
+    }
+
+    /* Vision / Mission Box */
+    .vision-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 40px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: var(--shadow-card);
+    }
+
+    .vision-box::before {
+      content: '“';
+      position: absolute;
+      top: -10px; left: 16px;
+      font-size: 6rem;
+      color: var(--accent);
+      opacity: 0.15;
+      font-family: serif;
+      line-height: 1;
+    }
+
+    .vision-item {
+      margin-bottom: 28px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .vision-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .vision-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 6px;
+    }
+
+    .vision-text {
+      font-size: 0.92rem;
+      color: var(--text-primary);
+      line-height: 1.6;
+    }
+
+    /* Values Grid */
+    .values-section {
+      margin-bottom: 80px;
+      text-align: center;
+    }
+
+    .values-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      margin-top: 40px;
+    }
+
+    @media (max-width: 768px) {
+      .values-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .value-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 32px 24px;
+      text-align: center;
+    }
+
+    .value-icon {
+      font-size: 2.2rem;
+      margin-bottom: 16px;
+    }
+
+    .value-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .value-desc {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    /* Team Section */
+    .team-section {
+      text-align: center;
+    }
+
+    .team-grid {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 28px;
+      margin-top: 44px;
+    }
+
+    .team-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 30px 24px;
+      width: calc(33.333% - 20px);
+      min-width: 270px;
+      transition: all var(--transition);
+      box-shadow: var(--shadow-card);
+      text-align: center;
+    }
+
+    .team-card:hover {
+      border-color: var(--border-accent);
+      transform: translateY(-6px);
+    }
+
+    .team-avatar {
+      width: 90px;
+      height: 90px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.8rem;
+      font-weight: 800;
+      color: rgba(15,15,18,0.7);
+      margin: 0 auto 16px;
+      border: 3px solid var(--border-accent);
+    }
+
+    .team-name {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 0;
+    }
+
+    @media (max-width: 900px) {
+      .team-card {
+        width: calc(50% - 15px);
+      }
+    }
+
+    @media (max-width: 600px) {
+      .team-card {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ===================== MAIN LAYOUT ===================== -->
+  <main class="about-wrapper">
+    
+    <!-- Hero Header -->
+    <section class="about-hero">
+      <p class="section-label">Câu chuyện startup</p>
+      <h1 class="section-title">Về PawStay</h1>
+      <div class="section-divider"></div>
+    </section>
+
+    <!-- Story Split -->
+    <section class="about-split">
+      <!-- Left side: Text -->
+      <article class="about-content animate-in">
+        <h2>Khởi nguồn từ tình yêu thú cưng</h2>
+        <p>
+          Ý tưởng thành lập <strong>PawStay</strong> bắt nguồn từ chính khó khăn thực tế của đội ngũ sáng lập: Mỗi lần đi công tác xa hay du lịch, việc tìm kiếm một nơi gửi gắm chú chó nhỏ đáng tin cậy luôn là một cơn ác mộng. 
+        </p>
+        <p>
+          Các khách sạn thú cưng truyền thống thường đắt đỏ và ngột ngạt vì các bé phải ở trong lồng sắt phần lớn thời gian. Nhờ cậy người thân thì không tiện, còn tìm kiếm người trông giữ trên các hội nhóm Facebook lại tiềm ẩn rất nhiều rủi ro vì không có cơ chế bảo chứng uy tín hay bảo hiểm bảo vệ.
+        </p>
+        <p>
+          Chính vì thế, chúng tôi đã xây dựng <strong>PawStay</strong> tại Đà Nẵng — một nền tảng kết nối các chủ nuôi bận rộn với những người yêu thú cưng có thời gian và không gian rảnh rỗi (Pet-sitter) để mang lại môi trường chăm sóc ấm áp, tự do như ở nhà với mức chi phí hợp lý nhất.
+        </p>
+      </article>
+
+      <!-- Right side: Vision / Mission Box -->
+      <div class="vision-box animate-in">
+        <!-- Sứ mệnh -->
+        <div class="vision-item">
+          <p class="vision-label">🎯 Sứ mệnh của chúng tôi</p>
+          <p class="vision-text">
+            Mang lại sự an tâm tuyệt đối cho chủ nuôi trong mỗi chuyến đi xa, đồng thời tạo ra trải nghiệm vui vẻ, an toàn và tràn ngập tình yêu thương cho các bé thú cưng.
+          </p>
+        </div>
+        
+        <!-- Tầm nhìn -->
+        <div class="vision-item" style="margin-top: 32px;">
+          <p class="vision-label">👁️ Tầm nhìn tương lai</p>
+          <p class="vision-text">
+            Trở thành mạng lưới chăm sóc thú cưng chia sẻ tin cậy hàng đầu tại Việt Nam, kiến tạo cộng đồng văn minh, kết nối những con người có cùng tình yêu thương động vật.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Core Values -->
+    <section class="values-section animate-in">
+      <p class="section-label">Tại sao chúng tôi khác biệt</p>
+      <h2 class="section-title" style="margin-bottom: 8px;">Giá trị cốt lõi</h2>
+      <div class="section-divider"></div>
+
+      <div class="values-grid">
+        <div class="value-card">
+          <div class="value-icon" aria-hidden="true">🛡️</div>
+          <h3 class="value-title">An toàn là trên hết</h3>
+          <p class="value-desc">Mọi Sitter đều phải xác minh CCCD và phỏng vấn trực tiếp trước khi nhận đơn chăm sóc đầu tiên.</p>
+        </div>
+        <div class="value-card">
+          <div class="value-icon" aria-hidden="true">🏡</div>
+          <h3 class="value-title">Ấm áp như ở nhà</h3>
+          <p class="value-desc">Thú cưng được sống tự do trong môi trường gia đình ấm cúng, hoàn toàn không bị giam giữ trong lồng.</p>
+        </div>
+        <div class="value-card">
+          <div class="value-icon" aria-hidden="true">📸</div>
+          <h3 class="value-title">Báo cáo minh bạch</h3>
+          <p class="value-desc">Cập nhật hình ảnh và video sinh hoạt hàng ngày gửi trực tiếp tới chủ nuôi để bạn hoàn toàn an tâm.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Team Section -->
+    <section class="team-section animate-in">
+      <p class="section-label">Đồng hành cùng bạn</p>
+      <h2 class="section-title" style="margin-bottom: 8px;">Đội ngũ sáng lập</h2>
+      <div class="section-divider"></div>
+
+      <div class="team-grid">
+        <!-- Member 1 -->
+        <article class="team-card">
+          <div class="team-avatar" style="background: linear-gradient(135deg, #e8b4b8, #e8b4b899);">TL</div>
+          <h3 class="team-name">Nguyễn Tiến Lộc</h3>
+        </article>
+
+        <!-- Member 2 -->
+        <article class="team-card">
+          <div class="team-avatar" style="background: linear-gradient(135deg, #a8c5da, #a8c5da99);">HT</div>
+          <h3 class="team-name">Nguyễn Hữu Triết</h3>
+        </article>
+
+        <!-- Member 3 -->
+        <article class="team-card">
+          <div class="team-avatar" style="background: linear-gradient(135deg, #b8d8b8, #b8d8b899);">TL</div>
+          <h3 class="team-name">Nguyễn Thành Luân</h3>
+        </article>
+
+        <!-- Member 4 -->
+        <article class="team-card">
+          <div class="team-avatar" style="background: linear-gradient(135deg, #d4b8e0, #d4b8e099);">BN</div>
+          <h3 class="team-name">Nguyễn Bá Nam</h3>
+        </article>
+
+        <!-- Member 5 -->
+        <article class="team-card">
+          <div class="team-avatar" style="background: linear-gradient(135deg, #f0d4a8, #f0d4a899);">TT</div>
+          <h3 class="team-name">Đào Thị Thùy Trang</h3>
+        </article>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ===================== JAVASCRIPT ===================== -->
+  <script src="assets/data.js"></script>
+  <script src="assets/api.js"></script>
+  <script src="assets/components.js"></script>
+</body>
+</html>

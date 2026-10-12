@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <!-- ===== SEO ===== -->
+  <title>Đăng nhập | PawStay</title>
+  <meta name="description" content="Đăng nhập tài khoản PawStay để đặt lịch gửi thú cưng và quản lý lịch sử chăm sóc nhanh chóng." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>" />
+  
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="assets/style.css" />
+  
+  <style>
+    /* =====================================================
+       PAGE-SPECIFIC STYLES: LOGIN PAGE (v2)
+       ===================================================== */
+    .auth-wrapper {
+      padding: 80px 24px 100px;
+      min-height: calc(100vh - var(--navbar-h) - 300px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .auth-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 40px;
+      width: 100%;
+      max-width: 440px;
+      box-shadow: var(--shadow-card);
+      animation: fadeSlideUp 0.5s ease both;
+    }
+
+    @media (max-width: 500px) {
+      .auth-card {
+        padding: 30px 20px;
+      }
+    }
+
+    .auth-header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    .auth-header .logo-icon {
+      font-size: 2.2rem;
+      margin-bottom: 12px;
+      display: inline-block;
+    }
+
+    .auth-title {
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: var(--text-primary);
+      margin-bottom: 6px;
+    }
+
+    .auth-subtitle {
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+      line-height: 1.4;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+
+    /* Controls */
+    input[type="email"],
+    input[type="password"] {
+      width: 100%;
+      background: var(--bg-secondary);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px 16px;
+      color: var(--text-primary);
+      font-family: var(--font-main);
+      font-size: 0.92rem;
+      transition: all var(--transition);
+      outline: none;
+    }
+
+    input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+      background: var(--bg-primary);
+    }
+
+    /* Password Input Wrapper for show/hide button */
+    .password-wrap {
+      position: relative;
+    }
+
+    .password-toggle {
+      position: absolute;
+      right: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      transition: color var(--transition);
+      user-select: none;
+    }
+
+    .password-toggle:hover {
+      color: var(--accent);
+    }
+
+    .submit-btn {
+      width: 100%;
+      padding: 14px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      border-radius: var(--radius-md);
+      margin-top: 10px;
+    }
+
+    /* Link footers */
+    .auth-footer {
+      text-align: center;
+      margin-top: 24px;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      border-top: 1px solid var(--border);
+      padding-top: 20px;
+    }
+
+    .auth-link {
+      color: var(--accent-light);
+      font-weight: 600;
+      transition: color var(--transition);
+    }
+
+    .auth-link:hover {
+      color: var(--accent);
+      text-decoration: underline;
+    }
+
+    @keyframes fadeSlideUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ===================== MAIN LAYOUT ===================== -->
+  <main class="auth-wrapper">
+    <div class="auth-card">
+      
+      <!-- Card Header -->
+      <header class="auth-header">
+        <span class="logo-icon" aria-hidden="true">🐾</span>
+        <h1 class="auth-title">Chào mừng trở lại</h1>
+        <p class="auth-subtitle">Đăng nhập tài khoản PawStay của bạn để tiếp tục</p>
+      </header>
+
+      <!-- Form login -->
+      <form id="login-form" novalidate>
+        
+        <!-- Email -->
+        <div class="form-group">
+          <label for="login-email">Địa chỉ Email</label>
+          <input type="email" id="login-email" placeholder="example@gmail.com" required />
+        </div>
+
+        <!-- Mật khẩu -->
+        <div class="form-group">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
+            <label for="login-password" style="margin-bottom:0;">Mật khẩu</label>
+            <a href="forgot-password.html" style="font-size:0.75rem; color:var(--text-muted); hover:color:var(--accent);">Quên mật khẩu?</a>
+          </div>
+          <div class="password-wrap">
+            <input type="password" id="login-password" placeholder="Nhập mật khẩu..." required />
+            <button type="button" class="password-toggle" id="btn-toggle-pwd" aria-label="Hiện mật khẩu">
+              👁️
+            </button>
+          </div>
+        </div>
+
+        <!-- Submit -->
+        <button type="submit" class="btn btn-primary submit-btn">
+          Đăng nhập
+        </button>
+
+      </form>
+
+      <!-- Footer navigation -->
+      <footer class="auth-footer">
+        Bạn chưa có tài khoản? 
+        <a href="signup.html" class="auth-link">Đăng ký ngay</a>
+      </footer>
+
+    </div>
+  </main>
+
+  <!-- ===================== JAVASCRIPT ===================== -->
+  <script src="assets/api.js"></script>
+  <script src="assets/data.js"></script>
+  <script src="assets/components.js"></script>
+  
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const pwdInput = document.getElementById('login-password');
+      const toggleBtn = document.getElementById('btn-toggle-pwd');
+      const form = document.getElementById('login-form');
+
+      // Toggle ẩn/hiện mật khẩu
+      toggleBtn.addEventListener('click', function() {
+        const isPwd = pwdInput.type === 'password';
+        pwdInput.type = isPwd ? 'text' : 'password';
+        this.textContent = isPwd ? '🙈' : '👁️';
+        this.setAttribute('aria-label', isPwd ? 'Ẩn mật khẩu' : 'Hiện mật khẩu');
+      });
+
+      // Submit đăng nhập
+      form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const email = document.getElementById('login-email').value.trim();
+        const matKhau = pwdInput.value;
+
+        if (!email || !matKhau) {
+          showToast('Vui lòng nhập đầy đủ email và mật khẩu! ⚠️', 2500, '❌');
+          return;
+        }
+
+        try {
+                    const data = await apiFetch('/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({ email: email, password: matKhau })
+          });
+
+          localStorage.setItem('pawstay_token', data.token);
+
+          // Get user info
+          const me = await apiFetch('/auth/me');
+          const realUser = {
+            userId: me.userId,
+            fullName: me.fullName,
+            email: me.email,
+            role: me.role,
+            phone: me.phone,
+            avatarUrl: me.avatarUrl || (typeof getInitials === 'function' ? getInitials(me.fullName || 'US') : 'US'),
+            id: me.userId,
+            ten: me.fullName
+          };
+          localStorage.setItem('pawstay_user', JSON.stringify(realUser));
+
+          localStorage.setItem('pawstay_toast_on_load', JSON.stringify({
+            message: "Chào mừng " + realUser.fullName + " quay trở lại! 🐾",
+            type: 'success',
+            icon: '👋'
+          }));
+
+          const urlParams = new URLSearchParams(window.location.search);
+          let returnUrl = urlParams.get('returnUrl');
+          if (returnUrl) {
+            returnUrl = decodeURIComponent(returnUrl);
+            if (returnUrl.startsWith('//') || returnUrl.includes('://') || (!returnUrl.startsWith('/') && !returnUrl.endsWith('.html'))) {
+              returnUrl = 'index.html';
+            }
+            window.location.href = returnUrl;
+          } else {
+            window.location.href = realUser.role === 'SITTER' ? 'sitter-dashboard.html' : 'index.html';
+          }
+        } catch (error) {
+          showToast(error.message, 2500, 'âŒ');
+        }
+      });
+    });
+  </script>
+</body>
+</html>

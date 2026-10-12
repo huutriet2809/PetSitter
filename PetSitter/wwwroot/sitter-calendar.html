@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lịch rảnh Sitter | PawStay</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>">
+  <link rel="stylesheet" href="assets/style.css">
+  <style>
+    .container { max-width: 800px; margin: 100px auto; padding: 24px; }
+    .card { background: var(--bg-card); padding: 32px; border-radius: var(--radius-lg); border: 1px solid var(--border); }
+    .calendar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+    .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
+    .day-name { text-align: center; font-weight: 600; font-size: 0.85rem; color: var(--text-secondary); padding-bottom: 8px; }
+    .cal-day {
+      aspect-ratio: 1; border-radius: var(--radius); border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; font-size: 0.95rem; font-weight: 500; transition: all 0.2s;
+    }
+    .cal-day:hover { border-color: var(--accent); }
+    .cal-day.disabled { opacity: 0.3; cursor: not-allowed; background: var(--bg-secondary); }
+    .cal-day.available { background: rgba(46, 204, 113, 0.1); color: #2ecc71; border-color: #2ecc71; }
+    .cal-day.booked { background: rgba(231, 76, 60, 0.1); color: #e74c3c; border-color: #e74c3c; cursor: not-allowed; }
+    .cal-day.selected { box-shadow: 0 0 0 2px var(--accent); border-color: var(--accent); }
+    
+    .actions { display: flex; gap: 12px; margin-top: 24px; }
+    .btn-block { flex: 1; }
+    .legend { display: flex; gap: 16px; margin-top: 24px; font-size: 0.85rem; color: var(--text-secondary); justify-content: center; }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .dot { width: 12px; height: 12px; border-radius: 50%; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 style="margin-bottom: 24px;">Lịch rảnh của tôi</h1>
+
+    <div class="card">
+      <div class="calendar-header">
+        <button class="btn btn-outline btn-sm" onclick="changeMonth(-1)">Tháng trước</button>
+        <h3 id="current-month">Tháng --, ----</h3>
+        <button class="btn btn-outline btn-sm" onclick="changeMonth(1)">Tháng sau</button>
+      </div>
+
+      <div class="calendar-grid">
+        <div class="day-name">CN</div><div class="day-name">T2</div><div class="day-name">T3</div>
+        <div class="day-name">T4</div><div class="day-name">T5</div><div class="day-name">T6</div><div class="day-name">T7</div>
+      </div>
+      <div class="calendar-grid" id="calendar-days">
+        <!-- Rendered via JS -->
+      </div>
+
+      <div class="legend">
+        <div class="legend-item"><div class="dot" style="background:#2ecc71"></div> Rảnh</div>
+        <div class="legend-item"><div class="dot" style="background:var(--border)"></div> Bận (Chưa đánh dấu)</div>
+        <div class="legend-item"><div class="dot" style="background:#e74c3c"></div> Đã được đặt (Booked)</div>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-primary btn-block" onclick="saveAvailability(true)">Đánh dấu Rảnh</button>
+        <button class="btn btn-outline btn-block" onclick="saveAvailability(false)">Đánh dấu Bận</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/api.js"></script>
+  <script src="assets/data.js"></script>
+  <script src="assets/components.js"></script>
+  <script>
+    const user = getCurrentUser();
+    if (!user || user.role !== 'SITTER') {
+      document.body.innerHTML = '<div style="text-align:center; padding:100px;"><h2>Bạn không có quyền truy cập</h2><br><a href="index.html" class="btn btn-primary">Về trang chủ</a></div>';
+    }
+
+    let currentDate = new Date();
+    let selectedDates = new Set();
+    let availabilityData = [];
+
+    document.addEventListener('DOMContentLoaded', () => {
+      if (user && user.role === 'SITTER') {
+        renderCalendar();
+      }
+    });
+
+    async function loadAvailability(year, month) {
+      const mStr = year + '-' + String(month).padStart(2, '0');
+      try {
+        availabilityData = await apiFetch(`/sitter/availability?month=${mStr}`);
+      } catch (err) {
+        showToast("Lỗi tải lịch", 3000, "❌");
+        availabilityData = [];
+      }
+    }
+
+    async function renderCalendar() {
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth() + 1;
+      document.getElementById('current-month').textContent = `Tháng ${month}, ${year}`;
+
+      await loadAvailability(year, month);
+      selectedDates.clear();
+
+      const daysContainer = document.getElementById('calendar-days');
+      daysContainer.innerHTML = '';
+
+      const firstDay = new Date(year, month - 1, 1).getDay();
+      const daysInMonth = new Date(year, month, 0).getDate();
+      const today = new Date();
+      today.setHours(0,0,0,0);
+
+      // Empty slots before first day
+      for (let i = 0; i < firstDay; i++) {
+        const emptyDiv = document.createElement('div');
+        daysContainer.appendChild(emptyDiv);
+      }
+
+      for (let i = 1; i <= daysInMonth; i++) {
+        const dateStr = year + '-' + String(month).padStart(2, '0') + '-' + String(i).padStart(2, '0');
+        const dayCell = document.createElement('div');
+        dayCell.className = 'cal-day';
+        dayCell.textContent = i;
+        
+        const currentIterDate = new Date(year, month - 1, i);
+        
+        if (currentIterDate < today) {
+          dayCell.classList.add('disabled');
+        } else {
+          const avail = availabilityData.find(a => a.date === dateStr);
+          if (avail) {
+            if (avail.status === 'Available') dayCell.classList.add('available');
+            if (avail.status === 'Booked') {
+              dayCell.classList.add('booked');
+              dayCell.title = "Đã có người đặt lịch";
+            }
+          }
+
+          if (!dayCell.classList.contains('booked')) {
+            dayCell.onclick = () => {
+              if (selectedDates.has(dateStr)) {
+                selectedDates.delete(dateStr);
+                dayCell.classList.remove('selected');
+              } else {
+                selectedDates.add(dateStr);
+                dayCell.classList.add('selected');
+              }
+            };
+          }
+        }
+        daysContainer.appendChild(dayCell);
+      }
+    }
+
+    function changeMonth(delta) {
+      currentDate.setMonth(currentDate.getMonth() + delta);
+      renderCalendar();
+    }
+
+    async function saveAvailability(isAvailable) {
+      if (selectedDates.size === 0) {
+        showToast("Vui lòng chọn ngày", 3000, "⚠️");
+        return;
+      }
+
+      if (selectedDates.size > 62) {
+        showToast("Chỉ cập nhật tối đa 62 ngày/lần", 3000, "⚠️");
+        return;
+      }
+
+      const payload = {
+        dates: Array.from(selectedDates),
+        isAvailable: isAvailable
+      };
+
+      try {
+        await apiFetch('/sitter/availability', { method: 'PUT', body: JSON.stringify(payload) });
+        showToast("Cập nhật lịch thành công!", 3000, "✅");
+        renderCalendar();
+      } catch (err) {
+        showToast(err.message, 3000, "❌");
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Đăng ký làm Sitter - PawStay</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>">
+  <link rel="stylesheet" href="assets/style.css" />
+  <style>
+    .form-card { max-width: 600px; margin: 40px auto; padding: 30px; background: var(--bg-card); border-radius: var(--radius-xl); border: 1px solid var(--border); }
+    .form-group { margin-bottom: 20px; }
+    label { display: block; margin-bottom: 8px; font-weight: 600; color: var(--text-secondary); }
+    input[type="text"], input[type="number"], textarea { width: 100%; padding: 12px; border-radius: var(--radius-md); border: 1.5px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); }
+    .status-box { padding: 20px; border-radius: var(--radius-md); margin-bottom: 20px; text-align: center; }
+    .status-pending { background: rgba(234, 179, 8, 0.1); border: 1px solid #eab308; color: #eab308; }
+    .status-approved { background: rgba(34, 197, 94, 0.1); border: 1px solid #22c55e; color: #22c55e; }
+    .status-rejected { background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; color: #ef4444; }
+  </style>
+</head>
+<body>
+  <div class="form-card" id="app-container">
+    <h2 style="text-align: center; margin-bottom: 24px;">Trở thành Pet-sitter</h2>
+    <div id="content">Đang tải...</div>
+  </div>
+
+  <script src="assets/data.js"></script>
+  <script src="assets/api.js"></script>
+  <script src="assets/components.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', async () => {
+      if (!localStorage.getItem('pawstay_token')) {
+        window.location.href = 'login.html';
+        return;
+      }
+      
+      const content = document.getElementById('content');
+      
+      try {
+        const profile = await apiFetch('/sitter-applications/me');
+        if (profile.status === 'Pending') {
+          content.innerHTML = `<div class="status-box status-pending"><h3>Hồ sơ đang chờ duyệt</h3><p>Vui lòng kiên nhẫn, quản trị viên đang xem xét hồ sơ của bạn.</p></div>`;
+        } else if (profile.status === 'Approved') {
+          content.innerHTML = `<div class="status-box status-approved"><h3>Hồ sơ đã được duyệt! 🎉</h3><p>Bạn đã là một Pet-sitter của PawStay. Vui lòng đăng nhập lại để cập nhật quyền hạn.</p></div>`;
+        } else if (profile.status === 'Rejected') {
+          content.innerHTML = `
+            <div class="status-box status-rejected">
+              <h3>Hồ sơ bị từ chối</h3>
+              <p>Lý do: <strong>${escapeHtml(profile.lyDoTuChoi || 'Không có')}</strong></p>
+            </div>
+            <hr style="margin: 20px 0; border: 0; border-top: 1px solid var(--border);"/>
+            <h3>Nộp lại hồ sơ</h3>
+            ${/* safe */ renderForm()}
+          `;
+          setupForm();
+        }
+      } catch (e) {
+        // Not applied yet
+        content.innerHTML = renderForm();
+        setupForm();
+      }
+    });
+
+    function renderForm() {
+      return `
+        <form id="apply-form">
+          <div class="form-group">
+            <label>Giới thiệu bản thân</label>
+            <textarea id="bio" rows="4" required></textarea>
+          </div>
+          <div class="form-group">
+            <label>Khu vực (Quận/Huyện)</label>
+            <input type="text" id="khuVuc" required />
+          </div>
+          <div class="form-group">
+            <label>Giá trông giữ cơ bản (VNĐ/ngày)</label>
+            <input type="number" id="giaMoiNgay" required min="10000" />
+          </div>
+          <div class="form-group">
+            <label>Năm kinh nghiệm</label>
+            <input type="number" id="kinhNghiem" required min="0" />
+          </div>
+          <div class="form-group">
+            <label>Loại thú cưng nhận trông</label>
+            <input type="text" id="loaiPetNhan" placeholder="Ví dụ: Chó, Mèo" required />
+          </div>
+          <div class="form-group">
+            <label>Các dịch vụ cung cấp (Tags)</label>
+            <input type="text" id="tags" placeholder="Ví dụ: Tắm rửa, Trông đêm, Đi dạo" required />
+          </div>
+          <div id="error-msg" style="color: #ef4444; margin-bottom: 12px; display: none;"></div>
+          <button type="submit" class="btn btn-primary" style="width: 100%;">Nộp hồ sơ đăng ký</button>
+        </form>
+      `;
+    }
+
+    function setupForm() {
+      document.getElementById('apply-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const payload = {
+          bio: document.getElementById('bio').value,
+          khuVuc: document.getElementById('khuVuc').value,
+          giaMoiNgay: parseFloat(document.getElementById('giaMoiNgay').value),
+          kinhNghiem: parseInt(document.getElementById('kinhNghiem').value),
+          loaiPetNhan: document.getElementById('loaiPetNhan').value.split(',').map(s => s.trim()),
+          tags: document.getElementById('tags').value.split(',').map(s => s.trim())
+        };
+
+        try {
+          await apiFetch('/sitter-applications', { method: 'POST', body: JSON.stringify(payload) });
+          window.location.reload();
+        } catch (err) {
+          const errEl = document.getElementById('error-msg');
+          errEl.textContent = err.message || 'Có lỗi xảy ra.';
+          errEl.style.display = 'block';
+        }
+      });
+    }
+  </script>
+</body>
+</html>

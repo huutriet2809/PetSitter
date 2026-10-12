@@ -1,3 +1,5 @@
+﻿using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -5,9 +7,9 @@ namespace PetSitter.Models
 {
     public class User
     {
-        [Key]
-        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-        public int UserId { get; set; }
+        [BsonId]
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string UserId { get; set; }
 
         [Required]
         [MaxLength(100)]
@@ -26,7 +28,9 @@ namespace PetSitter.Models
 
         [Required]
         [MaxLength(20)]
-        public string Role { get; set; } = "USER"; // USER, SITTER, ADMIN
+        public string Role { get; set; } = "USER";
+        public string? AvatarUrl { get; set; }
+        // USER, SITTER, ADMIN
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
@@ -36,3 +40,4 @@ namespace PetSitter.Models
         public ICollection<Booking> Bookings { get; set; } = new List<Booking>();
     }
 }
+

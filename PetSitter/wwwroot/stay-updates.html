@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nhật ký chăm thú | PawStay</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="assets/style.css">
+    <style>
+        .updates-container { max-width: 800px; margin: 40px auto; padding: 20px; }
+        .post-form { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 30px; }
+        .form-textarea { width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 12px; resize: vertical; margin-bottom: 15px; font-family: inherit; }
+        .upload-area { display: flex; gap: 15px; align-items: center; margin-bottom: 15px; }
+        .preview-grid { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
+        .preview-item { width: 80px; height: 80px; object-fit: cover; border-radius: 8px; border: 1px solid #ddd; }
+        .timeline { position: relative; padding-left: 20px; border-left: 2px solid var(--border); }
+        .timeline-item { position: relative; margin-bottom: 30px; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .timeline-item::before { content: ''; position: absolute; left: -27px; top: 20px; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); border: 3px solid white; box-shadow: 0 0 0 1px var(--border); }
+        .update-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .update-time { font-size: 0.85rem; color: var(--text-secondary); }
+        .update-note { margin-bottom: 15px; line-height: 1.5; white-space: pre-wrap; }
+        .photo-grid { display: flex; gap: 10px; flex-wrap: wrap; }
+        .photo-grid img { width: calc(33.333% - 7px); max-width: 200px; aspect-ratio: 1; object-fit: cover; border-radius: 8px; cursor: pointer; transition: transform 0.2s; }
+        .photo-grid img:hover { transform: scale(1.02); }
+        .btn-delete { color: #f5222d; background: none; border: none; font-size: 0.85rem; cursor: pointer; padding: 4px 8px; border-radius: 4px; }
+        .btn-delete:hover { background: #fff1f0; }
+
+        /* Fullscreen viewer */
+        .viewer { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 1000; align-items: center; justify-content: center; }
+        .viewer.active { display: flex; }
+        .viewer img { max-width: 90%; max-height: 90vh; object-fit: contain; }
+        .viewer-close { position: absolute; top: 20px; right: 20px; color: white; font-size: 30px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="updates-container">
+        <h1 style="margin-bottom: 24px;">Nhật ký chăm sóc</h1>
+        
+        <div id="alert-message"></div>
+
+        <div id="post-form-container" style="display:none;">
+            <div class="post-form">
+                <h3>Đăng cập nhật mới</h3>
+                <textarea id="note-input" class="form-textarea" rows="3" placeholder="Thú cưng đang làm gì thế?..." maxlength="500"></textarea>
+                
+                <div class="upload-area">
+                    <input type="file" id="photo-input" multiple accept=".jpg,.jpeg,.png,.webp" style="display:none;" onchange="handleFileSelect(event)">
+                    <button class="btn btn-outline" onclick="document.getElementById('photo-input').click()">📸 Thêm ảnh</button>
+                    <span style="font-size:0.85rem; color:var(--text-secondary);">Tối đa 3 ảnh (≤ 2MB/ảnh)</span>
+                </div>
+                
+                <div class="preview-grid" id="preview-container"></div>
+                
+                <button class="btn btn-primary" id="btn-submit" onclick="submitUpdate()">Đăng tải</button>
+            </div>
+        </div>
+
+        <div class="timeline" id="timeline-container">
+            <div style="text-align:center; padding:40px;">Đang tải nhật ký...</div>
+        </div>
+    </div>
+
+    <div class="viewer" id="photo-viewer">
+        <span class="viewer-close" onclick="closeViewer()">×</span>
+        <img id="viewer-img" src="" alt="View">
+    </div>
+
+    <script src="assets/data.js"></script>
+    <script src="assets/api.js"></script>
+    <script src="assets/components.js"></script>
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const bookingId = urlParams.get('bookingId');
+        let selectedFiles = [];
+        let me = null;
+
+        async function init() {
+            if (!bookingId) {
+                document.getElementById('timeline-container').innerHTML = '<div style="color:red; text-align:center;">Không tìm thấy mã đặt lịch.</div>';
+                return;
+            }
+
+            me = await getMe();
+            if (!me) return;
+
+            loadUpdates();
+            checkRole();
+        }
+
+        async function checkRole() {
+            // Hiển thị form nếu là SITTER của booking này
+            // Phải fetch thông tin booking để kiểm tra SitterId, nhưng để nhanh có thể dựa vào role.
+            // Nếu gửi post lỗi 403/404 sẽ báo sau. 
+            // Tốt nhất là hiện form luôn nếu role SITTER, server chặn nếu không đúng booking.
+            if (me.role === 'SITTER') {
+                document.getElementById('post-form-container').style.display = 'block';
+            }
+        }
+
+        function handleFileSelect(event) {
+            const files = Array.from(event.target.files);
+            if (selectedFiles.length + files.length > 3) {
+                alert("Bạn chỉ được chọn tối đa 3 ảnh.");
+                return;
+            }
+
+            for (let f of files) {
+                if (f.size > 2097152) {
+                    alert("Ảnh " + f.name + " vượt quá 2MB.");
+                    continue;
+                }
+                const ext = f.name.split('.').pop().toLowerCase();
+                if (!['jpg','jpeg','png','webp'].includes(ext)) {
+                    alert("Chỉ chấp nhận ảnh jpg, png, webp.");
+                    continue;
+                }
+                selectedFiles.push(f);
+            }
+            
+            renderPreviews();
+            event.target.value = ''; // reset
+        }
+
+        function renderPreviews() {
+            const container = document.getElementById('preview-container');
+            container.innerHTML = '';
+            selectedFiles.forEach((f, index) => {
+                const url = URL.createObjectURL(f);
+                const wrap = document.createElement('div');
+                wrap.style.position = 'relative';
+
+                const img = document.createElement('img');
+                img.src = url;
+                img.className = 'preview-item';
+                
+                const del = document.createElement('span');
+                del.textContent = '×';
+                del.style = 'position:absolute; top:-5px; right:-5px; background:red; color:white; border-radius:50%; width:20px; height:20px; display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:12px;';
+                del.onclick = () => {
+                    selectedFiles.splice(index, 1);
+                    renderPreviews();
+                };
+
+                wrap.appendChild(img);
+                wrap.appendChild(del);
+                container.appendChild(wrap);
+            });
+        }
+
+        async function submitUpdate() {
+            const note = document.getElementById('note-input').value.trim();
+            if (!note && selectedFiles.length === 0) {
+                alert("Cần có ghi chú hoặc ảnh.");
+                return;
+            }
+
+            const btn = document.getElementById('btn-submit');
+            btn.disabled = true;
+            btn.textContent = 'Đang tải lên...';
+
+            const formData = new FormData();
+            if (note) formData.append('note', note);
+            selectedFiles.forEach(f => formData.append('photos', f));
+
+            try {
+                // apiFetch hỗ trợ FormData tự nhiên
+                await apiFetch('/sitter/bookings/' + bookingId + '/updates', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                document.getElementById('note-input').value = '';
+                selectedFiles = [];
+                renderPreviews();
+                loadUpdates();
+            } catch (err) {
+                alert(err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Đăng tải';
+            }
+        }
+
+        async function loadUpdates() {
+            const container = document.getElementById('timeline-container');
+            container.innerHTML = '<div style="text-align:center;">Đang tải...</div>';
+            
+            try {
+                const data = await apiFetch('/bookings/' + bookingId + '/updates');
+                if (data.length === 0) {
+                    container.innerHTML = '<div style="text-align:center; padding:20px; color:#888;">Chưa có cập nhật nào.</div>';
+                    return;
+                }
+
+                container.innerHTML = '';
+                data.forEach(item => {
+                    const el = document.createElement('div');
+                    el.className = 'timeline-item';
+                    
+                    const header = document.createElement('div');
+                    header.className = 'update-header';
+                    
+                    // Format giờ Việt Nam UTC+7
+                    const createdDate = new Date(item.createdAt);
+                    const timeStr = createdDate.toLocaleString('vi-VN');
+
+                    header.innerHTML = '<span class="update-time">' + timeStr + '</span>';
+                    
+                    // Hiển thị nút xóa nếu server cho phép
+                    if (item.canDelete) {
+                        const delBtn = document.createElement('button');
+                        delBtn.className = 'btn-delete';
+                        delBtn.textContent = 'Xóa';
+                        delBtn.onclick = () => deleteUpdate(item.id);
+                        header.appendChild(delBtn);
+                    }
+                    el.appendChild(header);
+
+                    if (item.note) {
+                        const noteDiv = document.createElement('div');
+                        noteDiv.className = 'update-note';
+                        noteDiv.textContent = item.note;
+                        el.appendChild(noteDiv);
+                    }
+
+                    if (item.photoPaths && item.photoPaths.length > 0) {
+                        const photoGrid = document.createElement('div');
+                        photoGrid.className = 'photo-grid';
+                        item.photoPaths.forEach(path => {
+                            if (path.startsWith('/uploads/')) {
+                                const img = document.createElement('img');
+                                img.src = path;
+                                img.onclick = () => viewPhoto(path);
+                                photoGrid.appendChild(img);
+                            }
+                        });
+                        el.appendChild(photoGrid);
+                    }
+
+                    container.appendChild(el);
+                });
+            } catch (err) {
+                if (err.message.includes('404')) {
+                    document.getElementById('alert-message').innerHTML = '<div style="background:#fffbe6; padding:15px; border-radius:8px; color:#faad14; margin-bottom:20px;">Booking không tồn tại hoặc bạn không có quyền xem.</div>';
+                    container.innerHTML = '';
+                } else {
+                    container.innerHTML = '<div style="color:red; text-align:center;">Lỗi: ' + err.message + '</div>';
+                }
+            }
+        }
+
+        async function deleteUpdate(updateId) {
+            if (!confirm('Bạn có chắc chắn muốn xóa bài đăng này?')) return;
+            try {
+                await apiFetch('/sitter/bookings/' + bookingId + '/updates/' + updateId, { method: 'DELETE' });
+                loadUpdates();
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        function viewPhoto(src) {
+            document.getElementById('viewer-img').src = src;
+            document.getElementById('photo-viewer').classList.add('active');
+        }
+
+        function closeViewer() {
+            document.getElementById('photo-viewer').classList.remove('active');
+        }
+
+        init();
+    </script>
+</body>
+</html>

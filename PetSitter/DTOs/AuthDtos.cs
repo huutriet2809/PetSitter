@@ -1,26 +1,70 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace PetSitter.DTOs
 {
     public class LoginDto
     {
+        [Required]
+        [EmailAddress]
         public string Email { get; set; } = string.Empty;
+
+        [Required]
         public string Password { get; set; } = string.Empty;
     }
 
     public class RegisterDto
     {
-        public string FullName { get; set; } = string.Empty;
+        [Required]
+        [EmailAddress]
         public string Email { get; set; } = string.Empty;
+
+        [Required]
+        [MinLength(8)]
         public string Password { get; set; } = string.Empty;
+
+        [Required]
+        public string FullName { get; set; } = string.Empty;
+
         public string? Phone { get; set; }
-        public string Role { get; set; } = "USER";
     }
 
     public class UserDto
     {
-        public int UserId { get; set; }
+        public string UserId { get; set; } = string.Empty;
         public string FullName { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
         public string Role { get; set; } = string.Empty;
         public string Token { get; set; } = string.Empty;
+        public string? Phone { get; set; }
+        public string? AvatarUrl { get; set; }
+    }
+
+    public class UpdateProfileDto
+    {
+        public string? Name { get; set; }
+        public string? Phone { get; set; }
+        public string? AvatarUrl { get; set; }
+    }
+
+    public class ChangePasswordDto
+    {
+        public string CurrentPassword { get; set; } = string.Empty;
+        public string NewPassword { get; set; } = string.Empty;
+    }
+
+    public class ForgotPasswordDto
+    {
+        [Required]
+        [EmailAddress]
+        public string Email { get; set; } = string.Empty;
+    }
+    
+    public class ResetPasswordDto
+    {
+        [Required]
+        public string Token { get; set; } = string.Empty;
+        [Required]
+        [MinLength(8, ErrorMessage = "Mật khẩu mới tối thiểu 8 ký tự")]
+        public string NewPassword { get; set; } = string.Empty;
     }
 }
