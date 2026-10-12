@@ -73,14 +73,14 @@ namespace PetSitter.Controllers
         }
 
         [HttpPost("{id}/cancel")]
-        public async Task<IActionResult> CancelBooking(string id)
+        public async Task<IActionResult> CancelBooking(string id, [FromBody] CancelBookingRequestDto? dto)
         {
             try
             {
                 var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
                 if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
-                await _bookingService.CancelBookingAsync(userId, id);
+                await _bookingService.CancelBookingAsync(userId, id, dto?.LyDo, dto?.ExpectedStatus);
                 return Ok(new { message = "Đã hủy booking thành công" });
             }
             catch (AppException ex)

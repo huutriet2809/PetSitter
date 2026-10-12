@@ -10,10 +10,10 @@ namespace PetSitter.DTOs
         public string SitterId { get; set; } = string.Empty;
 
         [Required]
-        public DateTime NgayBatDau { get; set; }
+        public string NgayBatDau { get; set; } = string.Empty;
         
         [Required]
-        public DateTime NgayKetThuc { get; set; }
+        public string NgayKetThuc { get; set; } = string.Empty;
 
         [Required]
         public string TenPet { get; set; } = string.Empty;
@@ -28,6 +28,16 @@ namespace PetSitter.DTOs
         public string? GhiChu { get; set; }
 
         public List<string> Addons { get; set; } = new List<string>();
+    }
+
+    public class InquiryHistoryDto
+    {
+        public string HanhDong { get; set; } = string.Empty;
+        public string? FromStatus { get; set; }
+        public string NguoiThucHien { get; set; } = string.Empty;
+        public string? ActorUserId { get; set; }
+        public string? LyDo { get; set; }
+        public DateTime ThoiGian { get; set; }
     }
 
     public class BookingDetailDto
@@ -45,17 +55,29 @@ namespace PetSitter.DTOs
         public decimal TongAddons { get; set; }
         public decimal TongTien { get; set; } // Chi phí ước tính
         public string TrangThai { get; set; } = string.Empty;
+        public bool IsActive { get; set; }
+        public DateTime? ExpiresAt { get; set; }
         public string? LyDoTuChoi { get; set; }
         public bool HasReview { get; set; } = false;
         public string? GhiChu { get; set; }
+        public string? Warning { get; set; }
         
         public PetSitter.Models.BookingPet Pet { get; set; } = new();
         public List<PetSitter.Models.BookingAddon> Addons { get; set; } = new();
+        public List<InquiryHistoryDto> History { get; set; } = new();
     }
 
     public class RejectBookingDto
     {
-        [Required]
+        [Required(AllowEmptyStrings = false, ErrorMessage = "Lý do từ chối là bắt buộc.")]
+        [StringLength(500, ErrorMessage = "Lý do tối đa 500 ký tự.")]
         public string LyDo { get; set; } = string.Empty;
+    }
+
+    public class CancelBookingRequestDto
+    {
+        [StringLength(500, ErrorMessage = "Lý do tối đa 500 ký tự.")]
+        public string? LyDo { get; set; }
+        public string? ExpectedStatus { get; set; }
     }
 }

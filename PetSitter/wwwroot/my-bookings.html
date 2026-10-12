@@ -12,9 +12,10 @@
     .booking-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 15px; }
     .status-badge { padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; }
     .status-pending { background: rgba(234, 179, 8, 0.1); color: #eab308; }
-    .status-confirmed { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+    .status-accepted { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
     .status-completed { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
     .status-cancelled, .status-rejected { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+    .status-expired { background: rgba(107, 114, 128, 0.1); color: #6b7280; }
     #error-msg { background: rgba(239, 68, 68, 0.1); color: #ef4444; padding: 10px; border-radius: 4px; display: none; margin-bottom: 20px; }
   </style>
 </head>
@@ -75,6 +76,7 @@
     }
 
     const formatNgayDep = (str) => {
+      if (!str) return '';
       const d = new Date(str);
       return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
     };
@@ -90,12 +92,13 @@
 
         container.innerHTML = bookings.map(b => {
           let statusClass = 'status-pending';
-          if (b.trangThai === 'CONFIRMED') statusClass = 'status-confirmed';
+          if (b.trangThai === 'ACCEPTED') statusClass = 'status-accepted';
           if (b.trangThai === 'COMPLETED') statusClass = 'status-completed';
           if (b.trangThai === 'CANCELLED' || b.trangThai === 'REJECTED') statusClass = 'status-rejected';
+          if (b.trangThai === 'EXPIRED') statusClass = 'status-expired';
 
           let cancelBtn = '';
-          if (b.trangThai === 'PENDING' || (b.trangThai === 'CONFIRMED' && new Date(b.ngayBatDau).getTime() > Date.now())) {
+          if (b.trangThai === 'PENDING' || (b.trangThai === 'ACCEPTED' && new Date(b.ngayBatDau).getTime() > Date.now())) {
             cancelBtn = `<button class="btn btn-outline btn-sm" onclick="cancelBooking('${/* safe */ b.bookingId}')">Hủy chuyến</button>`;
           }
 
@@ -122,10 +125,11 @@
                 <div>
                   <p><strong>Ngày:</strong> ${formatNgayDep(b.ngayBatDau)} - ${formatNgayDep(b.ngayKetThuc)}</p>
                   <p><strong>Thú cưng:</strong> ${escapeHtml(b.pet?.tenPet || '')}</p>
+                  ${/* safe */ (b.trangThai === 'PENDING' && b.expiresAt) ? `<p style="font-size:0.85rem; color:#eab308;"><strong>Hạn phản hồi:</strong> ${formatNgayDep(b.expiresAt)}</p>` : ''}
                 </div>
                 <div>
                   <p><strong>Chi phí ước tính:</strong> ${formatTien(b.tongTien)}</p>
-                  ${/* safe */ b.lyDoTuChoi ? `<p style="color: #ef4444; margin-top: 5px;"><strong>Lý do từ chối:</strong> ${escapeHtml(b.lyDoTuChoi)}</p>` : ''}
+                  ${/* safe */ b.lyDoTuChoi ? `<p style="color: #ef4444; margin-top: 5px;"><strong>Lý do:</strong> ${escapeHtml(b.lyDoTuChoi)}</p>` : ''}
                 </div>
               </div>
               ${/* safe */ actionBtns}

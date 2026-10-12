@@ -29,22 +29,49 @@ namespace PetSitter.Data
                 Console.WriteLine("Could not create User.Email index: " + ex.Message);
             }
 
-            // Create Unique Index for BookedDates (SitterId, Date)
-            var bookedDatesCollection = context.BookedDates;
+            // --- IDEMPOTENT MIGRATION CHO BOOKINGS (BƯỚC 1B) ---
+            var bookingsCollection = context.Bookings;
             try
             {
-                var bdIndexKeys = Builders<BookedDate>.IndexKeys.Ascending(b => b.SitterId).Ascending(b => b.Date);
-                var bdIndexOptions = new CreateIndexOptions { Unique = true };
-                var bdIndexModel = new CreateIndexModel<BookedDate>(bdIndexKeys, bdIndexOptions);
-                await bookedDatesCollection.Indexes.CreateOneAsync(bdIndexModel);
+                // 1. CONFIRMED -> ACCEPTED
+                var confirmedFilter = Builders<Booking>.Filter.Eq("TrangThai", "CONFIRMED");
+                var confirmedUpdate = Builders<Booking>.Update.Set(b => b.TrangThai, BookingStatus.ACCEPTED);
+                var migratedConfirmed = await bookingsCollection.UpdateManyAsync(confirmedFilter, confirmedUpdate);
+                if (migratedConfirmed.ModifiedCount > 0)
+                {
+                    Console.WriteLine($"[Seeder Migration] Đã chuyển {migratedConfirmed.ModifiedCount} đơn CONFIRMED sang ACCEPTED.");
+                }
+
+                // 2. Gán ExpiresAt cho PENDING cũ nếu chưa có
+                var pendingWithoutExpires = Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.PENDING)
+                                          & Builders<Booking>.Filter.Eq(b => b.ExpiresAt, null);
+                var oldPendings = await bookingsCollection.Find(pendingWithoutExpires).ToListAsync();
+                foreach (var old in oldPendings)
+                {
+                    var exp = (old.CreatedAt != default ? old.CreatedAt : DateTime.UtcNow).AddHours(48);
+                    await bookingsCollection.UpdateOneAsync(
+                        b => b.BookingId == old.BookingId,
+                        Builders<Booking>.Update.Set(b => b.ExpiresAt, exp)
+                    );
+                }
+
+                // 3. Gán History = [] nếu null
+                var missingHistory = Builders<Booking>.Filter.Eq(b => b.History, null);
+                await bookingsCollection.UpdateManyAsync(missingHistory, Builders<Booking>.Update.Set(b => b.History, new List<InquiryHistory>()));
+
+                // 4. Gán IsActive cho đơn cũ: true nếu PENDING/ACCEPTED, false nếu khác
+                var activeFilter = Builders<Booking>.Filter.In(b => b.TrangThai, new[] { BookingStatus.PENDING, BookingStatus.ACCEPTED });
+                await bookingsCollection.UpdateManyAsync(activeFilter, Builders<Booking>.Update.Set(b => b.IsActive, true));
+
+                var inactiveFilter = Builders<Booking>.Filter.Nin(b => b.TrangThai, new[] { BookingStatus.PENDING, BookingStatus.ACCEPTED });
+                await bookingsCollection.UpdateManyAsync(inactiveFilter, Builders<Booking>.Update.Set(b => b.IsActive, false));
             }
             catch (Exception ex)
             {
-                Console.WriteLine("Could not create BookedDates index: " + ex.Message);
+                Console.WriteLine("[Seeder Migration Lỗi] Không thể hoàn thành migration Bookings: " + ex.Message);
             }
 
             // Create Unique Index for Bookings (MaDatLich)
-            var bookingsCollection = context.Bookings;
             try
             {
                 var bkIndexKeys = Builders<Booking>.IndexKeys.Ascending(b => b.MaDatLich);
@@ -55,6 +82,75 @@ namespace PetSitter.Data
             catch (Exception ex)
             {
                 Console.WriteLine("Could not create Bookings.MaDatLich index: " + ex.Message);
+            }
+
+            // Create Index (OwnerId, TrangThai)
+            try
+            {
+                var ownerStatusKeys = Builders<Booking>.IndexKeys.Ascending(b => b.OwnerId).Ascending(b => b.TrangThai);
+                await bookingsCollection.Indexes.CreateOneAsync(new CreateIndexModel<Booking>(ownerStatusKeys));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Could not create Bookings (OwnerId, TrangThai) index: " + ex.Message);
+            }
+
+            // Create Index (SitterId, TrangThai)
+            try
+            {
+                var sitterStatusKeys = Builders<Booking>.IndexKeys.Ascending(b => b.SitterId).Ascending(b => b.TrangThai);
+                await bookingsCollection.Indexes.CreateOneAsync(new CreateIndexModel<Booking>(sitterStatusKeys));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Could not create Bookings (SitterId, TrangThai) index: " + ex.Message);
+            }
+
+            // Create Partial Index for ExpiresAt where TrangThai == PENDING
+            try
+            {
+                var expiresKeys = Builders<Booking>.IndexKeys.Ascending(b => b.ExpiresAt);
+                var expiresOptions = new CreateIndexOptions<Booking>
+                {
+                    PartialFilterExpression = Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.PENDING)
+                };
+                await bookingsCollection.Indexes.CreateOneAsync(new CreateIndexModel<Booking>(expiresKeys, expiresOptions));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Could not create Bookings ExpiresAt partial index: " + ex.Message);
+            }
+
+            // Create Unique Partial Index for (OwnerId, SitterId, NgayBatDau, NgayKetThuc) where IsActive == true
+            try
+            {
+                // Kiểm tra trùng lặp trước khi tạo index
+                var activeBookings = await bookingsCollection.Find(b => b.IsActive == true).ToListAsync();
+                var duplicateGroups = activeBookings.GroupBy(b => new { b.OwnerId, b.SitterId, b.NgayBatDau, b.NgayKetThuc })
+                                                   .Where(g => g.Count() > 1)
+                                                   .ToList();
+                if (duplicateGroups.Any())
+                {
+                    Console.WriteLine($"[CRITICAL] Phát hiện {duplicateGroups.Count} nhóm booking trùng lặp đang Active. Dừng tạo unique partial index, không tự xóa dữ liệu!");
+                    throw new InvalidOperationException($"Phát hiện {duplicateGroups.Count} nhóm booking trùng lặp đang Active trong CSDL. Không thể tạo Unique Index.");
+                }
+
+                var uniqueActiveKeys = Builders<Booking>.IndexKeys
+                    .Ascending(b => b.OwnerId)
+                    .Ascending(b => b.SitterId)
+                    .Ascending(b => b.NgayBatDau)
+                    .Ascending(b => b.NgayKetThuc);
+
+                var uniqueActiveOptions = new CreateIndexOptions<Booking>
+                {
+                    Unique = true,
+                    PartialFilterExpression = Builders<Booking>.Filter.Eq(b => b.IsActive, true)
+                };
+                await bookingsCollection.Indexes.CreateOneAsync(new CreateIndexModel<Booking>(uniqueActiveKeys, uniqueActiveOptions));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[Seeder Lỗi] Không thể tạo Bookings unique partial active index: " + ex.Message);
             }
 
             // Create Unique Index for Review.BookingId

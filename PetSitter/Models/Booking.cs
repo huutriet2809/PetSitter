@@ -23,6 +23,16 @@ namespace PetSitter.Models
         public decimal ThanhTien { get; set; }
     }
 
+    public class InquiryHistory
+    {
+        public string HanhDong { get; set; } = string.Empty;
+        public string? FromStatus { get; set; }
+        public string NguoiThucHien { get; set; } = string.Empty; // OWNER, SITTER, SYSTEM
+        public string? ActorUserId { get; set; }
+        public string? LyDo { get; set; }
+        public DateTime ThoiGian { get; set; } = DateTime.UtcNow;
+    }
+
     [BsonIgnoreExtraElements]
     public class Booking
     {
@@ -56,8 +66,11 @@ namespace PetSitter.Models
         [BsonRepresentation(BsonType.Decimal128)]
         public decimal TongTien { get; set; } // Chi phí ước tính
 
-        public string TrangThai { get; set; } = "PENDING";
+        public string TrangThai { get; set; } = BookingStatus.PENDING;
+        public bool IsActive { get; set; } = true;
+        public DateTime? ExpiresAt { get; set; }
         public string? LyDoTuChoi { get; set; }
+        public List<InquiryHistory> History { get; set; } = new List<InquiryHistory>();
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
 }

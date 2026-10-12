@@ -4,21 +4,21 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sitter Dashboard - PawStay</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>">
-  <link rel="stylesheet" href="assets/style.css" />
+  <link rel="stylesheet" href="assets/style.css">
   <style>
-    .dashboard-container { max-width: 1000px; margin: 40px auto; padding: 20px; }
-    .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
-    .tab { padding: 8px 16px; cursor: pointer; border-radius: 4px; font-weight: 500; }
-    .tab.active { background: var(--primary); color: white; }
+    .dashboard-container { max-width: 900px; margin: 30px auto; padding: 0 20px; }
+    .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+    .tab { padding: 10px 20px; cursor: pointer; border-bottom: 2px solid transparent; font-weight: 500; }
+    .tab.active { border-bottom-color: var(--primary); color: var(--primary); font-weight: 600; }
     
     .booking-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 20px; margin-bottom: 15px; }
     .booking-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 15px; }
     .status-badge { padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; }
     .status-pending { background: rgba(234, 179, 8, 0.1); color: #eab308; }
-    .status-confirmed { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+    .status-accepted { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
     .status-completed { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
     .status-cancelled, .status-rejected { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+    .status-expired { background: rgba(107, 114, 128, 0.1); color: #6b7280; }
 
     .action-group { margin-top: 15px; display: flex; gap: 10px; }
     .reject-wrap { margin-top: 10px; display: none; }
@@ -37,7 +37,7 @@
     </div>
     <div class="tabs">
       <div class="tab active" onclick="loadBookings('PENDING', this)">Chờ xác nhận</div>
-      <div class="tab" onclick="loadBookings('CONFIRMED', this)">Sắp tới</div>
+      <div class="tab" onclick="loadBookings('ACCEPTED', this)">Sắp tới</div>
       <div class="tab" onclick="loadBookings('COMPLETED', this)">Đã hoàn thành</div>
       <div class="tab" onclick="loadBookings('', this)">Tất cả</div>
     </div>
@@ -50,14 +50,6 @@
   <script src="assets/data.js"></script>
   <script src="assets/components.js"></script>
   <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      if (!localStorage.getItem('pawstay_token')) {
-        window.location.href = 'login.html';
-        return;
-      }
-      loadBookings('PENDING', document.querySelector('.tab.active'));
-    });
-
     function showError(msg) {
       const el = document.getElementById('error-msg');
       el.textContent = msg;
@@ -65,24 +57,37 @@
       setTimeout(() => el.style.display = 'none', 5000);
     }
 
-    const formatNgayDep = (str) => {
-      const d = new Date(str);
-      return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
-    };
+    function formatTien(amount) {
+      return (amount || 0).toLocaleString('vi-VN') + ' đ';
+    }
 
-    async function loadBookings(status, tabEl) {
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      if (tabEl) tabEl.classList.add('active');
+    function formatNgayDep(isoStr) {
+      if (!isoStr) return '';
+      const d = new Date(isoStr);
+      return d.toLocaleDateString('vi-VN');
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      renderNavbar();
+      renderFooter();
+      loadBookings('PENDING');
+    });
+
+    async function loadBookings(status, tabElement) {
+      if (tabElement) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tabElement.classList.add('active');
+      }
 
       const container = document.getElementById('booking-list');
       container.innerHTML = 'Đang tải...';
 
       try {
-        const query = status ? `?status=${status}` : '';
-        const bookings = await apiFetch(`/sitter/bookings${query}`);
+        const url = status ? `/sitter/bookings?status=${status}` : '/sitter/bookings';
+        const bookings = await apiFetch(url);
         
         if (bookings.length === 0) {
-          container.innerHTML = '<p>Không có lượt đặt lịch nào.</p>';
+          container.innerHTML = '<p>Không có yêu cầu nào.</p>';
           return;
         }
 
@@ -91,27 +96,34 @@
           if (b.trangThai === 'PENDING') {
             actionHtml = `
               <div class="action-group">
-                <button class="btn btn-primary btn-sm" onclick="acceptBooking('${/* safe */ b.bookingId}')">Nhận lịch</button>
+                <button class="btn btn-primary btn-sm" onclick="acceptBooking('${/* safe */ b.bookingId}')">Chấp nhận</button>
                 <button class="btn btn-outline btn-sm" onclick="showReject('${/* safe */ b.bookingId}')">Từ chối</button>
               </div>
               <div class="reject-wrap" id="reject-${/* safe */ b.bookingId}">
-                <input type="text" id="lydo-${/* safe */ b.bookingId}" placeholder="Nhập lý do từ chối..." />
+                <input type="text" id="lydo-${/* safe */ b.bookingId}" placeholder="Nhập lý do từ chối (tối đa 500 ký tự)..." maxlength="500" />
                 <button class="btn btn-outline btn-sm" onclick="rejectBooking('${/* safe */ b.bookingId}')">Xác nhận từ chối</button>
               </div>
             `;
-          } else if (b.trangThai === 'CONFIRMED') {
+          } else if (b.trangThai === 'ACCEPTED') {
+            const canCancel = new Date(b.ngayBatDau).getTime() > Date.now();
             actionHtml = `
-              <div class="action-group" style="display:flex; align-items:center; gap:8px;">
+              <div class="action-group" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                 <a href="stay-updates.html?bookingId=${/* safe */ b.bookingId}" class="btn btn-outline btn-sm">Nhật ký chăm sóc</a>
                 <button class="btn btn-primary btn-sm" onclick="completeBooking('${/* safe */ b.bookingId}')">Hoàn thành chuyến đi</button>
+                ${canCancel ? `<button class="btn btn-outline btn-sm" style="color:#ef4444; border-color:#ef4444;" onclick="showSitterCancel('${/* safe */ b.bookingId}')">Hủy nhận đơn</button>` : ''}
+              </div>
+              <div class="reject-wrap" id="cancel-${/* safe */ b.bookingId}">
+                <input type="text" id="cancel-reason-${/* safe */ b.bookingId}" placeholder="Nhập lý do hủy (bắt buộc, tối đa 500 ký tự)..." maxlength="500" />
+                <button class="btn btn-outline btn-sm" onclick="sitterCancelBooking('${/* safe */ b.bookingId}')">Xác nhận hủy</button>
               </div>
             `;
           }
 
           let statusClass = 'status-pending';
-          if (b.trangThai === 'CONFIRMED') statusClass = 'status-confirmed';
+          if (b.trangThai === 'ACCEPTED') statusClass = 'status-accepted';
           if (b.trangThai === 'COMPLETED') statusClass = 'status-completed';
           if (b.trangThai === 'CANCELLED' || b.trangThai === 'REJECTED') statusClass = 'status-rejected';
+          if (b.trangThai === 'EXPIRED') statusClass = 'status-expired';
 
           return `
             <div class="booking-card" id="card-${/* safe */ b.bookingId}">
@@ -126,11 +138,12 @@
                   <p><strong>Ngày:</strong> ${formatNgayDep(b.ngayBatDau)} - ${formatNgayDep(b.ngayKetThuc)} (${/* safe */ b.soNgay} ngày)</p>
                   <p><strong>Thú cưng:</strong> ${escapeHtml(b.pet?.tenPet || '')} (${escapeHtml(b.pet?.loaiPet || '')}, ${escapeHtml(b.pet?.kichCo || '')})</p>
                   ${/* safe */ b.ghiChu ? `<p><strong>Ghi chú:</strong> <em>${escapeHtml(b.ghiChu)}</em></p>` : ''}
+                  ${/* safe */ (b.trangThai === 'PENDING' && b.expiresAt) ? `<p style="font-size:0.85rem; color:#eab308;"><strong>Hạn phản hồi:</strong> ${formatNgayDep(b.expiresAt)}</p>` : ''}
                 </div>
                 <div>
                   <p><strong>Chi phí ước tính:</strong> ${formatTien(b.tongTien)}</p>
                   <p style="font-size: 0.85rem; color: var(--text-muted);">(Bao gồm ${formatTien(b.giaSitter)} phí trông + ${formatTien(b.tongAddons)} phụ phí)</p>
-                  ${/* safe */ b.lyDoTuChoi ? `<p style="color: #ef4444; margin-top: 5px;"><strong>Lý do từ chối:</strong> ${escapeHtml(b.lyDoTuChoi)}</p>` : ''}
+                  ${/* safe */ b.lyDoTuChoi ? `<p style="color: #ef4444; margin-top: 5px;"><strong>Lý do:</strong> ${escapeHtml(b.lyDoTuChoi)}</p>` : ''}
                 </div>
               </div>
               ${/* safe */ actionHtml}
@@ -147,9 +160,16 @@
       document.getElementById(`reject-${id}`).style.display = 'block';
     }
 
+    function showSitterCancel(id) {
+      document.getElementById(`cancel-${id}`).style.display = 'block';
+    }
+
     async function acceptBooking(id) {
       try {
-        await apiFetch(`/sitter/bookings/${id}/accept`, { method: 'PATCH' });
+        const res = await apiFetch(`/sitter/bookings/${id}/accept`, { method: 'PATCH' });
+        if (res && res.warning) {
+          alert(res.warning);
+        }
         loadBookings('PENDING', document.querySelector('.tab.active'));
       } catch (e) {
         showError(e.message);
@@ -158,16 +178,34 @@
 
     async function rejectBooking(id) {
       const reason = document.getElementById(`lydo-${id}`).value;
-      if (!reason) {
+      if (!reason || !reason.trim()) {
         showError('Vui lòng nhập lý do từ chối.');
         return;
       }
       try {
         await apiFetch(`/sitter/bookings/${id}/reject`, {
           method: 'PATCH',
-          body: JSON.stringify({ lyDo: reason })
+          body: JSON.stringify({ lyDo: reason.trim() })
         });
         loadBookings('PENDING', document.querySelector('.tab.active'));
+      } catch (e) {
+        showError(e.message);
+      }
+    }
+
+    async function sitterCancelBooking(id) {
+      const reasonInput = document.getElementById(`cancel-reason-${id}`);
+      const reason = reasonInput ? reasonInput.value.trim() : '';
+      if (!reason) {
+        showError('Vui lòng nhập lý do hủy đơn.');
+        return;
+      }
+      try {
+        await apiFetch(`/sitter/bookings/${id}/cancel`, {
+          method: 'PATCH',
+          body: JSON.stringify({ lyDo: reason })
+        });
+        loadBookings('ACCEPTED', document.querySelector('.tab.active'));
       } catch (e) {
         showError(e.message);
       }
@@ -176,7 +214,7 @@
     async function completeBooking(id) {
       try {
         await apiFetch(`/sitter/bookings/${id}/complete`, { method: 'PATCH' });
-        loadBookings('CONFIRMED', document.querySelector('.tab.active'));
+        loadBookings('ACCEPTED', document.querySelector('.tab.active'));
       } catch (e) {
         showError(e.message);
       }

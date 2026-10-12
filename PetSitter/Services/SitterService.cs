@@ -242,15 +242,14 @@ namespace PetSitter.Services
                 .Find(a => a.SitterId == id && a.IsAvailable && a.AvailableDate >= startDate && a.AvailableDate < endDate)
                 .ToListAsync();
 
-            var bookedDates = await _context.BookedDates
-                .Find(b => b.SitterId == id && b.Date >= startDate && b.Date < endDate)
+            var acceptedBookings = await _context.Bookings
+                .Find(b => b.SitterId == id && b.TrangThai == BookingStatus.ACCEPTED && b.NgayBatDau < endDate && b.NgayKetThuc >= startDate)
                 .ToListAsync();
-
-            var bookedDateSet = new HashSet<DateTime>(bookedDates.Select(b => b.Date));
 
             foreach (var a in availabilities)
             {
-                if (!bookedDateSet.Contains(a.AvailableDate))
+                bool isBooked = acceptedBookings.Any(b => a.AvailableDate >= b.NgayBatDau && a.AvailableDate <= b.NgayKetThuc);
+                if (!isBooked)
                 {
                     dates.Add(a.AvailableDate.ToString("yyyy-MM-dd"));
                 }
@@ -349,7 +348,7 @@ namespace PetSitter.Services
             var availDict = availabilities.ToDictionary(a => a.AvailableDate, a => a.IsAvailable);
 
             var bookings = await _context.Bookings
-                .Find(b => b.SitterId == sitter.SitterId && b.NgayBatDau < endDate && b.NgayKetThuc >= startDate && (b.TrangThai == "PENDING" || b.TrangThai == "CONFIRMED"))
+                .Find(b => b.SitterId == sitter.SitterId && b.NgayBatDau < endDate && b.NgayKetThuc >= startDate && b.TrangThai == BookingStatus.ACCEPTED)
                 .ToListAsync();
 
             for (int i = 1; i <= daysInMonth; i++)
@@ -398,40 +397,46 @@ namespace PetSitter.Services
                 var dt = new DateTime(d.Year, d.Month, d.Day, 0, 0, 0, DateTimeKind.Utc);
                 if (dt < currentVnTime) continue; // Skip past dates
 
-                var isBooked = await _context.BookedDates.Find(b => b.SitterId == sitter.SitterId && b.Date == dt).AnyAsync();
+                bool isBooked = false;
+                if (!dto.IsAvailable)
+                {
+                    isBooked = await _context.Bookings.Find(b =>
+                        b.SitterId == sitter.SitterId &&
+                        b.TrangThai == BookingStatus.ACCEPTED &&
+                        b.NgayBatDau <= dt &&
+                        b.NgayKetThuc >= dt
+                    ).AnyAsync();
+                }
                 
-                if (isBooked && !dto.IsAvailable)
+                if (isBooked)
                 {
                     rejectedDates.Add(dateStr);
                     continue; // Cannot change booked to unavailable
                 }
 
-                if (!isBooked)
+                var update = Builders<SitterAvailability>.Update.Set(a => a.IsAvailable, dto.IsAvailable);
+                var filter = Builders<SitterAvailability>.Filter.Where(a => a.SitterId == sitter.SitterId && a.AvailableDate == dt);
+                
+                var existing = await _context.SitterAvailabilities.Find(filter).FirstOrDefaultAsync();
+                if (existing != null)
                 {
-                    var update = Builders<SitterAvailability>.Update.Set(a => a.IsAvailable, dto.IsAvailable);
-                    var filter = Builders<SitterAvailability>.Filter.Where(a => a.SitterId == sitter.SitterId && a.AvailableDate == dt);
-                    
-                    var existing = await _context.SitterAvailabilities.Find(filter).FirstOrDefaultAsync();
-                    if (existing != null)
+                    await _context.SitterAvailabilities.UpdateOneAsync(filter, update);
+                }
+                else if (dto.IsAvailable)
+                {
+                    await _context.SitterAvailabilities.InsertOneAsync(new SitterAvailability
                     {
-                        await _context.SitterAvailabilities.UpdateOneAsync(filter, update);
-                    }
-                    else if (dto.IsAvailable)
-                    {
-                        await _context.SitterAvailabilities.InsertOneAsync(new SitterAvailability
-                        {
-                            AvailabilityId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
-                            SitterId = sitter.SitterId,
-                            AvailableDate = dt,
-                            IsAvailable = true
-                        });
-                    }
+                        AvailabilityId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                        SitterId = sitter.SitterId,
+                        AvailableDate = dt,
+                        IsAvailable = true
+                    });
                 }
             }
 
             if (rejectedDates.Any())
             {
-                throw new ConflictException($"Một số ngày đã có người đặt, không thể đổi thành bận: {string.Join(", ", rejectedDates)}");
+                throw new ConflictException($"Một số ngày đã có đơn đã chấp nhận (ACCEPTED), không thể đổi thành bận: {string.Join(", ", rejectedDates)}");
             }
         }
     }

@@ -9,8 +9,8 @@ Tài liệu liệt kê các cặp `Request -> Mã HTTP mong đợi` dùng cho vi
 | STT | Phương thức & URL | Header / Quyền | Request Body / Điều kiện | Mã HTTP mong đợi | Response Message / Ghi chú |
 | :--- | :--- | :--- | :--- | :---: | :--- |
 | 1.1 | `POST /api/bookings/{id}/review` | Bearer Token (USER) | `{ "rating": 5, "comment": "Tốt" }` khi booking không tồn tại | **404 Not Found** | `Booking không tồn tại.` |
-| 1.2 | `POST /api/bookings/{id}/review` | Bearer Token (USER khác) | User gọi không phải chủ `OwnerId` của booking | **403 Forbidden** | `Bạn không có quyền đánh giá.` |
-| 1.3 | `POST /api/bookings/{id}/review` | Bearer Token (Chủ booking) | Booking chưa ở trạng thái `COMPLETED` (ví dụ PENDING, CONFIRMED) | **400 Bad Request** | `Chỉ có thể đánh giá booking đã hoàn thành.` |
+| 1.2 | `POST /api/bookings/{id}/review` | Bearer Token (USER khác) | User gọi không phải chủ `OwnerId` của booking | **404 Not Found** | `Không tìm thấy thông tin đặt lịch.` |
+| 1.3 | `POST /api/bookings/{id}/review` | Bearer Token (Chủ booking) | Booking chưa ở trạng thái `COMPLETED` (ví dụ PENDING, ACCEPTED) | **400 Bad Request** | `Chỉ có thể đánh giá booking đã hoàn thành.` |
 | 1.4 | `POST /api/bookings/{id}/review` | Bearer Token (Chủ booking) | Booking đã có đánh giá trước đó (đã tồn tại trong DB) | **409 Conflict** | `Booking này đã được đánh giá.` |
 | 1.5 | `POST /api/bookings/{id}/review` | Bearer Token (Chủ booking) | Đánh giá hợp lệ, booking COMPLETED | **200 OK** | Trả về `ReviewDto` |
 
@@ -22,11 +22,11 @@ Tài liệu liệt kê các cặp `Request -> Mã HTTP mong đợi` dùng cho vi
 | :--- | :--- | :--- | :--- | :---: | :--- |
 | 2.1 | `POST /api/bookings` | Bearer Token (USER) | `ngayBatDau` trong quá khứ | **400 Bad Request** | `Ngày bắt đầu không được ở quá khứ.` |
 | 2.2 | `POST /api/bookings` | Bearer Token (USER) | `ngayKetThuc` < `ngayBatDau` | **400 Bad Request** | `Ngày kết thúc không hợp lệ.` |
-| 2.3 | `POST /api/bookings` | Bearer Token (USER) | Có truyền `petId` nhưng Pet không thuộc sở hữu của user | **400 Bad Request** | `Thú cưng không hợp lệ.` |
+| 2.3 | `POST /api/bookings` | Bearer Token (USER) | Có truyền `petId` nhưng Pet không thuộc sở hữu của user | **404 Not Found** | `Không tìm thấy thông tin thú cưng.` |
 | 2.4 | `POST /api/bookings` | Bearer Token (USER) | `sitterId` không tồn tại trong hệ thống | **404 Not Found** | `Sitter không tồn tại.` |
 | 2.5 | `POST /api/bookings` | Bearer Token (USER) | `sitterId` chưa được Admin duyệt (`Status != "Approved"` hoặc `!IsVerified`) | **400 Bad Request** | `Sitter chưa được duyệt.` |
 | 2.6 | `POST /api/bookings` | Bearer Token (USER) | Sitter không mở lịch đủ các ngày đặt trong `SitterAvailabilities` | **409 Conflict** | `Sitter không có lịch rảnh trong toàn bộ khoảng thời gian này.` |
-| 2.7 | `POST /api/bookings` | Bearer Token (USER) | Trùng lịch đã được đặt trước đó của Sitter (`BookedDates`) | **409 Conflict** | `Sitter đã có lịch vào khoảng thời gian này.` |
+| 2.7 | `POST /api/bookings` | Bearer Token (USER) | Trùng lịch đã được đặt trước đó của Sitter (chồng lấn hoặc unique index) | **409 Conflict** | `Bạn đã có một yêu cầu đang chờ hoặc đã được chấp nhận trùng khoảng thời gian với người chăm sóc này.` |
 | 2.8 | `POST /api/bookings` | Bearer Token (USER) | Dữ liệu ngày, sitter, pet hợp lệ | **200 OK** | Trả về `BookingDetailDto` |
 
 ---
@@ -35,9 +35,9 @@ Tài liệu liệt kê các cặp `Request -> Mã HTTP mong đợi` dùng cho vi
 
 | STT | Phương thức & URL | Header / Quyền | Request Body / Điều kiện | Mã HTTP mong đợi | Response Message / Ghi chú |
 | :--- | :--- | :--- | :--- | :---: | :--- |
-| 3.1 | `PATCH /api/sitter/bookings/{id}/complete` | Bearer Token (SITTER) | Booking chưa `CONFIRMED` | **400 Bad Request** | `Booking không ở trạng thái đã xác nhận.` |
+| 3.1 | `PATCH /api/sitter/bookings/{id}/complete` | Bearer Token (SITTER) | Booking chưa `ACCEPTED` | **400 Bad Request** | `Booking không ở trạng thái đã xác nhận.` |
 | 3.2 | `PATCH /api/sitter/bookings/{id}/complete` | Bearer Token (SITTER) | Chưa qua ngày kết thúc lưu trú | **400 Bad Request** | `Chưa thể hoàn thành booking do chưa qua ngày kết thúc.` |
-| 3.3 | `PATCH /api/sitter/bookings/{id}/complete` | Bearer Token (SITTER) | Đã qua ngày kết thúc lưu trú, trạng thái `CONFIRMED` | **200 OK** | `Đã hoàn thành booking.` |
+| 3.3 | `PATCH /api/sitter/bookings/{id}/complete` | Bearer Token (SITTER) | Đã qua ngày kết thúc lưu trú, trạng thái `ACCEPTED` | **200 OK** | `Đã hoàn thành booking.` |
 | 3.4 | `PATCH /api/sitter/bookings/{id}/complete` | Bearer Token (SITTER khác) | Sitter không phụ trách booking | **404 Not Found** | `Không tìm thấy booking.` |
 
 ---
@@ -48,7 +48,7 @@ Tài liệu liệt kê các cặp `Request -> Mã HTTP mong đợi` dùng cho vi
 | :--- | :--- | :--- | :--- | :---: | :--- |
 | 4.1 | `POST /api/sitter/bookings/{id}/updates` | Bearer Token (SITTER) | Booking `id` không tồn tại | **404 Not Found** | `Không tìm thấy booking.` |
 | 4.2 | `POST /api/sitter/bookings/{id}/updates` | Bearer Token (SITTER khác) | Sitter không nhận chăm sóc booking này | **404 Not Found** | `Không có quyền với booking này.` |
-| 4.3 | `POST /api/sitter/bookings/{id}/updates` | Bearer Token (Sitter của booking) | Booking không ở trạng thái `CONFIRMED` | **400 Bad Request** | `Booking không ở trạng thái CONFIRMED.` |
+| 4.3 | `POST /api/sitter/bookings/{id}/updates` | Bearer Token (Sitter của booking) | Booking không ở trạng thái `ACCEPTED` | **400 Bad Request** | `Booking không ở trạng thái ACCEPTED.` |
 | 4.4 | `POST /api/sitter/bookings/{id}/updates` | Bearer Token (Sitter của booking) | Không có ghi chú và không có ảnh | **400 Bad Request** | `Cần có ghi chú hoặc ít nhất một ảnh.` |
 | 4.5 | `POST /api/sitter/bookings/{id}/updates` | Bearer Token (Sitter của booking) | Đăng quá 3 ảnh | **400 Bad Request** | `Tối đa 3 ảnh.` |
 | 4.6 | `POST /api/sitter/bookings/{id}/updates` | Bearer Token (Sitter của booking) | Đã đạt số lượng cập nhật tối đa (`MaxPerBooking` - mặc định 30) | **409 Conflict** | `Đã vượt quá số lượng cập nhật tối đa cho chuyến đi này.` |

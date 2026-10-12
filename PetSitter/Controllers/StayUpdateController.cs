@@ -42,8 +42,8 @@ namespace PetSitter.Controllers
             if (booking.SitterId != sitterProfile.SitterId)
                 return NotFound(new { message = "Không có quyền với booking này." });
 
-            if (booking.TrangThai != "CONFIRMED")
-                return BadRequest(new { message = "Booking không ở trạng thái CONFIRMED." });
+            if (booking.TrangThai != BookingStatus.ACCEPTED)
+                return BadRequest(new { message = "Booking không ở trạng thái ACCEPTED." });
 
             bool requireDates = _config.GetValue<bool>("StayUpdates:RequireStayDates", false);
             if (requireDates)

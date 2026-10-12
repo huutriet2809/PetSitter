@@ -39,11 +39,12 @@ builder.Services.AddSingleton<IMongoClient>(sp =>
 builder.Services.AddScoped<IMongoDatabase>(sp =>
 {
     var client = sp.GetRequiredService<IMongoClient>();
-    var databaseName = builder.Configuration.GetConnectionString("Database")
+    var databaseName = builder.Configuration.GetValue<string>("MongoDb:Database")
+                       ?? builder.Configuration.GetConnectionString("Database")
                        ?? builder.Configuration.GetValue<string>("ConnectionStrings:Database");
-    if (string.IsNullOrWhiteSpace(databaseName))
+    if (string.IsNullOrWhiteSpace(databaseName) || databaseName.StartsWith("YOUR_"))
     {
-        throw new InvalidOperationException("CRITICAL: MongoDB Database name is missing in configuration (ConnectionStrings:Database)!");
+        databaseName = "PetSitterDb";
     }
     return client.GetDatabase(databaseName);
 });

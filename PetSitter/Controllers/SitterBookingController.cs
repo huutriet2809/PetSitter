@@ -5,9 +5,9 @@ using PetSitter.DTOs;
 using PetSitter.Models;
 using PetSitter.Services;
 using System;
+using System.Collections.Generic;
 using System.Security.Claims;
 using System.Threading.Tasks;
-using System.Collections.Generic;
 
 namespace PetSitter.Controllers
 {
@@ -32,6 +32,9 @@ namespace PetSitter.Controllers
             var sitterProfile = await _context.SitterProfiles.Find(s => s.UserId == userId).FirstOrDefaultAsync();
             if (sitterProfile == null) return NotFound(new { message = "Không tìm thấy hồ sơ Sitter." });
 
+            // Hết hạn lười cho các đơn của Sitter này
+            await _bookingService.ExpireOverduePendingBookingsAsync(ownerId: null, sitterId: sitterProfile.SitterId);
+
             var filterBuilder = Builders<Booking>.Filter;
             var filter = filterBuilder.Eq(b => b.SitterId, sitterProfile.SitterId);
             
@@ -45,8 +48,7 @@ namespace PetSitter.Controllers
             var dtos = new List<BookingDetailDto>();
             foreach(var booking in bookings)
             {
-                // We map them fully using GetBookingByIdAsync or internal logic.
-                dtos.Add(await _bookingService.GetBookingByIdAsync(userId, booking.BookingId));
+                dtos.Add(await _bookingService.GetBookingByIdAsync(userId ?? string.Empty, booking.BookingId));
             }
 
             return Ok(dtos);
@@ -59,19 +61,76 @@ namespace PetSitter.Controllers
             var sitterProfile = await _context.SitterProfiles.Find(s => s.UserId == userId).FirstOrDefaultAsync();
             if (sitterProfile == null) return NotFound(new { message = "Không tìm thấy hồ sơ Sitter." });
 
-            var booking = await _context.Bookings.Find(b => b.BookingId == id).FirstOrDefaultAsync();
-            if (booking == null || booking.SitterId != sitterProfile.SitterId)
-                return NotFound(new { message = "Không tìm thấy booking." });
+            var nowUtc = DateTime.UtcNow;
+            var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, id)
+                       & Builders<Booking>.Filter.Eq(b => b.SitterId, sitterProfile.SitterId)
+                       & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.PENDING)
+                       & Builders<Booking>.Filter.Gt(b => b.ExpiresAt, nowUtc);
 
-            if (booking.TrangThai != "PENDING")
-                return BadRequest(new { message = "Booking không ở trạng thái chờ xác nhận." });
+            var update = Builders<Booking>.Update
+                .Set(b => b.TrangThai, BookingStatus.ACCEPTED)
+                .Set(b => b.IsActive, true)
+                .Push(b => b.History, new InquiryHistory
+                {
+                    HanhDong = BookingStatus.ACCEPTED,
+                    FromStatus = BookingStatus.PENDING,
+                    NguoiThucHien = "SITTER",
+                    ActorUserId = userId,
+                    LyDo = null,
+                    ThoiGian = nowUtc
+                });
 
-            var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, id) & Builders<Booking>.Filter.Eq(b => b.TrangThai, "PENDING");
-            var update = Builders<Booking>.Update.Set(b => b.TrangThai, "CONFIRMED");
-            var result = await _context.Bookings.UpdateOneAsync(filter, update);
+            var updatedBooking = await _context.Bookings.FindOneAndUpdateAsync(filter, update, new FindOneAndUpdateOptions<Booking> { ReturnDocument = ReturnDocument.After });
 
-            if (result.ModifiedCount == 0)
-                return BadRequest(new { message = "Không thể chấp nhận booking. Trạng thái đã thay đổi." });
+            if (updatedBooking == null)
+            {
+                var existing = await _context.Bookings.Find(b => b.BookingId == id).FirstOrDefaultAsync();
+                if (existing == null || existing.SitterId != sitterProfile.SitterId)
+                    return NotFound(new { message = "Không tìm thấy booking." });
+
+                if (existing.TrangThai == BookingStatus.PENDING && (existing.ExpiresAt == null || existing.ExpiresAt <= nowUtc))
+                {
+                    // Lật sang EXPIRED nguyên tử
+                    var expireFilter = Builders<Booking>.Filter.Eq(b => b.BookingId, id)
+                                     & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.PENDING);
+
+                    var expireUpdate = Builders<Booking>.Update
+                        .Set(b => b.TrangThai, BookingStatus.EXPIRED)
+                        .Set(b => b.IsActive, false)
+                        .Push(b => b.History, new InquiryHistory
+                        {
+                            HanhDong = BookingStatus.EXPIRED,
+                            FromStatus = BookingStatus.PENDING,
+                            NguoiThucHien = "SYSTEM",
+                            ActorUserId = null,
+                            LyDo = "Quá hạn 48 giờ không được chấp nhận",
+                            ThoiGian = nowUtc
+                        });
+
+                    await _context.Bookings.FindOneAndUpdateAsync(expireFilter, expireUpdate);
+                    return Conflict(new { message = "Yêu cầu đặt lịch đã hết hạn phản hồi (48 giờ)." });
+                }
+
+                return Conflict(new { message = "Không thể chấp nhận booking. Trạng thái đã thay đổi hoặc không hợp lệ." });
+            }
+
+            // Kiểm tra trùng ngày với đơn ACCEPTED khác (không chặn, chỉ cảnh báo)
+            var hasOverlap = await _context.Bookings.Find(b =>
+                b.SitterId == sitterProfile.SitterId &&
+                b.BookingId != id &&
+                b.TrangThai == BookingStatus.ACCEPTED &&
+                b.NgayBatDau <= updatedBooking.NgayKetThuc &&
+                b.NgayKetThuc >= updatedBooking.NgayBatDau
+            ).AnyAsync();
+
+            if (hasOverlap)
+            {
+                return Ok(new
+                {
+                    message = "Đã chấp nhận booking.",
+                    warning = "Cảnh báo: Bạn đang có đơn đã chấp nhận khác trùng ngày với đơn này."
+                });
+            }
 
             return Ok(new { message = "Đã chấp nhận booking." });
         }
@@ -83,25 +142,56 @@ namespace PetSitter.Controllers
             var sitterProfile = await _context.SitterProfiles.Find(s => s.UserId == userId).FirstOrDefaultAsync();
             if (sitterProfile == null) return NotFound(new { message = "Không tìm thấy hồ sơ Sitter." });
 
-            var booking = await _context.Bookings.Find(b => b.BookingId == id).FirstOrDefaultAsync();
-            if (booking == null || booking.SitterId != sitterProfile.SitterId)
-                return NotFound(new { message = "Không tìm thấy booking." });
+            if (string.IsNullOrWhiteSpace(dto?.LyDo))
+                return BadRequest(new { message = "Lý do từ chối là bắt buộc." });
 
-            if (booking.TrangThai != "PENDING")
-                return BadRequest(new { message = "Booking không ở trạng thái chờ xác nhận." });
+            if (dto.LyDo.Trim().Length > 500)
+                return BadRequest(new { message = "Lý do tối đa 500 ký tự." });
 
-            var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, id) & Builders<Booking>.Filter.Eq(b => b.TrangThai, "PENDING");
-            var update = Builders<Booking>.Update.Set(b => b.TrangThai, "REJECTED").Set(b => b.LyDoTuChoi, dto.LyDo);
-            var result = await _context.Bookings.UpdateOneAsync(filter, update);
+            var nowUtc = DateTime.UtcNow;
+            var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, id)
+                       & Builders<Booking>.Filter.Eq(b => b.SitterId, sitterProfile.SitterId)
+                       & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.PENDING);
 
-            if (result.ModifiedCount == 0)
-                return BadRequest(new { message = "Không thể từ chối booking. Trạng thái đã thay đổi." });
+            var update = Builders<Booking>.Update
+                .Set(b => b.TrangThai, BookingStatus.REJECTED)
+                .Set(b => b.IsActive, false)
+                .Set(b => b.LyDoTuChoi, dto.LyDo.Trim())
+                .Push(b => b.History, new InquiryHistory
+                {
+                    HanhDong = BookingStatus.REJECTED,
+                    FromStatus = BookingStatus.PENDING,
+                    NguoiThucHien = "SITTER",
+                    ActorUserId = userId,
+                    LyDo = dto.LyDo.Trim(),
+                    ThoiGian = nowUtc
+                });
 
-            // Free the booked dates
-            var deleteFilter = Builders<BookedDate>.Filter.Eq(bd => bd.BookingId, booking.BookingId);
-            await _context.BookedDates.DeleteManyAsync(deleteFilter);
+            var result = await _context.Bookings.FindOneAndUpdateAsync(filter, update);
+
+            if (result == null)
+            {
+                var existing = await _context.Bookings.Find(b => b.BookingId == id).FirstOrDefaultAsync();
+                if (existing == null || existing.SitterId != sitterProfile.SitterId)
+                    return NotFound(new { message = "Không tìm thấy booking." });
+
+                return Conflict(new { message = "Không thể từ chối booking. Trạng thái đã thay đổi." });
+            }
 
             return Ok(new { message = "Đã từ chối booking." });
+        }
+
+        [HttpPatch("{id}/cancel")]
+        public async Task<IActionResult> CancelBooking(string id, [FromBody] CancelBookingRequestDto dto)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            if (string.IsNullOrWhiteSpace(dto?.LyDo))
+                return BadRequest(new { message = "Lý do hủy đơn là bắt buộc đối với người chăm sóc." });
+
+            await _bookingService.CancelBookingAsync(userId, id, dto.LyDo);
+            return Ok(new { message = "Đã hủy đơn đặt lịch thành công." });
         }
 
         [HttpPatch("{id}/complete")]
@@ -111,23 +201,40 @@ namespace PetSitter.Controllers
             var sitterProfile = await _context.SitterProfiles.Find(s => s.UserId == userId).FirstOrDefaultAsync();
             if (sitterProfile == null) return NotFound(new { message = "Không tìm thấy hồ sơ Sitter." });
 
-            var booking = await _context.Bookings.Find(b => b.BookingId == id).FirstOrDefaultAsync();
-            if (booking == null || booking.SitterId != sitterProfile.SitterId)
-                return NotFound(new { message = "Không tìm thấy booking." });
+            var vnToday = BookingService.GetVnToday();
+            var nowUtc = DateTime.UtcNow;
 
-            if (booking.TrangThai != "CONFIRMED")
-                return BadRequest(new { message = "Booking không ở trạng thái đã xác nhận." });
+            var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, id)
+                       & Builders<Booking>.Filter.Eq(b => b.SitterId, sitterProfile.SitterId)
+                       & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.ACCEPTED)
+                       & Builders<Booking>.Filter.Lt(b => b.NgayKetThuc, vnToday);
 
-            var currentVnTime = DateTime.UtcNow.AddHours(7).Date;
-            if (currentVnTime <= booking.NgayKetThuc.Date)
-                return BadRequest(new { message = "Chưa thể hoàn thành booking do chưa qua ngày kết thúc." });
+            var update = Builders<Booking>.Update
+                .Set(b => b.TrangThai, BookingStatus.COMPLETED)
+                .Set(b => b.IsActive, false)
+                .Push(b => b.History, new InquiryHistory
+                {
+                    HanhDong = BookingStatus.COMPLETED,
+                    FromStatus = BookingStatus.ACCEPTED,
+                    NguoiThucHien = "SITTER",
+                    ActorUserId = userId,
+                    LyDo = null,
+                    ThoiGian = nowUtc
+                });
 
-            var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, id) & Builders<Booking>.Filter.Eq(b => b.TrangThai, "CONFIRMED");
-            var update = Builders<Booking>.Update.Set(b => b.TrangThai, "COMPLETED");
-            var result = await _context.Bookings.UpdateOneAsync(filter, update);
+            var result = await _context.Bookings.FindOneAndUpdateAsync(filter, update);
 
-            if (result.ModifiedCount == 0)
-                return BadRequest(new { message = "Không thể hoàn thành booking. Trạng thái đã thay đổi." });
+            if (result == null)
+            {
+                var existing = await _context.Bookings.Find(b => b.BookingId == id).FirstOrDefaultAsync();
+                if (existing == null || existing.SitterId != sitterProfile.SitterId)
+                    return NotFound(new { message = "Không tìm thấy booking." });
+
+                if (existing.TrangThai == BookingStatus.ACCEPTED && existing.NgayKetThuc >= vnToday)
+                    return BadRequest(new { message = "Chưa thể hoàn thành booking do chưa qua ngày kết thúc." });
+
+                return Conflict(new { message = "Không thể hoàn thành booking. Trạng thái đã thay đổi." });
+            }
 
             return Ok(new { message = "Đã hoàn thành booking." });
         }
