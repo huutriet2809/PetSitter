@@ -1,7 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 
-const analyzed = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'analyzed_calls.json'), 'utf8'));
+const analyzedPath = path.resolve(__dirname, 'analyzed_calls.json');
+const analyzed = fs.existsSync(analyzedPath) ? JSON.parse(fs.readFileSync(analyzedPath, 'utf8')) : [];
 
 // Backend endpoints map
 const backendEndpoints = [
@@ -16,13 +17,15 @@ const backendEndpoints = [
   { method: 'POST', path: '/api/bookings', desc: 'Tạo booking', dtoIn: 'CreateBookingDto { sitterId, ngayBatDau, ngayKetThuc, tenPet, loaiPet, kichCo, petId, ghiChu, addons }', dtoOut: 'BookingDetailDto { bookingId, ... }' },
   { method: 'GET', path: '/api/bookings/my', desc: 'Lấy bookings của user', dtoIn: 'None', dtoOut: 'List<BookingDetailDto>' },
   { method: 'GET', path: '/api/bookings/{id}', desc: 'Chi tiết booking', dtoIn: 'None', dtoOut: 'BookingDetailDto' },
-  { method: 'POST', path: '/api/bookings/{id}/cancel', desc: 'Hủy booking', dtoIn: 'None', dtoOut: '{ message }' },
-  { method: 'POST', path: '/api/bookings/{id}/review', desc: 'Đánh giá booking', dtoIn: 'CreateReviewDto { rating, comment }', dtoOut: 'ReviewDto' },
+  { method: 'POST', path: '/api/bookings/{id}/cancel', desc: 'Hủy booking', dtoIn: 'CancelBookingRequestDto { lyDo, expectedStatus }', dtoOut: '{ message }' },
+  { method: 'PATCH', path: '/api/bookings/{id}/confirm-completion', desc: 'Chủ nuôi xác nhận hoàn tất booking', dtoIn: 'None', dtoOut: '{ message, booking: BookingDetailDto }' },
+  { method: 'PATCH', path: '/api/bookings/{id}/dispute', desc: 'Chủ nuôi khiếu nại booking (COMPLETION_PENDING -> DISPUTED)', dtoIn: 'DisputeBookingDto { lyDo }', dtoOut: '{ message, booking: BookingDetailDto }' },
+  { method: 'POST', path: '/api/bookings/{id}/review', desc: 'Đánh giá booking (chỉ khi COMPLETED)', dtoIn: 'CreateReviewDto { rating, comment }', dtoOut: 'ReviewDto' },
 
   { method: 'GET', path: '/api/sitter/bookings', desc: 'Lấy bookings của sitter', dtoIn: 'query: ?status=', dtoOut: 'List<BookingDetailDto>' },
   { method: 'PATCH', path: '/api/sitter/bookings/{id}/accept', desc: 'Chấp nhận booking', dtoIn: 'None', dtoOut: '{ message }' },
   { method: 'PATCH', path: '/api/sitter/bookings/{id}/reject', desc: 'Từ chối booking', dtoIn: 'RejectBookingDto { lyDo }', dtoOut: '{ message }' },
-  { method: 'PATCH', path: '/api/sitter/bookings/{id}/complete', desc: 'Hoàn thành booking', dtoIn: 'None', dtoOut: '{ message }' },
+  { method: 'PATCH', path: '/api/sitter/bookings/{id}/complete', desc: 'Sitter đánh dấu hoàn tất (ACCEPTED -> COMPLETION_PENDING)', dtoIn: 'None', dtoOut: '{ message, booking: BookingDetailDto }' },
 
   { method: 'GET', path: '/api/sitter/profile', desc: 'Lấy profile sitter', dtoIn: 'None', dtoOut: 'SitterDetailDto' },
   { method: 'PUT', path: '/api/sitter/profile', desc: 'Cập nhật profile sitter', dtoIn: 'UpdateSitterProfileDto { bio, giaMoiNgay, khuVuc, loaiPetNhan, tags, dichVuBoSung }', dtoOut: '{ message }' },
@@ -41,6 +44,8 @@ const backendEndpoints = [
   { method: 'GET', path: '/api/admin/sitter-applications', desc: 'Đơn đăng ký sitter', dtoIn: 'query: ?status=', dtoOut: 'List<SitterApplicationDto>' },
   { method: 'PATCH', path: '/api/admin/sitter-applications/{id}/approve', desc: 'Duyệt đơn sitter', dtoIn: 'None', dtoOut: '{ message }' },
   { method: 'PATCH', path: '/api/admin/sitter-applications/{id}/reject', desc: 'Từ chối đơn sitter', dtoIn: 'RejectApplicationDto { lyDo }', dtoOut: '{ message }' },
+  { method: 'GET', path: '/api/admin/disputed-bookings', desc: 'Danh sách đơn đặt lịch đang khiếu nại (DISPUTED)', dtoIn: 'None', dtoOut: 'List<BookingDetailDto>' },
+  { method: 'PATCH', path: '/api/admin/bookings/{id}/resolve', desc: 'Admin xử lý tranh chấp đơn khiếu nại', dtoIn: 'ResolveDisputeDto { resolution, note }', dtoOut: '{ message, booking: BookingDetailDto }' },
 
   { method: 'GET', path: '/api/pets', desc: 'Danh sách pet của user', dtoIn: 'None', dtoOut: 'List<PetDto>' },
   { method: 'POST', path: '/api/pets', desc: 'Tạo pet mới', dtoIn: 'CreatePetDto { ten, loai, giong, canNang, tuoi, ghiChu, avatarUrl }', dtoOut: 'PetDto' },

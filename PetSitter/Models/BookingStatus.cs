@@ -7,6 +7,7 @@ namespace PetSitter.Models
         public const string REJECTED = "REJECTED";
         public const string CANCELLED = "CANCELLED";
         public const string EXPIRED = "EXPIRED";
+        public const string COMPLETION_PENDING = "COMPLETION_PENDING";
         public const string COMPLETED = "COMPLETED";
         public const string DISPUTED = "DISPUTED";
     }

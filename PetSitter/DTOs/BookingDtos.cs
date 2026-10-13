@@ -61,10 +61,36 @@ namespace PetSitter.DTOs
         public bool HasReview { get; set; } = false;
         public string? GhiChu { get; set; }
         public string? Warning { get; set; }
+
+        public DateTime? SitterCompletedAt { get; set; }
+        public DateTime? CompletionDeadline { get; set; }
+        public DateTime? OwnerConfirmedAt { get; set; }
+        public bool? AutoCompleted { get; set; }
+        public string? DisputeReason { get; set; }
+        public string? AdminResolutionNote { get; set; }
+        public bool? ResolvedByAdmin { get; set; }
         
         public PetSitter.Models.BookingPet Pet { get; set; } = new();
         public List<PetSitter.Models.BookingAddon> Addons { get; set; } = new();
         public List<InquiryHistoryDto> History { get; set; } = new();
+    }
+
+    public class DisputeBookingDto
+    {
+        [Required(AllowEmptyStrings = false, ErrorMessage = "Lý do khiếu nại là bắt buộc.")]
+        [StringLength(500, MinimumLength = 10, ErrorMessage = "Lý do khiếu nại phải từ 10 đến 500 ký tự.")]
+        public string LyDo { get; set; } = string.Empty;
+    }
+
+    public class ResolveDisputeDto
+    {
+        [Required(ErrorMessage = "Hướng xử lý là bắt buộc.")]
+        [RegularExpression("^(COMPLETED|CANCELLED)$", ErrorMessage = "Resolution chỉ nhận COMPLETED hoặc CANCELLED.")]
+        public string Resolution { get; set; } = string.Empty;
+
+        [Required(AllowEmptyStrings = false, ErrorMessage = "Ghi chú xử lý là bắt buộc.")]
+        [StringLength(500, MinimumLength = 10, ErrorMessage = "Ghi chú xử lý phải từ 10 đến 500 ký tự.")]
+        public string Note { get; set; } = string.Empty;
     }
 
     public class RejectBookingDto

@@ -14,11 +14,18 @@
     #error-msg { background: rgba(239, 68, 68, 0.1); color: #ef4444; padding: 10px; border-radius: 4px; display: none; margin-bottom: 20px; }
     .reject-container { margin-top: 10px; display: none; }
     .reject-container input { width: 100%; padding: 8px; margin-bottom: 8px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); border-radius: 4px; }
+    .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+    .tab { padding: 10px 20px; cursor: pointer; border-bottom: 2px solid transparent; font-weight: 500; }
+    .tab.active { border-bottom-color: var(--primary); color: var(--primary); font-weight: 600; }
   </style>
 </head>
 <body>
   <div class="admin-container">
-    <h1>Hồ sơ Sitter chờ duyệt</h1>
+    <h1>Quản trị hệ thống PawStay</h1>
+    <div class="tabs">
+      <div class="tab active" id="tab-applications" onclick="switchTab('applications')">Hồ sơ Sitter chờ duyệt</div>
+      <div class="tab" id="tab-disputes" onclick="switchTab('disputes')">Đơn khiếu nại (Disputed)</div>
+    </div>
     <div id="error-msg"></div>
     <div id="list-container">Đang tải...</div>
   </div>
@@ -27,8 +34,9 @@
   <script src="assets/api.js"></script>
   <script src="assets/components.js"></script>
   <script>
+    let currentTab = 'applications';
+
     document.addEventListener('DOMContentLoaded', async () => {
-      // Check auth (assuming API restricts it, but we can do a quick check if needed)
       if (!localStorage.getItem('pawstay_token')) {
         window.location.href = 'login.html';
         return;
@@ -36,8 +44,22 @@
       loadApplications();
     });
 
+    function switchTab(tab) {
+      currentTab = tab;
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      const activeEl = document.getElementById(`tab-${tab}`);
+      if (activeEl) activeEl.classList.add('active');
+
+      if (tab === 'applications') {
+        loadApplications();
+      } else {
+        loadDisputes();
+      }
+    }
+
     async function loadApplications() {
       const container = document.getElementById('list-container');
+      container.innerHTML = 'Đang tải...';
       try {
         const apps = await apiFetch('/admin/sitter-applications?status=Pending');
         if (apps.length === 0) {
@@ -69,6 +91,77 @@
       } catch (err) {
         showError(err.message || 'Lỗi tải danh sách hồ sơ. Bạn có phải Admin không?');
         container.innerHTML = '';
+      }
+    }
+
+    async function loadDisputes() {
+      const container = document.getElementById('list-container');
+      container.innerHTML = 'Đang tải danh sách khiếu nại...';
+      try {
+        const disputes = await apiFetch('/admin/disputed-bookings');
+        if (disputes.length === 0) {
+          container.innerHTML = '<p>Không có đơn đặt lịch nào đang khiếu nại.</p>';
+          return;
+        }
+
+        container.innerHTML = disputes.map(d => `
+          <div class="card" id="dispute-${/* safe */ d.bookingId}" style="border-left: 4px solid #ea580c;">
+            <div class="header-row">
+              <div>
+                <h3>Đơn #${escapeHtml(d.maDatLich)} - Sitter: ${escapeHtml(d.sitterName)}</h3>
+                <span class="status-badge" style="background: rgba(249, 115, 22, 0.1); color: #ea580c; font-weight:600;">Đang tranh chấp</span>
+              </div>
+              <div>
+                <strong>Tổng tiền: ${formatTien(d.tongTien)}</strong>
+              </div>
+            </div>
+            <div style="margin: 10px 0; padding: 10px; background: rgba(239, 68, 68, 0.05); border-radius: 6px;">
+              <strong>⚠️ Lý do khiếu nại từ chủ nuôi:</strong>
+              <p style="margin: 5px 0; color: #dc2626;">${escapeHtml(d.disputeReason || 'Không có lý do chi tiết')}</p>
+            </div>
+            <p><strong>Thời gian gửi:</strong> ${new Date(d.ngayBatDau).toLocaleDateString('vi-VN')} - ${new Date(d.ngayKetThuc).toLocaleDateString('vi-VN')} (${/* safe */ d.soNgay} ngày)</p>
+            <p><strong>Thú cưng:</strong> ${escapeHtml(d.pet?.tenPet || '')} (${escapeHtml(d.pet?.loaiPet || '')})</p>
+            
+            <div style="margin-top: 15px; border-top: 1px dashed var(--border); padding-top: 15px;">
+              <label style="display:block; margin-bottom: 6px; font-weight: 600;">Ghi chú xử lý của Admin (10 đến 500 ký tự) <span style="color:#ef4444;">*</span></label>
+              <textarea id="note-${/* safe */ d.bookingId}" placeholder="Nhập kết luận và căn cứ giải quyết tranh chấp..." style="width:100%; height:80px; padding:8px; border:1px solid var(--border); border-radius:4px; background:var(--bg-secondary); color:var(--text-primary); margin-bottom:10px;"></textarea>
+              <div style="display:flex; gap:10px;">
+                <button class="btn btn-primary btn-sm" onclick="resolveDispute('${/* safe */ d.bookingId}', 'COMPLETED')">Duyệt hoàn tất (COMPLETED)</button>
+                <button class="btn btn-outline btn-sm" style="color:#ef4444; border-color:#ef4444;" onclick="resolveDispute('${/* safe */ d.bookingId}', 'CANCELLED')">Hủy đơn (CANCELLED)</button>
+              </div>
+            </div>
+          </div>
+        `).join('');
+      } catch (err) {
+        showError(err.message || 'Lỗi tải danh sách khiếu nại.');
+        container.innerHTML = '';
+      }
+    }
+
+    async function resolveDispute(bookingId, resolution) {
+      const noteInput = document.getElementById(`note-${bookingId}`);
+      const note = noteInput ? noteInput.value.trim() : '';
+
+      if (note.length < 10 || note.length > 500) {
+        showError('Ghi chú xử lý bắt buộc từ 10 đến 500 ký tự.');
+        return;
+      }
+
+      if (!confirm(`Xác nhận giải quyết tranh chấp với kết quả: ${resolution}?`)) return;
+
+      try {
+        await apiFetch(`/admin/bookings/${bookingId}/resolve`, {
+          method: 'PATCH',
+          body: JSON.stringify({ resolution, note })
+        });
+        showToast(`Đã giải quyết tranh chấp thành công (${resolution})!`, 3000, '✅');
+        const card = document.getElementById(`dispute-${bookingId}`);
+        if (card) card.remove();
+        if (!document.querySelector('#list-container .card')) {
+          loadDisputes();
+        }
+      } catch (err) {
+        showError(err.message || 'Lỗi khi giải quyết tranh chấp.');
       }
     }
 

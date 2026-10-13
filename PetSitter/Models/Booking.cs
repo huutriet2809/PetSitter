@@ -70,6 +70,15 @@ namespace PetSitter.Models
         public bool IsActive { get; set; } = true;
         public DateTime? ExpiresAt { get; set; }
         public string? LyDoTuChoi { get; set; }
+
+        public DateTime? SitterCompletedAt { get; set; }
+        public DateTime? CompletionDeadline { get; set; }
+        public DateTime? OwnerConfirmedAt { get; set; }
+        public bool? AutoCompleted { get; set; }
+        public string? DisputeReason { get; set; }
+        public string? AdminResolutionNote { get; set; }
+        public bool? ResolvedByAdmin { get; set; }
+
         public List<InquiryHistory> History { get; set; } = new List<InquiryHistory>();
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }

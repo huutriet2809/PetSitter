@@ -91,6 +91,45 @@ namespace PetSitter.Controllers
             }
         }
 
+        [HttpPatch("{id}/confirm-completion")]
+        [EnableRateLimiting("booking-review")]
+        public async Task<IActionResult> ConfirmCompletion(string id)
+        {
+            try
+            {
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+                var result = await _bookingService.OwnerConfirmCompletionAsync(userId, id);
+                return Ok(new { message = "Đã xác nhận hoàn tất dịch vụ thành công.", booking = result });
+            }
+            catch (AppException ex)
+            {
+                return StatusCode(ex.StatusCode, new { message = ex.Message });
+            }
+        }
+
+        [HttpPatch("{id}/dispute")]
+        [EnableRateLimiting("booking-review")]
+        public async Task<IActionResult> DisputeBooking(string id, [FromBody] DisputeBookingDto dto)
+        {
+            try
+            {
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+                if (string.IsNullOrWhiteSpace(dto?.LyDo))
+                    return BadRequest(new { message = "Lý do khiếu nại là bắt buộc." });
+
+                var result = await _bookingService.OwnerDisputeBookingAsync(userId, id, dto.LyDo);
+                return Ok(new { message = "Đã gửi khiếu nại thành công, vui lòng chờ Admin xử lý.", booking = result });
+            }
+            catch (AppException ex)
+            {
+                return StatusCode(ex.StatusCode, new { message = ex.Message });
+            }
+        }
+
         [HttpPost("{id}/review")]
         [EnableRateLimiting("booking-review")]
         public async Task<IActionResult> AddReview(string id, [FromBody] CreateReviewDto dto)

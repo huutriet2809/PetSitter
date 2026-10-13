@@ -35,10 +35,17 @@ Tài liệu liệt kê các cặp `Request -> Mã HTTP mong đợi` dùng cho vi
 
 | STT | Phương thức & URL | Header / Quyền | Request Body / Điều kiện | Mã HTTP mong đợi | Response Message / Ghi chú |
 | :--- | :--- | :--- | :--- | :---: | :--- |
-| 3.1 | `PATCH /api/sitter/bookings/{id}/complete` | Bearer Token (SITTER) | Booking chưa `ACCEPTED` | **400 Bad Request** | `Booking không ở trạng thái đã xác nhận.` |
-| 3.2 | `PATCH /api/sitter/bookings/{id}/complete` | Bearer Token (SITTER) | Chưa qua ngày kết thúc lưu trú | **400 Bad Request** | `Chưa thể hoàn thành booking do chưa qua ngày kết thúc.` |
-| 3.3 | `PATCH /api/sitter/bookings/{id}/complete` | Bearer Token (SITTER) | Đã qua ngày kết thúc lưu trú, trạng thái `ACCEPTED` | **200 OK** | `Đã hoàn thành booking.` |
-| 3.4 | `PATCH /api/sitter/bookings/{id}/complete` | Bearer Token (SITTER khác) | Sitter không phụ trách booking | **404 Not Found** | `Không tìm thấy booking.` |
+| 3.1 | `PATCH /api/sitter/bookings/{id}/complete` | Bearer Token (SITTER) | Booking chưa `ACCEPTED` | **409 Conflict** | `Không thể đánh dấu hoàn tất. Trạng thái đơn đã thay đổi.` |
+| 3.2 | `PATCH /api/sitter/bookings/{id}/complete` | Bearer Token (SITTER) | Chưa qua ngày kết thúc lưu trú (`NgayKetThuc >= vnToday`) | **400 Bad Request** | `Chưa thể hoàn thành booking do chưa qua ngày kết thúc.` |
+| 3.3 | `PATCH /api/sitter/bookings/{id}/complete` | Bearer Token (SITTER) | Đã qua ngày kết thúc lưu trú, trạng thái `ACCEPTED` | **200 OK** | Chuyển `COMPLETION_PENDING`, cấp `CompletionDeadline` (+3 ngày) |
+| 3.4 | `PATCH /api/sitter/bookings/{id}/complete` | Bearer Token (SITTER khác) | Sitter không phụ trách booking | **404 Not Found** | `Không tìm thấy thông tin đặt lịch.` |
+| 3.5 | `PATCH /api/bookings/{id}/confirm-completion` | Bearer Token (Chủ nuôi) | Đơn ở `COMPLETION_PENDING` | **200 OK** | Chuyển `COMPLETED`, mở quyền đánh giá |
+| 3.6 | `PATCH /api/bookings/{id}/confirm-completion` | Bearer Token (Chủ nuôi) | Đơn đã `COMPLETED` hoặc đã `DISPUTED` | **409 Conflict** | Trạng thái không hợp lệ |
+| 3.7 | `PATCH /api/bookings/{id}/dispute` | Bearer Token (Chủ nuôi) | Lý do khiếu nại rỗng hoặc < 10 ký tự | **400 Bad Request** | `Lý do khiếu nại phải từ 10 đến 500 ký tự.` |
+| 3.8 | `PATCH /api/bookings/{id}/dispute` | Bearer Token (Chủ nuôi) | Hợp lệ trong hạn `CompletionDeadline` | **200 OK** | Chuyển `DISPUTED`, giữ `IsActive=true` |
+| 3.9 | `PATCH /api/bookings/{id}/dispute` | Bearer Token (Chủ nuôi) | Đã quá hạn `CompletionDeadline` | **409 Conflict** | Đã tự động hoàn tất do quá hạn |
+| 3.10 | `PATCH /api/admin/bookings/{id}/resolve` | Bearer Token (ADMIN) | Admin tự giải quyết đơn của chính mình (chủ hoặc sitter) | **400 Bad Request** | Xung đột lợi ích |
+| 3.11 | `PATCH /api/admin/bookings/{id}/resolve` | Bearer Token (ADMIN) | Hợp lệ (COMPLETED hoặc CANCELLED + note) | **200 OK** | Giải quyết thành công, nhả `IsActive=false` |
 
 ---
 

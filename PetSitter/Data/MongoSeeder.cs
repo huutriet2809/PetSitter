@@ -121,6 +121,21 @@ namespace PetSitter.Data
                 Console.WriteLine("Could not create Bookings ExpiresAt partial index: " + ex.Message);
             }
 
+            // Create Partial Index for CompletionDeadline where TrangThai == COMPLETION_PENDING
+            try
+            {
+                var completionDeadlineKeys = Builders<Booking>.IndexKeys.Ascending(b => b.CompletionDeadline);
+                var completionDeadlineOptions = new CreateIndexOptions<Booking>
+                {
+                    PartialFilterExpression = Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.COMPLETION_PENDING)
+                };
+                await bookingsCollection.Indexes.CreateOneAsync(new CreateIndexModel<Booking>(completionDeadlineKeys, completionDeadlineOptions));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Could not create Bookings CompletionDeadline partial index: " + ex.Message);
+            }
+
             // Create Unique Partial Index for (OwnerId, SitterId, NgayBatDau, NgayKetThuc) where IsActive == true
             try
             {

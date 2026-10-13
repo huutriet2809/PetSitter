@@ -28,26 +28,24 @@ namespace PetSitter.Services
             return DateTime.SpecifyKind(vnNow.Date, DateTimeKind.Utc);
         }
 
-        public async Task ExpireOverduePendingBookingsAsync(string? ownerId = null, string? sitterId = null)
+        public async Task ProcessLazyBookingUpdatesAsync(string? ownerId = null, string? sitterId = null)
         {
             if (string.IsNullOrEmpty(ownerId) && string.IsNullOrEmpty(sitterId))
                 return;
 
             var nowUtc = DateTime.UtcNow;
             var filterBuilder = Builders<Booking>.Filter;
-            var filter = filterBuilder.Eq(b => b.TrangThai, BookingStatus.PENDING)
-                       & filterBuilder.Lte(b => b.ExpiresAt, nowUtc);
+
+            // 1. Quét đơn PENDING quá hạn 48h -> EXPIRED (IsActive = false)
+            var pendingFilter = filterBuilder.Eq(b => b.TrangThai, BookingStatus.PENDING)
+                              & filterBuilder.Lte(b => b.ExpiresAt, nowUtc);
 
             if (!string.IsNullOrEmpty(ownerId))
-            {
-                filter &= filterBuilder.Eq(b => b.OwnerId, ownerId);
-            }
+                pendingFilter &= filterBuilder.Eq(b => b.OwnerId, ownerId);
             if (!string.IsNullOrEmpty(sitterId))
-            {
-                filter &= filterBuilder.Eq(b => b.SitterId, sitterId);
-            }
+                pendingFilter &= filterBuilder.Eq(b => b.SitterId, sitterId);
 
-            var update = Builders<Booking>.Update
+            var pendingUpdate = Builders<Booking>.Update
                 .Set(b => b.TrangThai, BookingStatus.EXPIRED)
                 .Set(b => b.IsActive, false)
                 .Push(b => b.History, new InquiryHistory
@@ -60,14 +58,42 @@ namespace PetSitter.Services
                     ThoiGian = nowUtc
                 });
 
-            await _context.Bookings.UpdateManyAsync(filter, update);
+            await _context.Bookings.UpdateManyAsync(pendingFilter, pendingUpdate);
+
+            // 2. Quét đơn COMPLETION_PENDING quá hạn CompletionDeadline -> COMPLETED (AutoCompleted = true, IsActive = false)
+            var completionFilter = filterBuilder.Eq(b => b.TrangThai, BookingStatus.COMPLETION_PENDING)
+                                 & filterBuilder.Lte(b => b.CompletionDeadline, nowUtc);
+
+            if (!string.IsNullOrEmpty(ownerId))
+                completionFilter &= filterBuilder.Eq(b => b.OwnerId, ownerId);
+            if (!string.IsNullOrEmpty(sitterId))
+                completionFilter &= filterBuilder.Eq(b => b.SitterId, sitterId);
+
+            var completionUpdate = Builders<Booking>.Update
+                .Set(b => b.TrangThai, BookingStatus.COMPLETED)
+                .Set(b => b.IsActive, false)
+                .Set(b => b.AutoCompleted, true)
+                .Push(b => b.History, new InquiryHistory
+                {
+                    HanhDong = "AUTO_COMPLETED",
+                    FromStatus = BookingStatus.COMPLETION_PENDING,
+                    NguoiThucHien = "SYSTEM",
+                    ActorUserId = null,
+                    LyDo = "Tự động hoàn tất do quá thời hạn xác nhận",
+                    ThoiGian = nowUtc
+                });
+
+            await _context.Bookings.UpdateManyAsync(completionFilter, completionUpdate);
         }
+
+        public Task ExpireOverduePendingBookingsAsync(string? ownerId = null, string? sitterId = null)
+            => ProcessLazyBookingUpdatesAsync(ownerId, sitterId);
 
         public async Task<BookingDetailDto> CreateBookingAsync(string currentUserId, CreateBookingDto dto)
         {
-            // 0. Chạy hết hạn lười cho các đơn PENDING quá hạn của Owner và Sitter
-            await ExpireOverduePendingBookingsAsync(ownerId: currentUserId, sitterId: null);
-            await ExpireOverduePendingBookingsAsync(ownerId: null, sitterId: dto.SitterId);
+            // 0. Chạy hết hạn lười cho các đơn PENDING và COMPLETION_PENDING của Owner và Sitter
+            await ProcessLazyBookingUpdatesAsync(ownerId: currentUserId, sitterId: null);
+            await ProcessLazyBookingUpdatesAsync(ownerId: null, sitterId: dto.SitterId);
 
             // 1. Parse và validate khoảng ngày
             if (!DateTime.TryParseExact(dto.NgayBatDau, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var rawStart))
@@ -252,28 +278,30 @@ namespace PetSitter.Services
                 throw new NotFoundException("Không tìm thấy thông tin đặt lịch.");
             }
 
-            if (booking.TrangThai == BookingStatus.PENDING && booking.ExpiresAt <= DateTime.UtcNow)
+            var nowUtc = DateTime.UtcNow;
+            if ((booking.TrangThai == BookingStatus.PENDING && booking.ExpiresAt <= nowUtc)
+             || (booking.TrangThai == BookingStatus.COMPLETION_PENDING && booking.CompletionDeadline <= nowUtc))
             {
                 if (isOwner)
-                    await ExpireOverduePendingBookingsAsync(ownerId: currentUserId, sitterId: null);
+                    await ProcessLazyBookingUpdatesAsync(ownerId: currentUserId, sitterId: null);
                 else
-                    await ExpireOverduePendingBookingsAsync(ownerId: null, sitterId: booking.SitterId);
+                    await ProcessLazyBookingUpdatesAsync(ownerId: null, sitterId: booking.SitterId);
 
                 booking = await _context.Bookings.Find(b => b.BookingId == bookingId).FirstOrDefaultAsync() ?? booking;
             }
 
-            return await MapToDtoAsync(booking);
+            return await MapToDtoAsync(booking, currentUserId);
         }
 
         public async Task<List<BookingDetailDto>> GetMyBookingsAsync(string currentUserId)
         {
-            await ExpireOverduePendingBookingsAsync(ownerId: currentUserId, sitterId: null);
+            await ProcessLazyBookingUpdatesAsync(ownerId: currentUserId, sitterId: null);
 
             var bookings = await _context.Bookings.Find(b => b.OwnerId == currentUserId).SortByDescending(b => b.CreatedAt).ToListAsync();
             var dtos = new List<BookingDetailDto>();
             foreach(var booking in bookings)
             {
-                dtos.Add(await MapToDtoAsync(booking));
+                dtos.Add(await MapToDtoAsync(booking, currentUserId, role: "OWNER"));
             }
             return dtos;
         }
@@ -407,6 +435,9 @@ namespace PetSitter.Services
 
         public async Task<ReviewDto> AddReviewAsync(string currentUserId, string bookingId, CreateReviewDto dto)
         {
+            // Gọi hàm lazy trước khi kiểm tra trạng thái
+            await ProcessLazyBookingUpdatesAsync(ownerId: currentUserId, sitterId: null);
+
             var booking = await _context.Bookings.Find(b => b.BookingId == bookingId).FirstOrDefaultAsync();
             if (booking == null || booking.OwnerId != currentUserId)
                 throw new NotFoundException("Không tìm thấy thông tin đặt lịch.");
@@ -455,7 +486,220 @@ namespace PetSitter.Services
             };
         }
 
-        private async Task<BookingDetailDto> MapToDtoAsync(Booking booking)
+        public async Task<BookingDetailDto> SitterCompleteBookingAsync(string currentUserId, string bookingId)
+        {
+            var sitterProfile = await _context.SitterProfiles.Find(s => s.UserId == currentUserId).FirstOrDefaultAsync();
+            if (sitterProfile == null)
+                throw new NotFoundException("Không tìm thấy hồ sơ Sitter.");
+
+            var vnToday = GetVnToday();
+            var nowUtc = DateTime.UtcNow;
+            var deadlineDays = _configuration.GetValue<int>("BookingSettings:CompletionDeadlineDays", 3);
+            if (deadlineDays <= 0) deadlineDays = 3;
+            var completionDeadline = nowUtc.AddDays(deadlineDays);
+
+            // Chỉ hoàn tất khi TrangThai == ACCEPTED và NgayKetThuc < vnToday (qua ngày kết thúc)
+            var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, bookingId)
+                       & Builders<Booking>.Filter.Eq(b => b.SitterId, sitterProfile.SitterId)
+                       & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.ACCEPTED)
+                       & Builders<Booking>.Filter.Lt(b => b.NgayKetThuc, vnToday);
+
+            var update = Builders<Booking>.Update
+                .Set(b => b.TrangThai, BookingStatus.COMPLETION_PENDING)
+                .Set(b => b.IsActive, true)
+                .Set(b => b.SitterCompletedAt, nowUtc)
+                .Set(b => b.CompletionDeadline, completionDeadline)
+                .Push(b => b.History, new InquiryHistory
+                {
+                    HanhDong = "SITTER_COMPLETED",
+                    FromStatus = BookingStatus.ACCEPTED,
+                    NguoiThucHien = "SITTER",
+                    ActorUserId = currentUserId,
+                    LyDo = null,
+                    ThoiGian = nowUtc
+                });
+
+            var result = await _context.Bookings.FindOneAndUpdateAsync(filter, update, new FindOneAndUpdateOptions<Booking> { ReturnDocument = ReturnDocument.After });
+
+            if (result == null)
+            {
+                var existing = await _context.Bookings.Find(b => b.BookingId == bookingId).FirstOrDefaultAsync();
+                if (existing == null || existing.SitterId != sitterProfile.SitterId)
+                    throw new NotFoundException("Không tìm thấy thông tin đặt lịch.");
+
+                if (existing.TrangThai == BookingStatus.ACCEPTED && existing.NgayKetThuc >= vnToday)
+                    throw new BadRequestException("Chưa thể hoàn thành booking do chưa qua ngày kết thúc.");
+
+                throw new ConflictException("Không thể đánh dấu hoàn tất. Trạng thái đơn đã thay đổi.");
+            }
+
+            return await MapToDtoAsync(result, currentUserId, role: "SITTER");
+        }
+
+        public async Task<BookingDetailDto> OwnerConfirmCompletionAsync(string currentUserId, string bookingId)
+        {
+            await ProcessLazyBookingUpdatesAsync(ownerId: currentUserId, sitterId: null);
+
+            var nowUtc = DateTime.UtcNow;
+            var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, bookingId)
+                       & Builders<Booking>.Filter.Eq(b => b.OwnerId, currentUserId)
+                       & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.COMPLETION_PENDING);
+
+            var update = Builders<Booking>.Update
+                .Set(b => b.TrangThai, BookingStatus.COMPLETED)
+                .Set(b => b.IsActive, false)
+                .Set(b => b.OwnerConfirmedAt, nowUtc)
+                .Push(b => b.History, new InquiryHistory
+                {
+                    HanhDong = "OWNER_CONFIRMED",
+                    FromStatus = BookingStatus.COMPLETION_PENDING,
+                    NguoiThucHien = "OWNER",
+                    ActorUserId = currentUserId,
+                    LyDo = null,
+                    ThoiGian = nowUtc
+                });
+
+            var result = await _context.Bookings.FindOneAndUpdateAsync(filter, update, new FindOneAndUpdateOptions<Booking> { ReturnDocument = ReturnDocument.After });
+
+            if (result == null)
+            {
+                var existing = await _context.Bookings.Find(b => b.BookingId == bookingId).FirstOrDefaultAsync();
+                if (existing == null || existing.OwnerId != currentUserId)
+                    throw new NotFoundException("Không tìm thấy thông tin đặt lịch.");
+
+                if (existing.TrangThai == BookingStatus.COMPLETED)
+                    throw new ConflictException("Đơn đặt lịch đã ở trạng thái hoàn tất.");
+
+                if (existing.TrangThai == BookingStatus.DISPUTED)
+                    throw new ConflictException("Đơn đặt lịch đang trong trạng thái khiếu nại.");
+
+                throw new ConflictException("Không thể xác nhận hoàn tất. Trạng thái đơn không hợp lệ hoặc đã thay đổi.");
+            }
+
+            return await MapToDtoAsync(result, currentUserId, role: "OWNER");
+        }
+
+        public async Task<BookingDetailDto> OwnerDisputeBookingAsync(string currentUserId, string bookingId, string lyDo)
+        {
+            if (string.IsNullOrWhiteSpace(lyDo))
+                throw new BadRequestException("Lý do khiếu nại là bắt buộc.");
+
+            var trimmedReason = lyDo.Trim();
+            if (trimmedReason.Length < 10 || trimmedReason.Length > 500)
+                throw new BadRequestException("Lý do khiếu nại phải từ 10 đến 500 ký tự.");
+
+            var nowUtc = DateTime.UtcNow;
+            var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, bookingId)
+                       & Builders<Booking>.Filter.Eq(b => b.OwnerId, currentUserId)
+                       & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.COMPLETION_PENDING)
+                       & Builders<Booking>.Filter.Gt(b => b.CompletionDeadline, nowUtc);
+
+            var update = Builders<Booking>.Update
+                .Set(b => b.TrangThai, BookingStatus.DISPUTED)
+                .Set(b => b.IsActive, true)
+                .Set(b => b.DisputeReason, trimmedReason)
+                .Push(b => b.History, new InquiryHistory
+                {
+                    HanhDong = "DISPUTED",
+                    FromStatus = BookingStatus.COMPLETION_PENDING,
+                    NguoiThucHien = "OWNER",
+                    ActorUserId = currentUserId,
+                    LyDo = trimmedReason,
+                    ThoiGian = nowUtc
+                });
+
+            var result = await _context.Bookings.FindOneAndUpdateAsync(filter, update, new FindOneAndUpdateOptions<Booking> { ReturnDocument = ReturnDocument.After });
+
+            if (result == null)
+            {
+                var existing = await _context.Bookings.Find(b => b.BookingId == bookingId).FirstOrDefaultAsync();
+                if (existing == null || existing.OwnerId != currentUserId)
+                    throw new NotFoundException("Không tìm thấy thông tin đặt lịch.");
+
+                if (existing.TrangThai == BookingStatus.COMPLETION_PENDING && existing.CompletionDeadline <= nowUtc)
+                {
+                    await ProcessLazyBookingUpdatesAsync(ownerId: currentUserId, sitterId: null);
+                    throw new ConflictException("Đã quá thời hạn khiếu nại (đơn đã tự động hoàn tất).");
+                }
+
+                if (existing.TrangThai == BookingStatus.COMPLETED)
+                    throw new ConflictException("Đơn đã hoàn tất, không thể khiếu nại.");
+
+                throw new ConflictException("Không thể khiếu nại đơn. Trạng thái đơn không hợp lệ hoặc đã thay đổi.");
+            }
+
+            return await MapToDtoAsync(result, currentUserId, role: "OWNER");
+        }
+
+        public async Task<BookingDetailDto> AdminResolveDisputeAsync(string adminUserId, string bookingId, ResolveDisputeDto dto)
+        {
+            if (dto == null)
+                throw new BadRequestException("Dữ liệu không hợp lệ.");
+
+            if (dto.Resolution != BookingStatus.COMPLETED && dto.Resolution != BookingStatus.CANCELLED)
+                throw new BadRequestException("Resolution chỉ nhận COMPLETED hoặc CANCELLED.");
+
+            if (string.IsNullOrWhiteSpace(dto.Note))
+                throw new BadRequestException("Ghi chú xử lý là bắt buộc.");
+
+            var trimmedNote = dto.Note.Trim();
+            if (trimmedNote.Length < 10 || trimmedNote.Length > 500)
+                throw new BadRequestException("Ghi chú xử lý phải từ 10 đến 500 ký tự.");
+
+            var booking = await _context.Bookings.Find(b => b.BookingId == bookingId).FirstOrDefaultAsync();
+            if (booking == null)
+                throw new NotFoundException("Không tìm thấy thông tin đặt lịch.");
+
+            // Kiểm tra xung đột lợi ích: Admin không được xử lý đơn mà chính mình là Owner hoặc Sitter
+            if (booking.OwnerId == adminUserId)
+                throw new BadRequestException("Admin không thể tự xử lý đơn khiếu nại của chính mình với tư cách là chủ thú cưng.");
+
+            var sitterProfile = await _context.SitterProfiles.Find(s => s.SitterId == booking.SitterId).FirstOrDefaultAsync();
+            if (sitterProfile != null && sitterProfile.UserId == adminUserId)
+                throw new BadRequestException("Admin không thể tự xử lý đơn khiếu nại của chính mình với tư cách là người chăm sóc.");
+
+            var nowUtc = DateTime.UtcNow;
+            var isCompleted = dto.Resolution == BookingStatus.COMPLETED;
+            var actionName = isCompleted ? "ADMIN_RESOLVED_COMPLETED" : "ADMIN_RESOLVED_CANCELLED";
+
+            var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, bookingId)
+                       & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.DISPUTED);
+
+            var update = Builders<Booking>.Update
+                .Set(b => b.TrangThai, dto.Resolution)
+                .Set(b => b.IsActive, false)
+                .Set(b => b.AdminResolutionNote, trimmedNote)
+                .Set(b => b.ResolvedByAdmin, true)
+                .Push(b => b.History, new InquiryHistory
+                {
+                    HanhDong = actionName,
+                    FromStatus = BookingStatus.DISPUTED,
+                    NguoiThucHien = "ADMIN",
+                    ActorUserId = adminUserId,
+                    LyDo = trimmedNote,
+                    ThoiGian = nowUtc
+                });
+
+            var result = await _context.Bookings.FindOneAndUpdateAsync(filter, update, new FindOneAndUpdateOptions<Booking> { ReturnDocument = ReturnDocument.After });
+
+            if (result == null)
+                throw new ConflictException("Không thể xử lý tranh chấp. Đơn không ở trạng thái DISPUTED hoặc đã được xử lý.");
+
+            return await MapToDtoAsync(result, adminUserId, role: "ADMIN");
+        }
+
+        public async Task<List<BookingDetailDto>> GetDisputedBookingsForAdminAsync()
+        {
+            var bookings = await _context.Bookings.Find(b => b.TrangThai == BookingStatus.DISPUTED).SortByDescending(b => b.CreatedAt).ToListAsync();
+            var dtos = new List<BookingDetailDto>();
+            foreach (var b in bookings)
+            {
+                dtos.Add(await MapToDtoAsync(b, null, role: "ADMIN"));
+            }
+            return dtos;
+        }
+
+        private async Task<BookingDetailDto> MapToDtoAsync(Booking booking, string? currentUserId = null, string? role = null)
         {
             var sitterProfile = await _context.SitterProfiles.Find(s => s.SitterId == booking.SitterId).FirstOrDefaultAsync();
             var user = sitterProfile != null ? await _context.Users.Find(u => u.UserId == sitterProfile.UserId).FirstOrDefaultAsync() : null;
@@ -471,6 +715,30 @@ namespace PetSitter.Services
                 LyDo = h.LyDo,
                 ThoiGian = h.ThoiGian
             }).ToList();
+
+            bool isOwner = !string.IsNullOrEmpty(currentUserId) && booking.OwnerId == currentUserId;
+            bool isSitter = !string.IsNullOrEmpty(currentUserId) && sitterProfile != null && sitterProfile.UserId == currentUserId;
+            bool isAdmin = role == "ADMIN";
+
+            // Yêu cầu 5: DTO list/detail trả CompletionDeadline, DisputeReason, AdminResolutionNote theo đúng vai (chỉ Owner, Sitter của đơn, Admin)
+            DateTime? completionDeadline = null;
+            string? disputeReason = null;
+            string? adminResolutionNote = null;
+            DateTime? sitterCompletedAt = null;
+            DateTime? ownerConfirmedAt = null;
+            bool? autoCompleted = null;
+            bool? resolvedByAdmin = null;
+
+            if (isOwner || isSitter || isAdmin)
+            {
+                completionDeadline = booking.CompletionDeadline;
+                disputeReason = booking.DisputeReason;
+                adminResolutionNote = booking.AdminResolutionNote;
+                sitterCompletedAt = booking.SitterCompletedAt;
+                ownerConfirmedAt = booking.OwnerConfirmedAt;
+                autoCompleted = booking.AutoCompleted;
+                resolvedByAdmin = booking.ResolvedByAdmin;
+            }
 
             return new BookingDetailDto
             {
@@ -492,6 +760,13 @@ namespace PetSitter.Services
                 LyDoTuChoi = booking.LyDoTuChoi,
                 HasReview = hasReview,
                 GhiChu = booking.GhiChu,
+                SitterCompletedAt = sitterCompletedAt,
+                CompletionDeadline = completionDeadline,
+                OwnerConfirmedAt = ownerConfirmedAt,
+                AutoCompleted = autoCompleted,
+                DisputeReason = disputeReason,
+                AdminResolutionNote = adminResolutionNote,
+                ResolvedByAdmin = resolvedByAdmin,
                 Pet = booking.Pet,
                 Addons = booking.Addons,
                 History = historyDtos

@@ -12,5 +12,11 @@ namespace PetSitter.Services
         Task CancelBookingAsync(string currentUserId, string bookingId, string? lyDo = null, string? expectedStatus = null);
         Task<ReviewDto> AddReviewAsync(string currentUserId, string bookingId, CreateReviewDto dto);
         Task ExpireOverduePendingBookingsAsync(string? ownerId = null, string? sitterId = null);
+        Task ProcessLazyBookingUpdatesAsync(string? ownerId = null, string? sitterId = null);
+        Task<BookingDetailDto> SitterCompleteBookingAsync(string currentUserId, string bookingId);
+        Task<BookingDetailDto> OwnerConfirmCompletionAsync(string currentUserId, string bookingId);
+        Task<BookingDetailDto> OwnerDisputeBookingAsync(string currentUserId, string bookingId, string lyDo);
+        Task<BookingDetailDto> AdminResolveDisputeAsync(string adminUserId, string bookingId, ResolveDisputeDto dto);
+        Task<List<BookingDetailDto>> GetDisputedBookingsForAdminAsync();
     }
 }

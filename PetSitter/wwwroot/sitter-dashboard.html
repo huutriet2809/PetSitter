@@ -17,6 +17,8 @@
     .status-pending { background: rgba(234, 179, 8, 0.1); color: #eab308; }
     .status-accepted { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
     .status-completed { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
+    .status-completion-pending { background: rgba(168, 85, 247, 0.1); color: #a855f7; }
+    .status-disputed { background: rgba(249, 115, 22, 0.1); color: #ea580c; }
     .status-cancelled, .status-rejected { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
     .status-expired { background: rgba(107, 114, 128, 0.1); color: #6b7280; }
 
@@ -37,8 +39,10 @@
     </div>
     <div class="tabs">
       <div class="tab active" onclick="loadBookings('PENDING', this)">Chờ xác nhận</div>
-      <div class="tab" onclick="loadBookings('ACCEPTED', this)">Sắp tới</div>
+      <div class="tab" onclick="loadBookings('ACCEPTED', this)">Đang/Sắp thực hiện</div>
+      <div class="tab" onclick="loadBookings('COMPLETION_PENDING', this)">Chờ chủ duyệt</div>
       <div class="tab" onclick="loadBookings('COMPLETED', this)">Đã hoàn thành</div>
+      <div class="tab" onclick="loadBookings('DISPUTED', this)">Tranh chấp</div>
       <div class="tab" onclick="loadBookings('', this)">Tất cả</div>
     </div>
     
@@ -67,6 +71,31 @@
       return d.toLocaleDateString('vi-VN');
     }
 
+    function getStatusLabel(status) {
+      switch (status) {
+        case 'PENDING': return 'Chờ xác nhận';
+        case 'ACCEPTED': return 'Đã xác nhận';
+        case 'COMPLETION_PENDING': return 'Chờ chủ xác nhận';
+        case 'COMPLETED': return 'Đã hoàn thành';
+        case 'DISPUTED': return 'Đang tranh chấp';
+        case 'CANCELLED': return 'Đã hủy';
+        case 'REJECTED': return 'Từ chối';
+        case 'EXPIRED': return 'Đã hết hạn';
+        default: return status || '';
+      }
+    }
+
+    function formatTimeRemaining(isoDate) {
+      if (!isoDate) return '';
+      const diffMs = new Date(isoDate).getTime() - Date.now();
+      if (diffMs <= 0) return 'Đã hết hạn xác nhận';
+      const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      if (days > 0) return `còn ${days} ngày ${hours} giờ`;
+      const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+      return `còn ${hours} giờ ${minutes} phút`;
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
       renderNavbar();
       renderFooter();
@@ -93,6 +122,10 @@
 
         container.innerHTML = bookings.map(b => {
           let actionHtml = '';
+          const vnTodayStr = new Date(Date.now() + 7 * 3600000).toISOString().split('T')[0];
+          const endVnStr = new Date(new Date(b.ngayKetThuc).getTime() + 7 * 3600000).toISOString().split('T')[0];
+          const isPastEnd = endVnStr < vnTodayStr;
+
           if (b.trangThai === 'PENDING') {
             actionHtml = `
               <div class="action-group">
@@ -109,7 +142,10 @@
             actionHtml = `
               <div class="action-group" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                 <a href="stay-updates.html?bookingId=${/* safe */ b.bookingId}" class="btn btn-outline btn-sm">Nhật ký chăm sóc</a>
-                <button class="btn btn-primary btn-sm" onclick="completeBooking('${/* safe */ b.bookingId}')">Hoàn thành chuyến đi</button>
+                ${isPastEnd 
+                  ? `<button class="btn btn-primary btn-sm" onclick="completeBooking('${/* safe */ b.bookingId}')">Đánh dấu hoàn tất</button>`
+                  : `<button class="btn btn-primary btn-sm" disabled style="opacity:0.6; cursor:not-allowed;" title="Chỉ có thể đánh dấu sau ngày kết thúc lưu trú">Đánh dấu hoàn tất (chưa qua ngày kết thúc)</button>`
+                }
                 ${canCancel ? `<button class="btn btn-outline btn-sm" style="color:#ef4444; border-color:#ef4444;" onclick="showSitterCancel('${/* safe */ b.bookingId}')">Hủy nhận đơn</button>` : ''}
               </div>
               <div class="reject-wrap" id="cancel-${/* safe */ b.bookingId}">
@@ -117,11 +153,27 @@
                 <button class="btn btn-outline btn-sm" onclick="sitterCancelBooking('${/* safe */ b.bookingId}')">Xác nhận hủy</button>
               </div>
             `;
+          } else if (b.trangThai === 'COMPLETION_PENDING') {
+            const timeRem = formatTimeRemaining(b.completionDeadline);
+            actionHtml = `
+              <div style="margin-top: 15px; padding: 10px; background: rgba(168, 85, 247, 0.08); border-radius: 6px; font-size: 0.9rem; color: #7e22ce;">
+                <strong>⏳ Chờ chủ xác nhận hoàn tất:</strong> ${escapeHtml(timeRem)} (hạn chót: ${formatNgayDep(b.completionDeadline)})
+              </div>
+            `;
+          } else if (b.trangThai === 'DISPUTED') {
+            actionHtml = `
+              <div style="margin-top: 15px; padding: 10px; background: rgba(249, 115, 22, 0.08); border-radius: 6px; font-size: 0.9rem; color: #c2410c;">
+                <strong>⚠️ Đơn đang tranh chấp:</strong> Đang chờ Quản trị viên can thiệp xử lý.
+                ${/* safe */ b.disputeReason ? `<br/><em>Lý do chủ nuôi khiếu nại: ${escapeHtml(b.disputeReason)}</em>` : ''}
+              </div>
+            `;
           }
 
           let statusClass = 'status-pending';
           if (b.trangThai === 'ACCEPTED') statusClass = 'status-accepted';
+          if (b.trangThai === 'COMPLETION_PENDING') statusClass = 'status-completion-pending';
           if (b.trangThai === 'COMPLETED') statusClass = 'status-completed';
+          if (b.trangThai === 'DISPUTED') statusClass = 'status-disputed';
           if (b.trangThai === 'CANCELLED' || b.trangThai === 'REJECTED') statusClass = 'status-rejected';
           if (b.trangThai === 'EXPIRED') statusClass = 'status-expired';
 
@@ -131,7 +183,7 @@
                 <div>
                   <strong>Mã: ${escapeHtml(b.maDatLich)}</strong>
                 </div>
-                <div style="text-align:right;"><span class="status-badge ${/* safe */ statusClass}">${/* safe */ b.trangThai}</span></div>
+                <div style="text-align:right;"><span class="status-badge ${/* safe */ statusClass}">${escapeHtml(getStatusLabel(b.trangThai))}</span></div>
               </div>
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
                 <div>

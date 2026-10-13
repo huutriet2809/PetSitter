@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using MongoDB.Driver;
 using PetSitter.DTOs;
 using PetSitter.Models;
@@ -32,8 +33,8 @@ namespace PetSitter.Controllers
             var sitterProfile = await _context.SitterProfiles.Find(s => s.UserId == userId).FirstOrDefaultAsync();
             if (sitterProfile == null) return NotFound(new { message = "Không tìm thấy hồ sơ Sitter." });
 
-            // Hết hạn lười cho các đơn của Sitter này
-            await _bookingService.ExpireOverduePendingBookingsAsync(ownerId: null, sitterId: sitterProfile.SitterId);
+            // Hết hạn lười cho các đơn của Sitter này (cả PENDING lẫn COMPLETION_PENDING)
+            await _bookingService.ProcessLazyBookingUpdatesAsync(ownerId: null, sitterId: sitterProfile.SitterId);
 
             var filterBuilder = Builders<Booking>.Filter;
             var filter = filterBuilder.Eq(b => b.SitterId, sitterProfile.SitterId);
@@ -195,48 +196,14 @@ namespace PetSitter.Controllers
         }
 
         [HttpPatch("{id}/complete")]
+        [EnableRateLimiting("booking-review")]
         public async Task<IActionResult> CompleteBooking(string id)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            var sitterProfile = await _context.SitterProfiles.Find(s => s.UserId == userId).FirstOrDefaultAsync();
-            if (sitterProfile == null) return NotFound(new { message = "Không tìm thấy hồ sơ Sitter." });
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
-            var vnToday = BookingService.GetVnToday();
-            var nowUtc = DateTime.UtcNow;
-
-            var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, id)
-                       & Builders<Booking>.Filter.Eq(b => b.SitterId, sitterProfile.SitterId)
-                       & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.ACCEPTED)
-                       & Builders<Booking>.Filter.Lt(b => b.NgayKetThuc, vnToday);
-
-            var update = Builders<Booking>.Update
-                .Set(b => b.TrangThai, BookingStatus.COMPLETED)
-                .Set(b => b.IsActive, false)
-                .Push(b => b.History, new InquiryHistory
-                {
-                    HanhDong = BookingStatus.COMPLETED,
-                    FromStatus = BookingStatus.ACCEPTED,
-                    NguoiThucHien = "SITTER",
-                    ActorUserId = userId,
-                    LyDo = null,
-                    ThoiGian = nowUtc
-                });
-
-            var result = await _context.Bookings.FindOneAndUpdateAsync(filter, update);
-
-            if (result == null)
-            {
-                var existing = await _context.Bookings.Find(b => b.BookingId == id).FirstOrDefaultAsync();
-                if (existing == null || existing.SitterId != sitterProfile.SitterId)
-                    return NotFound(new { message = "Không tìm thấy booking." });
-
-                if (existing.TrangThai == BookingStatus.ACCEPTED && existing.NgayKetThuc >= vnToday)
-                    return BadRequest(new { message = "Chưa thể hoàn thành booking do chưa qua ngày kết thúc." });
-
-                return Conflict(new { message = "Không thể hoàn thành booking. Trạng thái đã thay đổi." });
-            }
-
-            return Ok(new { message = "Đã hoàn thành booking." });
+            var result = await _bookingService.SitterCompleteBookingAsync(userId, id);
+            return Ok(new { message = "Đã đánh dấu hoàn tất booking, đang chờ chủ nuôi xác nhận.", booking = result });
         }
     }
 }

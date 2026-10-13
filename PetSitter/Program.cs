@@ -29,6 +29,13 @@ builder.Services.AddCors(options =>
 });
 builder.Services.AddRazorPages(); // Add Razor Pages for FE
 
+// Validate BookingSettings:CompletionDeadlineDays > 0 lúc khởi động
+var completionDeadlineDays = builder.Configuration.GetValue<int>("BookingSettings:CompletionDeadlineDays");
+if (completionDeadlineDays <= 0)
+{
+    throw new InvalidOperationException("CRITICAL: Cấu hình 'BookingSettings:CompletionDeadlineDays' phải được thiết lập và lớn hơn 0!");
+}
+
 // Validate MongoDB Connection String ở mọi môi trường
 var mongoDbString = builder.Configuration.GetConnectionString("MongoDb");
 if (string.IsNullOrWhiteSpace(mongoDbString) || mongoDbString.StartsWith("YOUR_"))

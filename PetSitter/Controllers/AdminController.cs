@@ -16,10 +16,12 @@ namespace PetSitter.Controllers
     public class AdminController : ControllerBase
     {
         private readonly PetSitterContext _context;
+        private readonly PetSitter.Services.IBookingService _bookingService;
 
-        public AdminController(PetSitterContext context)
+        public AdminController(PetSitterContext context, PetSitter.Services.IBookingService bookingService)
         {
             _context = context;
+            _bookingService = bookingService;
         }
 
         [HttpGet("sitter-applications")]
@@ -117,6 +119,30 @@ namespace PetSitter.Controllers
             await _context.SitterProfiles.UpdateOneAsync(filter, update);
 
             return Ok(new { message = "Đã từ chối hồ sơ." });
+        }
+
+        [HttpGet("disputed-bookings")]
+        public async Task<IActionResult> GetDisputedBookings()
+        {
+            var bookings = await _bookingService.GetDisputedBookingsForAdminAsync();
+            return Ok(bookings);
+        }
+
+        [HttpPatch("bookings/{id}/resolve")]
+        public async Task<IActionResult> ResolveDispute(string id, [FromBody] ResolveDisputeDto dto)
+        {
+            try
+            {
+                var adminUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(adminUserId)) return Unauthorized();
+
+                var result = await _bookingService.AdminResolveDisputeAsync(adminUserId, id, dto);
+                return Ok(new { message = $"Đã giải quyết tranh chấp đơn đặt lịch thành công ({dto.Resolution}).", booking = result });
+            }
+            catch (PetSitter.Exceptions.AppException ex)
+            {
+                return StatusCode(ex.StatusCode, new { message = ex.Message });
+            }
         }
     }
 }
