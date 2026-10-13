@@ -62,16 +62,18 @@ namespace PetSitter.Services
         {
             var rawToken = GenerateRawToken256Bit();
             var tokenHash = HashToken(rawToken);
+            var nowUtc = DateTime.UtcNow;
 
             var entity = new RefreshToken
             {
                 UserId = userId,
                 TokenHash = tokenHash,
-                ExpiresAt = DateTime.UtcNow.AddDays(7), // Hạn 7 ngày
+                ExpiresAt = nowUtc.AddDays(7), // Hạn trượt 7 ngày
+                AbsoluteExpiresAt = nowUtc.AddDays(30), // Trần tuyệt đối 30 ngày từ lúc đăng nhập ban đầu
                 RevokedAt = null,
                 ReplacedBy = null,
                 CreatedByIp = ipAddress,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = nowUtc
             };
 
             await _context.RefreshTokens.InsertOneAsync(entity);
@@ -86,62 +88,26 @@ namespace PetSitter.Services
             var hash = HashToken(rawToken);
             var nowUtc = DateTime.UtcNow;
 
-            var newRawToken = GenerateRawToken256Bit();
-            var newHash = HashToken(newRawToken);
-
-            // 1. Cập nhật nguyên tử: TokenHash khớp, chưa bị revoke, chưa hết hạn
-            var filter = Builders<RefreshToken>.Filter.Eq(r => r.TokenHash, hash)
-                       & Builders<RefreshToken>.Filter.Eq(r => r.RevokedAt, null)
-                       & Builders<RefreshToken>.Filter.Gt(r => r.ExpiresAt, nowUtc);
-
-            var update = Builders<RefreshToken>.Update
-                .Set(r => r.RevokedAt, nowUtc)
-                .Set(r => r.ReplacedBy, newHash);
-
-            var oldToken = await _context.RefreshTokens.FindOneAndUpdateAsync(filter, update);
-
-            if (oldToken != null)
-            {
-                // Thêm token mới vào DB
-                var newTokenEntity = new RefreshToken
-                {
-                    UserId = oldToken.UserId,
-                    TokenHash = newHash,
-                    ExpiresAt = nowUtc.AddDays(7),
-                    RevokedAt = null,
-                    ReplacedBy = null,
-                    CreatedByIp = ipAddress,
-                    CreatedAt = nowUtc
-                };
-                await _context.RefreshTokens.InsertOneAsync(newTokenEntity);
-
-                // Luôn đọc Role hiện tại từ DB để gán vào access token mới (kịp thời phản ánh khi Admin đổi Role)
-                var user = await _context.Users.Find(u => u.UserId == oldToken.UserId).FirstOrDefaultAsync();
-                if (user == null)
-                    return RotateResult.Fail(RotateStatus.Invalid, "Tài khoản không tồn tại hoặc đã bị xóa.");
-
-                var newAccessToken = GenerateAccessToken(user);
-                return RotateResult.Ok(newAccessToken, newRawToken, user.Role);
-            }
-
-            // 2. Nếu FindOneAndUpdate trả về null, kiểm tra nguyên nhân để xử lý an toàn
+            // Kiểm tra token hiện tại
             var existing = await _context.RefreshTokens.Find(r => r.TokenHash == hash).FirstOrDefaultAsync();
             if (existing == null)
             {
                 return RotateResult.Fail(RotateStatus.Invalid, "Refresh token không tồn tại.");
             }
 
-            if (existing.ExpiresAt <= nowUtc)
+            // Kiểm tra hết hạn: hoặc quá hạn trượt (ExpiresAt), hoặc chạm trần tuyệt đối (AbsoluteExpiresAt)
+            if (existing.ExpiresAt <= nowUtc || (existing.AbsoluteExpiresAt != default && existing.AbsoluteExpiresAt <= nowUtc))
             {
-                return RotateResult.Fail(RotateStatus.Expired, "Refresh token đã hết hạn (7 ngày). Vui lòng đăng nhập lại.");
+                return RotateResult.Fail(RotateStatus.Expired, "Refresh token đã hết hạn phiên đăng nhập (tối đa 30 ngày). Vui lòng đăng nhập lại.");
             }
 
+            // Nếu token ĐÃ bị revoke trước đó: kiểm tra ân hạn hoặc thu hồi toàn bộ (Replay Attack)
             if (existing.RevokedAt != null)
             {
-                // XỬ LÝ ĐUA LỆNH ĐỒNG THỜI (Race Condition Grace Period):
-                // Nếu token vừa bị revoke trong vòng 15 giây gần nhất và có ReplacedBy,
-                // đây là trường hợp 2 tab hoặc đa luồng cùng refresh đồng thời một lúc.
-                // Cho phép cấp access token mới mà không đăng xuất oan user.
+                // GHI CHÚ BẢO MẬT: Ân hạn 15 giây (Grace Period) là sự đánh đổi có chủ ý (deliberate trade-off)
+                // giữa tính khả dụng (tránh đăng xuất oan khi trình duyệt mở nhiều tab hoặc đa luồng gửi request song song)
+                // và tính nghiêm ngặt tuyệt đối của token rotation.
+                // Trong cửa sổ 15s này, bên thua race chỉ nhận Access Token mới (15 phút), KHÔNG được cấp Refresh Token mới.
                 if (existing.RevokedAt >= nowUtc.AddSeconds(-15) && !string.IsNullOrEmpty(existing.ReplacedBy))
                 {
                     var replacedToken = await _context.RefreshTokens.Find(r => r.TokenHash == existing.ReplacedBy).FirstOrDefaultAsync();
@@ -155,11 +121,82 @@ namespace PetSitter.Services
                     }
                 }
 
-                // PHÁT HIỆN TÁI SỬ DỤNG TOKEN ĐÃ REVOKE (REPLAY ATTACK):
-                // Token cũ ngoài thời gian ân hạn bị dùng lại -> Nghi vấn token bị lộ hoặc kẻ gian chiếm đoạt.
-                // Lập tức thu hồi toàn bộ Refresh Tokens của User này để ngắt mọi phiên đăng nhập!
+                // Token đã revoke ngoài thời gian ân hạn hoặc không có ReplacedBy (logout, đổi pass, reuse attack)
                 await RevokeAllUserTokensAsync(existing.UserId);
                 return RotateResult.Fail(RotateStatus.RevokedReuse, "Cảnh báo bảo mật: Token đã bị thu hồi trước đó. Toàn bộ phiên đăng nhập đã bị hủy để bảo vệ tài khoản.");
+            }
+
+            // Chuẩn bị token mới kế thừa AbsoluteExpiresAt
+            var newRawToken = GenerateRawToken256Bit();
+            var newHash = HashToken(newRawToken);
+
+            var absoluteExpiry = existing.AbsoluteExpiresAt != default ? existing.AbsoluteExpiresAt : nowUtc.AddDays(30);
+            var newExpiresAt = nowUtc.AddDays(7);
+            if (newExpiresAt > absoluteExpiry)
+            {
+                newExpiresAt = absoluteExpiry; // Không vượt quá trần tuyệt đối
+            }
+
+            var newTokenEntity = new RefreshToken
+            {
+                UserId = existing.UserId,
+                TokenHash = newHash,
+                ExpiresAt = newExpiresAt,
+                AbsoluteExpiresAt = absoluteExpiry,
+                RevokedAt = null,
+                ReplacedBy = null,
+                CreatedByIp = ipAddress,
+                CreatedAt = nowUtc
+            };
+
+            // BƯỚC 1: Insert token mới TRƯỚC để request song song đến giữa chừng luôn tìm thấy replacedToken
+            await _context.RefreshTokens.InsertOneAsync(newTokenEntity);
+
+            // BƯỚC 2: Cập nhật nguyên tử token cũ
+            var filter = Builders<RefreshToken>.Filter.Eq(r => r.TokenHash, hash)
+                       & Builders<RefreshToken>.Filter.Eq(r => r.RevokedAt, null)
+                       & Builders<RefreshToken>.Filter.Gt(r => r.ExpiresAt, nowUtc);
+
+            var update = Builders<RefreshToken>.Update
+                .Set(r => r.RevokedAt, nowUtc)
+                .Set(r => r.ReplacedBy, newHash);
+
+            var oldToken = await _context.RefreshTokens.FindOneAndUpdateAsync(filter, update);
+
+            if (oldToken != null)
+            {
+                // Thắng race condition: trả về access token và refresh token mới
+                var user = await _context.Users.Find(u => u.UserId == oldToken.UserId).FirstOrDefaultAsync();
+                if (user == null)
+                    return RotateResult.Fail(RotateStatus.Invalid, "Tài khoản không tồn tại hoặc đã bị xóa.");
+
+                var newAccessToken = GenerateAccessToken(user);
+                return RotateResult.Ok(newAccessToken, newRawToken, user.Role);
+            }
+
+            // BƯỚC 3: Nếu update không match (thua race condition với request song song):
+            // Xóa ngay token vừa insert thừa
+            await _context.RefreshTokens.DeleteOneAsync(r => r.TokenHash == newHash);
+
+            // Đọc lại token cũ từ DB và đi tiếp vào nhánh ân hạn
+            var updatedExisting = await _context.RefreshTokens.Find(r => r.TokenHash == hash).FirstOrDefaultAsync();
+            if (updatedExisting != null && updatedExisting.RevokedAt != null)
+            {
+                if (updatedExisting.RevokedAt >= nowUtc.AddSeconds(-15) && !string.IsNullOrEmpty(updatedExisting.ReplacedBy))
+                {
+                    var replacedToken = await _context.RefreshTokens.Find(r => r.TokenHash == updatedExisting.ReplacedBy).FirstOrDefaultAsync();
+                    if (replacedToken != null && replacedToken.RevokedAt == null && replacedToken.ExpiresAt > nowUtc)
+                    {
+                        var user = await _context.Users.Find(u => u.UserId == updatedExisting.UserId).FirstOrDefaultAsync();
+                        if (user != null)
+                        {
+                            return RotateResult.Grace(GenerateAccessToken(user), user.Role);
+                        }
+                    }
+                }
+
+                await RevokeAllUserTokensAsync(updatedExisting.UserId);
+                return RotateResult.Fail(RotateStatus.RevokedReuse, "Cảnh báo bảo mật: Token đã bị thu hồi trước đó. Toàn bộ phiên đăng nhập đã bị hủy.");
             }
 
             return RotateResult.Fail(RotateStatus.Invalid, "Refresh token không hợp lệ.");

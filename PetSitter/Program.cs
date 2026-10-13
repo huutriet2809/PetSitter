@@ -204,7 +204,18 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-// ForwardedHeaders: chỉ bật khi cấu hình proxy tin cậy (KnownProxies/KnownNetworks từ config), Development không bật
+// Seed MongoDB data
+using (var scope = app.Services.CreateScope())
+{
+    var ctx = scope.ServiceProvider.GetRequiredService<PetSitterContext>();
+    var config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+    await MongoSeeder.SeedDataAsync(ctx, config);
+}
+
+// Global Exception Handler (bắt mọi unhandled exception, không lộ stack trace ra ngoài)
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+
+// 1. ForwardedHeaders: chỉ bật khi cấu hình proxy tin cậy (KnownProxies/KnownNetworks từ config), Development không bật
 if (!app.Environment.IsDevelopment())
 {
     var knownProxiesConfig = app.Configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>();
@@ -227,18 +238,7 @@ if (!app.Environment.IsDevelopment())
     }
 }
 
-// Global Exception Handler
-app.UseMiddleware<ExceptionHandlingMiddleware>();
-
-// Seed MongoDB data
-using (var scope = app.Services.CreateScope())
-{
-    var ctx = scope.ServiceProvider.GetRequiredService<PetSitterContext>();
-    var config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
-    await MongoSeeder.SeedDataAsync(ctx, config);
-}
-
-// Configure the HTTP request pipeline.
+// 2. HSTS & HttpsRedirection (chỉ ở Production) / Swagger (chỉ ở Development)
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -250,9 +250,7 @@ else
     app.UseHttpsRedirection();
 }
 
-app.UseCors("CorsPolicy");
-
-// Security Headers & CSP Report-Only (áp dụng cho cả file tĩnh lẫn API)
+// 3. Security Headers & CSP Report-Only (áp dụng cho cả file tĩnh lẫn API)
 app.Use(async (context, next) =>
 {
     context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
@@ -274,19 +272,27 @@ app.UseStatusCodePages(async statusCodeContext =>
     }
 });
 
-app.UseDefaultFiles(); // Support default files like index.html
-app.UseStaticFiles(); // Serve static files (CSS/JS) - đặt trước RateLimiter để không bị trừ hạn ngạch 100/phút
+// 4. Static Files (đặt trước RateLimiter để file tĩnh không bị trừ hạn mức 100/phút)
+app.UseDefaultFiles();
+app.UseStaticFiles();
 
+// 5. Routing
 app.UseRouting();
 
+// 6. CORS
+app.UseCors("CorsPolicy");
+
+// 7. Authentication
 app.UseAuthentication();
 
-// Rate limiter đặt SAU UseAuthentication (để nhận diện user claim) và TRƯỚC UseAuthorization (để chặn 429 sớm)
+// 8. Rate Limiter (đặt SAU UseAuthentication để nhận diện ClaimTypes.NameIdentifier và TRƯỚC UseAuthorization để chặn 429 sớm)
 app.UseRateLimiter();
 
+// 9. Authorization
 app.UseAuthorization();
 
+// 10. Map Controllers & Pages
 app.MapControllers();
-app.MapRazorPages(); // Map Razor Pages routes
+app.MapRazorPages();
 
 app.Run();

@@ -26,6 +26,11 @@ namespace PetSitter.Models
         public DateTime ExpiresAt { get; set; }
 
         /// <summary>
+        /// Trần tuyệt đối cho chuỗi phiên refresh (30 ngày kể từ lần đăng nhập ban đầu, kế thừa qua các lần rotate).
+        /// </summary>
+        public DateTime AbsoluteExpiresAt { get; set; }
+
+        /// <summary>
         /// Thời điểm token bị thu hồi.
         /// </summary>
         public DateTime? RevokedAt { get; set; }
