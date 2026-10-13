@@ -36,3 +36,21 @@ Tài liệu này ghi nhận các vấn đề nghiệp vụ và quy trình vận 
 ## 2. Quy trình xử lý hoàn tiền và bồi hoàn khi tranh chấp (Dispute Settlement)
 - Hiện tại: Admin duyệt `CANCELLED` sẽ nhả `IsActive=false`.
 - Tương lai: Tích hợp cổng thanh toán trực tuyến hoặc quy trình hoàn cọc/phạt Sitter nếu vi phạm thỏa thuận dịch vụ.
+
+---
+
+## 3. Hệ thống Thông báo (In-app Notification & Email) khi thay đổi trạng thái đơn
+- **Hiện trạng:** Việc chuyển trạng thái (Sitter hoàn tất -> `COMPLETION_PENDING`, Chủ nuôi khiếu nại -> `DISPUTED`, Admin giải quyết -> `COMPLETED`/`CANCELLED`, hoặc hệ thống `AUTO_COMPLETED`/`EXPIRED`) hiện ghi vào `History` và cập nhật DB, nhưng chưa chủ động bắn thông báo đẩy (push/in-app notification/email) tới đối phương.
+- **Nhu cầu:** Cần xây dựng dịch vụ Notification (hoặc SignalR / WebSockets / Email background job):
+  - Báo cho Chủ nuôi ngay khi Sitter bấm hoàn tất để vào xác nhận hoặc khiếu nại kịp thời trong 3 ngày.
+  - Báo cho Sitter và Admin ngay khi phát sinh tranh chấp `DISPUTED`.
+  - Báo cho cả 2 bên khi Admin đưa ra phán quyết giải quyết khiếu nại kèm ghi chú kết luận.
+
+---
+
+## 4. Thống kê `GetStatsAsync`: Lọc tài khoản Admin và tài khoản bị vô hiệu hóa / đã xóa
+- **Hiện trạng:** Trong `SitterService.GetStatsAsync()`, số lượng người dùng hiện đếm toàn bộ `Users.CountDocumentsAsync(_ => true)`.
+- **Rủi ro:** Bao gồm cả các tài khoản nội bộ Admin, tài khoản test, hoặc các tài khoản bị khóa/soft-deleted (`IsActive == false`), làm số liệu thống kê công khai trên trang chủ bị sai lệch so với lượng người dùng thực tế.
+- **Đề xuất cải tiến:**
+  - Lọc điều kiện tài khoản hợp lệ: `Users.CountDocumentsAsync(u => u.Role != "ADMIN" && u.IsActive != false)`.
+  - Tương tự với Sitter: chỉ tính các hồ sơ đang hoạt động và không bị tạm khóa.
