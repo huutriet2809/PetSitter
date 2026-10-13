@@ -28,17 +28,17 @@ namespace PetSitter.Services
             return DateTime.SpecifyKind(vnNow.Date, DateTimeKind.Utc);
         }
 
-        public async Task ProcessLazyBookingUpdatesAsync(string? ownerId = null, string? sitterId = null)
+        public async Task ProcessLazyBookingUpdatesAsync(string? ownerId = null, string? sitterId = null, DateTime? nowUtc = null)
         {
             if (string.IsNullOrEmpty(ownerId) && string.IsNullOrEmpty(sitterId))
                 return;
 
-            var nowUtc = DateTime.UtcNow;
+            var effectiveNowUtc = nowUtc ?? DateTime.UtcNow;
             var filterBuilder = Builders<Booking>.Filter;
 
             // 1. Quét đơn PENDING quá hạn 48h -> EXPIRED (IsActive = false)
             var pendingFilter = filterBuilder.Eq(b => b.TrangThai, BookingStatus.PENDING)
-                              & filterBuilder.Lte(b => b.ExpiresAt, nowUtc);
+                              & filterBuilder.Lte(b => b.ExpiresAt, effectiveNowUtc);
 
             if (!string.IsNullOrEmpty(ownerId))
                 pendingFilter &= filterBuilder.Eq(b => b.OwnerId, ownerId);
@@ -55,14 +55,14 @@ namespace PetSitter.Services
                     NguoiThucHien = "SYSTEM",
                     ActorUserId = null,
                     LyDo = "Quá hạn 48 giờ không được chấp nhận",
-                    ThoiGian = nowUtc
+                    ThoiGian = effectiveNowUtc
                 });
 
             await _context.Bookings.UpdateManyAsync(pendingFilter, pendingUpdate);
 
             // 2. Quét đơn COMPLETION_PENDING quá hạn CompletionDeadline -> COMPLETED (AutoCompleted = true, IsActive = false)
             var completionFilter = filterBuilder.Eq(b => b.TrangThai, BookingStatus.COMPLETION_PENDING)
-                                 & filterBuilder.Lte(b => b.CompletionDeadline, nowUtc);
+                                 & filterBuilder.Lte(b => b.CompletionDeadline, effectiveNowUtc);
 
             if (!string.IsNullOrEmpty(ownerId))
                 completionFilter &= filterBuilder.Eq(b => b.OwnerId, ownerId);
@@ -80,7 +80,7 @@ namespace PetSitter.Services
                     NguoiThucHien = "SYSTEM",
                     ActorUserId = null,
                     LyDo = "Tự động hoàn tất do quá thời hạn xác nhận",
-                    ThoiGian = nowUtc
+                    ThoiGian = effectiveNowUtc
                 });
 
             await _context.Bookings.UpdateManyAsync(completionFilter, completionUpdate);
@@ -283,9 +283,9 @@ namespace PetSitter.Services
              || (booking.TrangThai == BookingStatus.COMPLETION_PENDING && booking.CompletionDeadline <= nowUtc))
             {
                 if (isOwner)
-                    await ProcessLazyBookingUpdatesAsync(ownerId: currentUserId, sitterId: null);
+                    await ProcessLazyBookingUpdatesAsync(ownerId: currentUserId, sitterId: null, nowUtc: nowUtc);
                 else
-                    await ProcessLazyBookingUpdatesAsync(ownerId: null, sitterId: booking.SitterId);
+                    await ProcessLazyBookingUpdatesAsync(ownerId: null, sitterId: booking.SitterId, nowUtc: nowUtc);
 
                 booking = await _context.Bookings.Find(b => b.BookingId == bookingId).FirstOrDefaultAsync() ?? booking;
             }
@@ -538,9 +538,12 @@ namespace PetSitter.Services
 
         public async Task<BookingDetailDto> OwnerConfirmCompletionAsync(string currentUserId, string bookingId)
         {
-            await ProcessLazyBookingUpdatesAsync(ownerId: currentUserId, sitterId: null);
-
             var nowUtc = DateTime.UtcNow;
+            await ProcessLazyBookingUpdatesAsync(ownerId: currentUserId, sitterId: null, nowUtc: nowUtc);
+
+            // Ghi chú nghiệp vụ: Nếu chủ nuôi bấm xác nhận khi đã quá CompletionDeadline nhưng lazy auto-complete
+            // chưa kịp quét chạy, lệnh dưới vẫn chuyển đơn sang COMPLETED hợp lệ với HanhDong = "OWNER_CONFIRMED".
+            // Đây là hành vi chấp nhận có chủ ý (intended behavior), vì mục tiêu cuối cùng vẫn là hoàn tất đơn dịch vụ.
             var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, bookingId)
                        & Builders<Booking>.Filter.Eq(b => b.OwnerId, currentUserId)
                        & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.COMPLETION_PENDING);
@@ -618,12 +621,12 @@ namespace PetSitter.Services
 
                 if (existing.TrangThai == BookingStatus.COMPLETION_PENDING && existing.CompletionDeadline <= nowUtc)
                 {
-                    await ProcessLazyBookingUpdatesAsync(ownerId: currentUserId, sitterId: null);
-                    throw new ConflictException("Đã quá thời hạn khiếu nại (đơn đã tự động hoàn tất).");
+                    await ProcessLazyBookingUpdatesAsync(ownerId: currentUserId, sitterId: null, nowUtc: nowUtc);
+                    throw new ConflictException("Đã quá thời hạn khiếu nại (đơn đặt lịch đã tự động hoàn tất).");
                 }
 
                 if (existing.TrangThai == BookingStatus.COMPLETED)
-                    throw new ConflictException("Đơn đã hoàn tất, không thể khiếu nại.");
+                    throw new ConflictException("Đơn đặt lịch đã ở trạng thái hoàn tất.");
 
                 throw new ConflictException("Không thể khiếu nại đơn. Trạng thái đơn không hợp lệ hoặc đã thay đổi.");
             }

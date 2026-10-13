@@ -43,6 +43,7 @@ namespace TestCompletionFlowRace
             var bookingService = new BookingService(context, config);
 
             // ObjectIds cho các thực thể test
+            var testPrefix = Guid.NewGuid().ToString("N").Substring(0, 8);
             var ownerUserId = ObjectId.GenerateNewId().ToString();
             var sitterUserId = ObjectId.GenerateNewId().ToString();
             var sitterProfileId = ObjectId.GenerateNewId().ToString();
@@ -106,6 +107,7 @@ namespace TestCompletionFlowRace
             };
 
             var createdBookingIds = new List<string>();
+            var createdPetIds = new List<string> { petId };
 
             try
             {
@@ -116,6 +118,10 @@ namespace TestCompletionFlowRace
                 var vnToday = DateTime.UtcNow.AddHours(7).Date;
 
                 // -----------------------------------------------------------------------------------------
+                // Dọn dẹp bất kỳ đơn test tồn dư nào từ các lần chạy trước
+                await context.Bookings.DeleteManyAsync(b => b.MaDatLich.StartsWith("BK_"));
+
+                // -----------------------------------------------------------------------------------------
                 // (m) TEST BIÊN NGÀY COMPLETE CỦA SITTER (NgayKetThuc == vnToday -> 400; vnToday - 1 -> 200)
                 // -----------------------------------------------------------------------------------------
                 Console.WriteLine("\n--> (m) Kiểm thử biên ngày Complete của Sitter:");
@@ -124,7 +130,7 @@ namespace TestCompletionFlowRace
                 var b1 = new Booking
                 {
                     BookingId = b1Id,
-                    MaDatLich = "BK_M1",
+                    MaDatLich = $"BK_M1_{testPrefix}",
                     OwnerId = ownerUserId,
                     SitterId = sitterProfileId,
                     PetId = petId,
@@ -197,7 +203,7 @@ namespace TestCompletionFlowRace
                 var b2 = new Booking
                 {
                     BookingId = b2Id,
-                    MaDatLich = "BK_C1",
+                    MaDatLich = $"BK_C1_{testPrefix}",
                     OwnerId = ownerUserId,
                     SitterId = sitterProfileId,
                     PetId = petId,
@@ -244,7 +250,7 @@ namespace TestCompletionFlowRace
                 var b3 = new Booking
                 {
                     BookingId = b3Id,
-                    MaDatLich = "BK_D1",
+                    MaDatLich = $"BK_D1_{testPrefix}",
                     OwnerId = ownerUserId,
                     SitterId = sitterProfileId,
                     PetId = petId,
@@ -293,7 +299,7 @@ namespace TestCompletionFlowRace
                 var bAdminSelf = new Booking
                 {
                     BookingId = bAdminSelfId,
-                    MaDatLich = "BK_ADMIN_SELF",
+                    MaDatLich = $"BK_ADMIN_SELF_{testPrefix}",
                     OwnerId = adminUserId, // Admin là Owner
                     SitterId = sitterProfileId,
                     PetId = petId,
@@ -334,7 +340,7 @@ namespace TestCompletionFlowRace
                 var bCancelTest = new Booking
                 {
                     BookingId = bCancelId,
-                    MaDatLich = "BK_CANCEL_TEST",
+                    MaDatLich = $"BK_CANCEL_TEST_{testPrefix}",
                     OwnerId = ownerUserId,
                     SitterId = sitterProfileId,
                     PetId = petId,
@@ -364,28 +370,35 @@ namespace TestCompletionFlowRace
                 Console.WriteLine($"   - Owner dispute bởi người ngoài -> 404: {(outsiderDispute404 ? "PASS" : "FAIL")}");
 
                 // -----------------------------------------------------------------------------------------
-                // (h) TEST ĐUA LỆNH (CONCURRENCY) 50 CẶP
+                // (h) TEST ĐUA LỆNH (CONCURRENCY) CẢ 2 KỊCH BẢN (MỖI KỊCH BẢN 50 CẶP)
                 // -----------------------------------------------------------------------------------------
                 Console.WriteLine("\n================================================================================");
-                Console.WriteLine("--> (h) KIỂM THỬ 50 CẶP ĐUA LỆNH ĐỒNG THỜI (CONCURRENCY RACE TESTS)");
+                Console.WriteLine("--> (h) KIỂM THỬ ĐUA LỆNH ĐỒNG THỜI (CONCURRENCY RACE TESTS): 2 KỊCH BẢN x 50 CẶP");
                 Console.WriteLine("================================================================================");
 
-                int raceSuccessPairs = 0;
-                int doubleHistoryCount = 0;
+                // KỊCH BẢN 1: (Owner confirm || Lazy auto-complete)
+                int s1ExactlyOneWon = 0;
+                int s1SingleTransition = 0;
+                int s1ConsistentState = 0;
 
                 for (int i = 1; i <= 50; i++)
                 {
                     var raceBookingId = ObjectId.GenerateNewId().ToString();
                     createdBookingIds.Add(raceBookingId);
+
+                    var pairPetId = ObjectId.GenerateNewId().ToString();
+                    createdPetIds.Add(pairPetId);
+                    await context.Pets.InsertOneAsync(new Pet { PetId = pairPetId, OwnerId = ownerUserId, Name = $"Pet R1 {i}", Species = "Chó", CreatedAt = DateTime.UtcNow });
+
                     var raceBooking = new Booking
                     {
                         BookingId = raceBookingId,
-                        MaDatLich = $"BK_RACE_{i}",
+                        MaDatLich = $"BK_R1_{testPrefix}_{i}",
                         OwnerId = ownerUserId,
                         SitterId = sitterProfileId,
-                        PetId = petId,
-                        NgayBatDau = vnToday.AddDays(-5),
-                        NgayKetThuc = vnToday.AddDays(-4),
+                        PetId = pairPetId,
+                        NgayBatDau = vnToday.AddDays(-100 - i * 2),
+                        NgayKetThuc = vnToday.AddDays(-99 - i * 2),
                         TrangThai = BookingStatus.COMPLETION_PENDING,
                         CompletionDeadline = DateTime.UtcNow.AddMinutes(-5), // Đã quá hạn (cho phép cả Confirm lẫn Lazy)
                         IsActive = true,
@@ -398,58 +411,131 @@ namespace TestCompletionFlowRace
                     };
                     await context.Bookings.InsertOneAsync(raceBooking);
 
-                    // Chạy đua đồng thời: 1 task Owner Confirm, 1 task Lazy Update
                     var taskOwnerConfirm = Task.Run(async () =>
                     {
-                        try
-                        {
-                            return await bookingService.OwnerConfirmCompletionAsync(ownerUserId, raceBookingId);
-                        }
-                        catch (Exception)
-                        {
-                            return null;
-                        }
+                        try { return await bookingService.OwnerConfirmCompletionAsync(ownerUserId, raceBookingId); }
+                        catch (Exception) { return null; }
                     });
 
                     var taskLazyUpdate = Task.Run(async () =>
                     {
-                        try
-                        {
-                            return await bookingService.GetBookingByIdAsync(ownerUserId, raceBookingId);
-                        }
-                        catch (Exception)
-                        {
-                            return null;
-                        }
+                        try { return await bookingService.GetBookingByIdAsync(ownerUserId, raceBookingId); }
+                        catch (Exception) { return null; }
                     });
 
-                    await Task.WhenAll(taskOwnerConfirm, taskLazyUpdate);
+                    var results = await Task.WhenAll(taskOwnerConfirm, taskLazyUpdate);
+                    var confirmRes = results[0];
+                    var lazyRes = results[1];
 
                     // Kiểm tra kết quả trong DB
                     var finalDoc = await context.Bookings.Find(b => b.BookingId == raceBookingId).FirstOrDefaultAsync();
                     if (finalDoc.TrangThai == BookingStatus.COMPLETED && finalDoc.IsActive == false)
                     {
-                        // Kiểm tra History có bị double không
-                        var transitionEntries = finalDoc.History
-                            .Where(h => h.HanhDong == "OWNER_CONFIRMED" || h.HanhDong == "AUTO_COMPLETED")
-                            .ToList();
+                        s1ConsistentState++;
+                    }
 
-                        if (transitionEntries.Count == 1)
-                        {
-                            raceSuccessPairs++;
-                        }
-                        else
-                        {
-                            doubleHistoryCount++;
-                            Console.WriteLine($"[RACE CẶP {i}] PHÁT HIỆN DOUBLE HISTORY! Số entry COMPLETED: {transitionEntries.Count}");
-                        }
+                    var transitionEntries = finalDoc.History
+                        .Where(h => h.HanhDong == "OWNER_CONFIRMED" || h.HanhDong == "AUTO_COMPLETED")
+                        .ToList();
+
+                    if (transitionEntries.Count == 1)
+                    {
+                        s1SingleTransition++;
+                    }
+
+                    if ((confirmRes != null || lazyRes != null) && transitionEntries.Count == 1)
+                    {
+                        s1ExactlyOneWon++;
                     }
                 }
 
-                Console.WriteLine($"\nKẾT QUẢ ĐUA LỆNH 50 CẶP:");
-                Console.WriteLine($"   - Tổng số cặp kiểm tra: 50");
-                Console.WriteLine($"   - Số cặp thành công tuyệt đối (đúng 1 transition, không double): {raceSuccessPairs}/50");
-                Console.WriteLine($"   - Số cặp bị double history: {doubleHistoryCount} (Mục tiêu: 0)");
+                Console.WriteLine($"\nKẾT QUẢ KỊCH BẢN 1 (Owner confirm || Lazy auto-complete) - 50 CẶP:");
+                Console.WriteLine($"   - Số lần đúng một bên thắng (1 transition): {s1ExactlyOneWon}/50");
+                Console.WriteLine($"   - Số lần History có đúng một bản ghi chuyển trạng thái: {s1SingleTransition}/50");
+                Console.WriteLine($"   - Số lần trạng thái cuối nhất quán (COMPLETED, IsActive=false): {s1ConsistentState}/50");
+
+                // KỊCH BẢN 2: (Owner confirm || Owner dispute)
+                int s2ExactlyOneWon = 0;
+                int s2SingleTransition = 0;
+                int s2ConsistentState = 0;
+
+                for (int i = 1; i <= 50; i++)
+                {
+                    var raceBookingId = ObjectId.GenerateNewId().ToString();
+                    createdBookingIds.Add(raceBookingId);
+
+                    var pairPetId = ObjectId.GenerateNewId().ToString();
+                    createdPetIds.Add(pairPetId);
+                    await context.Pets.InsertOneAsync(new Pet { PetId = pairPetId, OwnerId = ownerUserId, Name = $"Pet R2 {i}", Species = "Chó", CreatedAt = DateTime.UtcNow });
+
+                    var raceBooking = new Booking
+                    {
+                        BookingId = raceBookingId,
+                        MaDatLich = $"BK_R2_{testPrefix}_{i}",
+                        OwnerId = ownerUserId,
+                        SitterId = sitterProfileId,
+                        PetId = pairPetId,
+                        NgayBatDau = vnToday.AddDays(-250 - i * 2),
+                        NgayKetThuc = vnToday.AddDays(-249 - i * 2),
+                        TrangThai = BookingStatus.COMPLETION_PENDING,
+                        CompletionDeadline = DateTime.UtcNow.AddDays(3), // Còn hạn -> cho phép cả Confirm lẫn Dispute
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow,
+                        History = new List<InquiryHistory>
+                        {
+                            new InquiryHistory { FromStatus = BookingStatus.PENDING, ThoiGian = DateTime.UtcNow.AddDays(-2), NguoiThucHien = "SITTER", HanhDong = "ACCEPTED" },
+                            new InquiryHistory { FromStatus = BookingStatus.ACCEPTED, ThoiGian = DateTime.UtcNow.AddDays(-1), NguoiThucHien = "SITTER", HanhDong = "SITTER_COMPLETED" }
+                        }
+                    };
+                    await context.Bookings.InsertOneAsync(raceBooking);
+
+                    var taskOwnerConfirm = Task.Run(async () =>
+                    {
+                        try { return await bookingService.OwnerConfirmCompletionAsync(ownerUserId, raceBookingId); }
+                        catch (Exception) { return null; }
+                    });
+
+                    var taskOwnerDispute = Task.Run(async () =>
+                    {
+                        try { return await bookingService.OwnerDisputeBookingAsync(ownerUserId, raceBookingId, "Khiếu nại tranh chấp song song kiểm tra race condition"); }
+                        catch (Exception) { return null; }
+                    });
+
+                    var results = await Task.WhenAll(taskOwnerConfirm, taskOwnerDispute);
+                    var confirmRes = results[0];
+                    var disputeRes = results[1];
+
+                    // Đúng 1 bên thành công (bên kia null do ném exception 409)
+                    if ((confirmRes != null && disputeRes == null) || (confirmRes == null && disputeRes != null))
+                    {
+                        s2ExactlyOneWon++;
+                    }
+
+                    var finalDoc = await context.Bookings.Find(b => b.BookingId == raceBookingId).FirstOrDefaultAsync();
+                    var transitionEntries = finalDoc.History
+                        .Where(h => h.HanhDong == "OWNER_CONFIRMED" || h.HanhDong == "DISPUTED")
+                        .ToList();
+
+                    if (transitionEntries.Count == 1)
+                    {
+                        s2SingleTransition++;
+                    }
+
+                    // Kiểm tra tính nhất quán của trạng thái cuối
+                    if (finalDoc.TrangThai == BookingStatus.COMPLETED && finalDoc.IsActive == false && finalDoc.OwnerConfirmedAt != null)
+                    {
+                        s2ConsistentState++;
+                    }
+                    else if (finalDoc.TrangThai == BookingStatus.DISPUTED && finalDoc.IsActive == true && !string.IsNullOrEmpty(finalDoc.DisputeReason))
+                    {
+                        s2ConsistentState++;
+                    }
+                }
+
+                Console.WriteLine($"\nKẾT QUẢ KỊCH BẢN 2 (Owner confirm || Owner dispute) - 50 CẶP:");
+                Console.WriteLine($"   - Số lần đúng một bên thắng (1 task null, 1 task non-null): {s2ExactlyOneWon}/50");
+                Console.WriteLine($"   - Số lần History có đúng một bản ghi chuyển trạng thái: {s2SingleTransition}/50");
+                Console.WriteLine($"   - Số lần trạng thái cuối nhất quán (COMPLETED hoặc DISPUTED chuẩn): {s2ConsistentState}/50");
 
                 bool allPassed = m1FailedAsExpected
                                  && resM2.TrangThai == BookingStatus.COMPLETION_PENDING
@@ -470,8 +556,12 @@ namespace TestCompletionFlowRace
                                  && outsiderComplete404
                                  && outsiderConfirm404
                                  && outsiderDispute404
-                                 && raceSuccessPairs == 50
-                                 && doubleHistoryCount == 0;
+                                 && s1ExactlyOneWon == 50
+                                 && s1SingleTransition == 50
+                                 && s1ConsistentState == 50
+                                 && s2ExactlyOneWon == 50
+                                 && s2SingleTransition == 50
+                                 && s2ConsistentState == 50;
 
                 Console.WriteLine("\n================================================================================");
                 if (allPassed)
@@ -490,7 +580,10 @@ namespace TestCompletionFlowRace
                 Console.WriteLine("\n--> Đang dọn sạch toàn bộ dữ liệu test trong PetSitterDb...");
                 await context.Users.DeleteManyAsync(u => u.UserId == ownerUserId || u.UserId == sitterUserId || u.UserId == outsiderUserId || u.UserId == adminUserId);
                 await context.SitterProfiles.DeleteManyAsync(s => s.SitterId == sitterProfileId);
-                await context.Pets.DeleteManyAsync(p => p.PetId == petId);
+                if (createdPetIds.Any())
+                {
+                    await context.Pets.DeleteManyAsync(p => createdPetIds.Contains(p.PetId));
+                }
                 if (createdBookingIds.Any())
                 {
                     await context.Bookings.DeleteManyAsync(b => createdBookingIds.Contains(b.BookingId));

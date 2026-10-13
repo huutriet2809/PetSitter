@@ -274,7 +274,7 @@ namespace PetSitter.Services
         {
             var sitters = (int)await _context.SitterProfiles.CountDocumentsAsync(s => s.Status == "Approved" && s.IsVerified == true);
             var users = (int)await _context.Users.CountDocumentsAsync(_ => true);
-            var bookings = (int)await _context.Bookings.CountDocumentsAsync(_ => true);
+            var bookings = (int)await _context.Bookings.CountDocumentsAsync(b => b.TrangThai == BookingStatus.COMPLETED);
 
             return new StatsDto
             {
