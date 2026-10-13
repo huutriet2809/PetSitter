@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using MongoDB.Driver;
 using PetSitter.DTOs;
@@ -16,11 +17,13 @@ namespace PetSitter.Services
     {
         private readonly IConfiguration _config;
         private readonly PetSitterContext _context;
+        private readonly ILogger<TokenService> _logger;
 
-        public TokenService(IConfiguration config, PetSitterContext context)
+        public TokenService(IConfiguration config, PetSitterContext context, ILogger<TokenService> logger)
         {
             _config = config;
             _context = context;
+            _logger = logger;
         }
 
         /// <summary>
@@ -175,8 +178,15 @@ namespace PetSitter.Services
             }
 
             // BƯỚC 3: Nếu update không match (thua race condition với request song song):
-            // Xóa ngay token vừa insert thừa
-            await _context.RefreshTokens.DeleteOneAsync(r => r.TokenHash == newHash);
+            // Xóa ngay token vừa insert thừa (bọc try/catch để tránh gián đoạn luồng ân hạn)
+            try
+            {
+                await _context.RefreshTokens.DeleteOneAsync(r => r.TokenHash == newHash);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Lỗi khi xóa refresh token tạm do thua race condition (TokenHash: {TokenHash})", newHash);
+            }
 
             // Đọc lại token cũ từ DB và đi tiếp vào nhánh ân hạn
             var updatedExisting = await _context.RefreshTokens.Find(r => r.TokenHash == hash).FirstOrDefaultAsync();

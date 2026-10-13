@@ -215,7 +215,18 @@ using (var scope = app.Services.CreateScope())
 // Global Exception Handler (bắt mọi unhandled exception, không lộ stack trace ra ngoài)
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
-// 1. ForwardedHeaders: chỉ bật khi cấu hình proxy tin cậy (KnownProxies/KnownNetworks từ config), Development không bật
+// 1. Security Headers & CSP Report-Only (đặt ngay sau ExceptionHandler để mọi response kể cả lỗi 500 từ downstream middleware/handlers đều có đủ security headers)
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
+    context.Response.Headers.Append("X-Frame-Options", "DENY");
+    context.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
+    context.Response.Headers.Append("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    context.Response.Headers.Append("Content-Security-Policy-Report-Only", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https:; connect-src 'self';");
+    await next();
+});
+
+// 2. ForwardedHeaders: chỉ bật khi cấu hình proxy tin cậy (KnownProxies/KnownNetworks từ config), Development không bật
 if (!app.Environment.IsDevelopment())
 {
     var knownProxiesConfig = app.Configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>();
@@ -238,7 +249,7 @@ if (!app.Environment.IsDevelopment())
     }
 }
 
-// 2. HSTS & HttpsRedirection (chỉ ở Production) / Swagger (chỉ ở Development)
+// 3. HSTS & HttpsRedirection (chỉ ở Production) / Swagger (chỉ ở Development)
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -249,17 +260,6 @@ else
     app.UseHsts();
     app.UseHttpsRedirection();
 }
-
-// 3. Security Headers & CSP Report-Only (áp dụng cho cả file tĩnh lẫn API)
-app.Use(async (context, next) =>
-{
-    context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
-    context.Response.Headers.Append("X-Frame-Options", "DENY");
-    context.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
-    context.Response.Headers.Append("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
-    context.Response.Headers.Append("Content-Security-Policy-Report-Only", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https:; connect-src 'self';");
-    await next();
-});
 
 app.UseStatusCodePages(async statusCodeContext =>
 {
