@@ -124,6 +124,7 @@ namespace PetSitter.Services
             user.PasswordHash = PasswordHasher.HashPassword(dto.NewPassword);
             _userRepository.Update(user);
             await _userRepository.SaveChangesAsync();
+            await _tokenService.RevokeAllUserTokensAsync(id);
         }
     }
 }

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using PetSitter.DTOs;
 using PetSitter.Exceptions;
 using PetSitter.Services;
@@ -22,6 +23,7 @@ namespace PetSitter.Controllers
         }
 
         [HttpPost]
+        [EnableRateLimiting("booking-review")]
         public async Task<IActionResult> CreateBooking([FromBody] CreateBookingDto dto)
         {
             try
@@ -90,6 +92,7 @@ namespace PetSitter.Controllers
         }
 
         [HttpPost("{id}/review")]
+        [EnableRateLimiting("booking-review")]
         public async Task<IActionResult> AddReview(string id, [FromBody] CreateReviewDto dto)
         {
             try

@@ -25,6 +25,7 @@ namespace PetSitter.Models
         public IMongoCollection<Conversation> Conversations => _database.GetCollection<Conversation>("Conversations");
         public IMongoCollection<Review> Reviews => _database.GetCollection<Review>("Reviews");
         public IMongoCollection<SitterVerification> SitterVerifications => _database.GetCollection<SitterVerification>("SitterVerifications");
+        public IMongoCollection<RefreshToken> RefreshTokens => _database.GetCollection<RefreshToken>("RefreshTokens");
 
         public IMongoCollection<T> GetCollection<T>(string name)
         {

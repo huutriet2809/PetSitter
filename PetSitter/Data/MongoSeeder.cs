@@ -210,9 +210,32 @@ namespace PetSitter.Data
                     new CreateIndexOptions { Unique = true, Collation = new Collation("en", strength: CollationStrength.Primary) }
                 );
                 await context.Newsletters.Indexes.CreateOneAsync(nlIndexModel);
-            } catch (Exception ex) { Console.WriteLine("Could not create Newsletters index: " + ex.Message); }
+            }
+            catch (Exception ex) { Console.WriteLine("Could not create Newsletters index: " + ex.Message); }
 
-            
+            // Create Index for RefreshTokens
+            // GHI CHÚ QUAN TRỌNG:
+            // 1. TTL Index đặt trên ExpiresAt với ExpireAfter = TimeSpan.Zero.
+            //    TUYỆT ĐỐI KHÔNG dùng RevokedAt làm TTL vì ta cần giữ bản ghi đã revoke để phát hiện Replay Attack (token reuse).
+            // 2. Unique Index trên TokenHash.
+            // 3. Index trên UserId để truy vấn / thu hồi theo user.
+            try
+            {
+                var rfTtlModel = new CreateIndexModel<RefreshToken>(
+                    Builders<RefreshToken>.IndexKeys.Ascending(x => x.ExpiresAt),
+                    new CreateIndexOptions { ExpireAfter = TimeSpan.Zero }
+                );
+                var rfHashModel = new CreateIndexModel<RefreshToken>(
+                    Builders<RefreshToken>.IndexKeys.Ascending(x => x.TokenHash),
+                    new CreateIndexOptions { Unique = true }
+                );
+                var rfUserIndex = new CreateIndexModel<RefreshToken>(
+                    Builders<RefreshToken>.IndexKeys.Ascending(x => x.UserId)
+                );
+                await context.RefreshTokens.Indexes.CreateManyAsync(new[] { rfTtlModel, rfHashModel, rfUserIndex });
+            }
+            catch (Exception ex) { Console.WriteLine("Could not create RefreshTokens indexes: " + ex.Message); }
+
             if (seedDemo)
             {
                 var admin = await usersCollection.Find(u => u.Role == "ADMIN").FirstOrDefaultAsync();

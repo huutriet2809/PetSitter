@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using MongoDB.Driver;
 using PetSitter.Data;
@@ -6,7 +7,10 @@ using PetSitter.Middlewares;
 using PetSitter.Models;
 using PetSitter.Repositories;
 using PetSitter.Services;
+using System;
+using System.Security.Claims;
 using System.Text;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -39,13 +43,21 @@ builder.Services.AddSingleton<IMongoClient>(sp =>
 builder.Services.AddScoped<IMongoDatabase>(sp =>
 {
     var client = sp.GetRequiredService<IMongoClient>();
-    var databaseName = builder.Configuration.GetValue<string>("MongoDb:Database")
-                       ?? builder.Configuration.GetConnectionString("Database")
-                       ?? builder.Configuration.GetValue<string>("ConnectionStrings:Database");
+    var databaseName = builder.Configuration["ConnectionStrings:Database"]
+                       ?? builder.Configuration["MongoDb:Database"];
+
     if (string.IsNullOrWhiteSpace(databaseName) || databaseName.StartsWith("YOUR_"))
     {
-        databaseName = "PetSitterDb";
+        if (builder.Environment.IsDevelopment())
+        {
+            databaseName = "PetSitterDb";
+        }
+        else
+        {
+            throw new InvalidOperationException("CRITICAL: MongoDB Database name is missing in configuration (ConnectionStrings:Database)!");
+        }
     }
+
     return client.GetDatabase(databaseName);
 });
 
@@ -84,8 +96,82 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuerSigningKey = true,
         ValidIssuer = jwtSettings.GetValue<string>("Issuer"),
         ValidAudience = jwtSettings.GetValue<string>("Audience"),
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey!))
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey!)),
+        ClockSkew = TimeSpan.FromSeconds(5) // ClockSkew nhỏ theo yêu cầu
     };
+});
+
+// Configure Rate Limiting (.NET 8 built-in, không thêm thư viện ngoài)
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, token) =>
+    {
+        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+        {
+            context.HttpContext.Response.Headers.RetryAfter = ((int)retryAfter.TotalSeconds).ToString();
+        }
+        else
+        {
+            context.HttpContext.Response.Headers.RetryAfter = "60";
+        }
+        context.HttpContext.Response.ContentType = "application/json";
+        await context.HttpContext.Response.WriteAsync("{\"message\":\"Quá nhiều yêu cầu. Vui lòng thử lại sau.\"}", token);
+    };
+
+    // 1. auth-strict: cấu hình qua appsettings (mặc định 5 request/phút/IP) (Login, Register, Change-Password, Forgot-Password, Reset-Password)
+    var authStrictLimit = builder.Configuration.GetValue<int>("RateLimiting:AuthStrictLimit", 5);
+    options.AddPolicy("auth-strict", httpContext =>
+    {
+        var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown_ip";
+        return RateLimitPartition.GetFixedWindowLimiter(ip, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = authStrictLimit,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        });
+    });
+
+    // 2. auth-refresh: 20 request/phút/IP
+    options.AddPolicy("auth-refresh", httpContext =>
+    {
+        var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown_ip";
+        return RateLimitPartition.GetFixedWindowLimiter(ip, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 20,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        });
+    });
+
+    // 3. booking-review: 10 request/phút/user (fallback IP)
+    options.AddPolicy("booking-review", httpContext =>
+    {
+        var partitionKey = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)
+                           ?? httpContext.Connection.RemoteIpAddress?.ToString()
+                           ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        });
+    });
+
+    // 4. Global limiter: 100 request/phút/user (fallback IP)
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+    {
+        var partitionKey = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)
+                           ?? httpContext.Connection.RemoteIpAddress?.ToString()
+                           ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 100,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        });
+    });
 });
 
 builder.Services.AddEndpointsApiExplorer();
@@ -118,6 +204,29 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
+// ForwardedHeaders: chỉ bật khi cấu hình proxy tin cậy (KnownProxies/KnownNetworks từ config), Development không bật
+if (!app.Environment.IsDevelopment())
+{
+    var knownProxiesConfig = app.Configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>();
+    if (knownProxiesConfig != null && knownProxiesConfig.Length > 0)
+    {
+        var fOptions = new ForwardedHeadersOptions
+        {
+            ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto
+        };
+        foreach (var proxy in knownProxiesConfig)
+        {
+            if (System.Net.IPAddress.TryParse(proxy, out var ip))
+                fOptions.KnownProxies.Add(ip);
+        }
+        app.UseForwardedHeaders(fOptions);
+    }
+    else
+    {
+        app.Logger.LogWarning("CẢNH BÁO BẢO MẬT: Môi trường Production/Non-Development chưa cấu hình ForwardedHeaders:KnownProxies. ForwardedHeaders middleware sẽ không được kích hoạt để tránh giả mạo IP.");
+    }
+}
+
 // Global Exception Handler
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
@@ -137,15 +246,20 @@ if (app.Environment.IsDevelopment())
 }
 else
 {
+    app.UseHsts();
     app.UseHttpsRedirection();
 }
 
 app.UseCors("CorsPolicy");
 
+// Security Headers & CSP Report-Only (áp dụng cho cả file tĩnh lẫn API)
 app.Use(async (context, next) =>
 {
     context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
     context.Response.Headers.Append("X-Frame-Options", "DENY");
+    context.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
+    context.Response.Headers.Append("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    context.Response.Headers.Append("Content-Security-Policy-Report-Only", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https:; connect-src 'self';");
     await next();
 });
 
@@ -161,11 +275,15 @@ app.UseStatusCodePages(async statusCodeContext =>
 });
 
 app.UseDefaultFiles(); // Support default files like index.html
-app.UseStaticFiles(); // Serve static files (CSS/JS)
+app.UseStaticFiles(); // Serve static files (CSS/JS) - đặt trước RateLimiter để không bị trừ hạn ngạch 100/phút
 
 app.UseRouting();
 
 app.UseAuthentication();
+
+// Rate limiter đặt SAU UseAuthentication (để nhận diện user claim) và TRƯỚC UseAuthorization (để chặn 429 sớm)
+app.UseRateLimiter();
+
 app.UseAuthorization();
 
 app.MapControllers();

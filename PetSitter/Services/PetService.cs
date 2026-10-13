@@ -1,4 +1,4 @@
-﻿using MongoDB.Driver;
+using MongoDB.Driver;
 using PetSitter.Data;
 using PetSitter.DTOs;
 using PetSitter.Models;
@@ -33,6 +33,25 @@ namespace PetSitter.Services
                 DietaryNotes = p.DietaryNotes,
                 AvatarUrl = p.AvatarUrl
             }).ToList();
+        }
+
+        public async Task<PetDto?> GetPetByIdAsync(string ownerId, string petId)
+        {
+            var pet = await _pets.Find(p => p.PetId == petId && p.OwnerId == ownerId).FirstOrDefaultAsync();
+            if (pet == null) return null;
+            return new PetDto
+            {
+                PetId = pet.PetId,
+                Name = pet.Name,
+                Species = pet.Species,
+                Breed = pet.Breed,
+                Gender = pet.Gender,
+                Age = pet.Age,
+                Weight = pet.Weight,
+                HealthStatus = pet.HealthStatus,
+                DietaryNotes = pet.DietaryNotes,
+                AvatarUrl = pet.AvatarUrl
+            };
         }
 
         public async Task<PetDto> CreatePetAsync(string ownerId, CreatePetDto dto)

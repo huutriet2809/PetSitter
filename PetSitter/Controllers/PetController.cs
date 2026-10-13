@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PetSitter.DTOs;
 using PetSitter.Services;
@@ -28,6 +28,18 @@ namespace PetSitter.Controllers
 
             var pets = await _petService.GetMyPetsAsync(userId);
             return Ok(pets);
+        }
+
+        [HttpGet("{id}")]
+        public async Task<ActionResult<PetDto>> GetPetById(string id)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            var pet = await _petService.GetPetByIdAsync(userId, id);
+            if (pet == null) return NotFound(new { message = "Không tìm thấy thú cưng." });
+
+            return Ok(pet);
         }
 
         [HttpPost]

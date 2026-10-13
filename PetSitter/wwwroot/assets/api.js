@@ -1,5 +1,42 @@
 const API_BASE_URL = '/api';
 
+let refreshPromise = null;
+
+async function executeTokenRefresh() {
+    if (!refreshPromise) {
+        refreshPromise = (async () => {
+            try {
+                const refreshResp = await fetch(`${API_BASE_URL}/auth/refresh`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                if (refreshResp.ok) {
+                    const refreshData = await refreshResp.json();
+                    if (refreshData && refreshData.accessToken) {
+                        localStorage.setItem('pawstay_token', refreshData.accessToken);
+                        if (refreshData.role) {
+                            try {
+                                const cachedUser = JSON.parse(localStorage.getItem('pawstay_user') || '{}');
+                                cachedUser.role = refreshData.role;
+                                localStorage.setItem('pawstay_user', JSON.stringify(cachedUser));
+                            } catch (e) {
+                                // ignore parse error
+                            }
+                        }
+                        return refreshData.accessToken;
+                    }
+                }
+                return null;
+            } catch (err) {
+                return null;
+            } finally {
+                refreshPromise = null;
+            }
+        })();
+    }
+    return refreshPromise;
+}
+
 async function apiFetch(endpoint, options = {}) {
     const token = localStorage.getItem('pawstay_token');
 
@@ -37,8 +74,26 @@ async function apiFetch(endpoint, options = {}) {
         data = null;
     }
 
-    const isAuthEndpoint = normalizedEndpoint.includes('/auth/login') || normalizedEndpoint.includes('/auth/register');
-    if (response.status === 401 && !isAuthEndpoint) {
+    const isAuthEndpoint = normalizedEndpoint.includes('/auth/login') ||
+                           normalizedEndpoint.includes('/auth/register') ||
+                           normalizedEndpoint.includes('/auth/refresh');
+
+    if (response.status === 401 && !isAuthEndpoint && !options._isRetry) {
+        const newAccessToken = await executeTokenRefresh();
+        if (newAccessToken) {
+            // Thử lại request gốc đúng một lần với token mới
+            const retryOptions = {
+                ...options,
+                _isRetry: true,
+                headers: {
+                    ...(options.headers || {}),
+                    'Authorization': `Bearer ${newAccessToken}`
+                }
+            };
+            return await apiFetch(endpoint, retryOptions);
+        }
+
+        // Nếu refresh thất bại: dọn dẹp và đẩy về login
         localStorage.removeItem('pawstay_token');
         localStorage.removeItem('pawstay_user');
         let currentPath = window.location.pathname + window.location.search;
