@@ -251,6 +251,40 @@ namespace PetSitter.Data
             }
             catch (Exception ex) { Console.WriteLine("Could not create RefreshTokens indexes: " + ex.Message); }
 
+            // Create Indexes for Notifications:
+            // 1. Unique index on DedupeKey
+            // 2. Compound index on (UserId, CreatedAt desc)
+            // 3. Compound index on (UserId, ReadAt) for unread count queries
+            // 4. TTL Index on CreatedAt based on NotificationSettings:TtlDays (default 90 days)
+            try
+            {
+                var notifCol = context.Notifications;
+                var notifDedupeModel = new CreateIndexModel<Notification>(
+                    Builders<Notification>.IndexKeys.Ascending(n => n.DedupeKey),
+                    new CreateIndexOptions { Unique = true }
+                );
+                var notifUserCreatedModel = new CreateIndexModel<Notification>(
+                    Builders<Notification>.IndexKeys.Ascending(n => n.UserId).Descending(n => n.CreatedAt)
+                );
+                var notifUserReadModel = new CreateIndexModel<Notification>(
+                    Builders<Notification>.IndexKeys.Ascending(n => n.UserId).Ascending(n => n.ReadAt)
+                );
+
+                var ttlDays = config.GetValue<int>("NotificationSettings:TtlDays", 90);
+                if (ttlDays <= 0) ttlDays = 90;
+                var notifTtlModel = new CreateIndexModel<Notification>(
+                    Builders<Notification>.IndexKeys.Ascending(n => n.CreatedAt),
+                    new CreateIndexOptions { ExpireAfter = TimeSpan.FromDays(ttlDays) }
+                );
+
+                await notifCol.Indexes.CreateManyAsync(new[] { notifDedupeModel, notifUserCreatedModel, notifUserReadModel, notifTtlModel });
+                Console.WriteLine("[Seeder] Tạo thành công các index cho Notifications.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[Seeder Lỗi] Không thể tạo Notification indexes: " + ex.Message);
+            }
+
             if (seedDemo)
             {
                 var admin = await usersCollection.Find(u => u.Role == "ADMIN").FirstOrDefaultAsync();

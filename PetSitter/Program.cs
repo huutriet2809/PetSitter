@@ -36,6 +36,13 @@ if (completionDeadlineDays <= 0)
     throw new InvalidOperationException("CRITICAL: Cấu hình 'BookingSettings:CompletionDeadlineDays' phải được thiết lập và lớn hơn 0!");
 }
 
+// Validate NotificationSettings:TtlDays > 0 lúc khởi động
+var notificationTtlDays = builder.Configuration.GetValue<int>("NotificationSettings:TtlDays", 90);
+if (notificationTtlDays <= 0)
+{
+    throw new InvalidOperationException("CRITICAL: Cấu hình 'NotificationSettings:TtlDays' phải được thiết lập và lớn hơn 0!");
+}
+
 // Validate MongoDB Connection String ở mọi môi trường
 var mongoDbString = builder.Configuration.GetConnectionString("MongoDb");
 if (string.IsNullOrWhiteSpace(mongoDbString) || mongoDbString.StartsWith("YOUR_"))
@@ -78,6 +85,7 @@ builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<ISitterService, PetSitter.Services.SitterService>();
 builder.Services.AddScoped<IBookingService, BookingService>();
 builder.Services.AddScoped<IPetService, PetService>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
 
 // Configure JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");

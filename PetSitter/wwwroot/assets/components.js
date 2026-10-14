@@ -86,8 +86,27 @@ function renderNavbar() {
     ? window.escapeHtml(shortName) 
     : shortName;
 
+  const notifBellHtml = user
+    ? `<div class="notif-wrapper" id="notif-wrapper">
+         <button id="notif-bell-btn" class="notif-bell" aria-label="Thông báo" aria-expanded="false" type="button">
+           🔔<span id="notif-badge" class="notif-badge" style="display:none;"></span>
+         </button>
+         <div id="notif-dropdown" class="notif-dropdown" style="display:none;">
+           <div class="notif-header">
+             <span>Thông báo</span>
+             <button id="notif-mark-all" class="btn btn-ghost btn-sm" style="font-size:0.75rem;padding:2px 8px;" type="button">Đã đọc tất cả</button>
+           </div>
+           <div id="notif-list" class="notif-list"></div>
+           <div id="notif-empty" class="notif-empty" style="display:none;">
+             Không có thông báo nào
+           </div>
+         </div>
+       </div>`
+    : '';
+
   const authHtml = user
     ? `<span style="font-size:0.82rem;color:var(--text-secondary)">Xin chào, <strong style="color:var(--accent)">${/* safe */ safeShortName}</strong></span>
+       ${/* safe */ notifBellHtml}
        ${roleLinks.map(l => `<a href="${/* safe */ l.href}" class="btn btn-ghost btn-sm">${/* safe */ l.label}</a>`).join(' ')}
        <button onclick="logout()" class="btn btn-ghost btn-sm">Đăng xuất</button>`
     : `<a href="login.html" class="btn btn-ghost btn-sm" id="nav-login">Đăng nhập</a>
@@ -139,6 +158,11 @@ function renderNavbar() {
   // Chèn navbar vào đầu body
   document.body.insertAdjacentHTML('afterbegin', navbarHtml);
 
+  // Khởi tạo tính năng thông báo nếu người dùng đã đăng nhập
+  if (user) {
+    initNotificationSystem(user);
+  }
+
   // Gắn sự kiện mobile toggle
   const toggleBtn = document.getElementById('nav-toggle');
   if (toggleBtn) {
@@ -163,6 +187,245 @@ function renderNavbar() {
       if (toggleIcon) toggleIcon.textContent = '☰';
     }
   });
+}
+
+// ------------------------------------------------
+// QUẢN LÝ THÔNG BÁO IN-APP (BELL & DROPDOWN)
+// ------------------------------------------------
+let notifPollTimer = null;
+
+function navigateForNotification(item) {
+  if (!item || !item.bookingId) return;
+  const user = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
+  const role = (user && user.role ? user.role : '').toUpperCase();
+  const type = item.type;
+  const bid = encodeURIComponent(item.bookingId);
+
+  // Đơn mới hoặc nhắc hạn dành cho Sitter
+  if (type === 'BOOKING_NEW' || type === 'REMINDER_PENDING_EXPIRES' || type === 'REMINDER_OVERDUE_ACCEPTED') {
+    window.location.href = `sitter-dashboard.html?bookingId=${bid}`;
+    return;
+  }
+
+  // Chờ xác nhận hoặc nhắc hạn dành cho Owner
+  if (type === 'BOOKING_COMPLETION_PENDING' || type === 'REMINDER_COMPLETION_EXPIRES' || type === 'BOOKING_ACCEPTED' || type === 'BOOKING_REJECTED') {
+    window.location.href = `my-bookings.html?bookingId=${bid}`;
+    return;
+  }
+
+  // Khiếu nại (DISPUTED): Phân quyền theo vai trò thực tế
+  if (type === 'BOOKING_DISPUTED') {
+    if (role === 'ADMIN') {
+      window.location.href = `admin.html?bookingId=${bid}`;
+    } else if (role === 'SITTER') {
+      window.location.href = `sitter-dashboard.html?bookingId=${bid}`;
+    } else {
+      window.location.href = `my-bookings.html?bookingId=${bid}`;
+    }
+    return;
+  }
+
+  // Các sự kiện chung (COMPLETED, CANCELLED, EXPIRED, RESOLVED)
+  if (role === 'ADMIN') {
+    window.location.href = `admin.html?bookingId=${bid}`;
+  } else if (role === 'SITTER') {
+    window.location.href = `sitter-dashboard.html?bookingId=${bid}`;
+  } else {
+    window.location.href = `my-bookings.html?bookingId=${bid}`;
+  }
+}
+
+function formatNotificationTime(isoStr) {
+  if (!isoStr) return '';
+  try {
+    const d = new Date(isoStr);
+    const now = new Date();
+    const diffMs = now - d;
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return 'Vừa xong';
+    if (diffMins < 60) return `${diffMins} phút trước`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours} giờ trước`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays < 7) return `${diffDays} ngày trước`;
+    return d.toLocaleDateString('vi-VN');
+  } catch (e) {
+    return '';
+  }
+}
+
+async function notifApiFetch(endpoint, options = {}) {
+  if (typeof apiFetch === 'function') {
+    return await apiFetch(endpoint, options);
+  }
+  const token = localStorage.getItem('pawstay_token');
+  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  const res = await fetch('/api' + endpoint, { ...options, headers });
+  if (!res.ok) throw new Error('Request failed: ' + res.status);
+  return await res.json();
+}
+
+function initNotificationSystem(user) {
+  if (!user) return;
+
+  const bellBtn = document.getElementById('notif-bell-btn');
+  const badge = document.getElementById('notif-badge');
+  const dropdown = document.getElementById('notif-dropdown');
+  const list = document.getElementById('notif-list');
+  const empty = document.getElementById('notif-empty');
+  const markAllBtn = document.getElementById('notif-mark-all');
+  const wrapper = document.getElementById('notif-wrapper');
+
+  if (!bellBtn || !dropdown || !list) return;
+
+  function setBadgeCount(count) {
+    if (!badge) return;
+    if (count > 0) {
+      badge.textContent = count > 9 ? '9+' : String(count);
+      badge.style.display = 'inline-block';
+    } else {
+      badge.textContent = '0';
+      badge.style.display = 'none';
+    }
+  }
+
+  async function refreshUnreadCount() {
+    try {
+      const data = await notifApiFetch('/notifications/unread-count');
+      if (data && typeof data.unreadCount === 'number') {
+        setBadgeCount(data.unreadCount);
+      }
+    } catch (e) {
+      // Bỏ qua lỗi kết nối khi poll
+    }
+  }
+
+  async function loadNotificationsList() {
+    try {
+      const items = await notifApiFetch('/notifications?limit=20');
+      list.innerHTML = '';
+
+      if (!items || items.length === 0) {
+        if (empty) empty.style.display = 'block';
+        return;
+      }
+
+      if (empty) empty.style.display = 'none';
+
+      items.forEach(item => {
+        const itemEl = document.createElement('div');
+        itemEl.className = 'notif-item' + (!item.readAt ? ' unread' : '');
+
+        const headerEl = document.createElement('div');
+        headerEl.className = 'notif-item-header';
+
+        const titleEl = document.createElement('span');
+        titleEl.className = 'notif-item-title';
+        titleEl.textContent = item.title || 'Thông báo';
+        headerEl.appendChild(titleEl);
+
+        if (!item.readAt) {
+          const dotEl = document.createElement('span');
+          dotEl.className = 'notif-unread-dot';
+          headerEl.appendChild(dotEl);
+        }
+
+        const msgEl = document.createElement('div');
+        msgEl.className = 'notif-item-msg';
+        msgEl.textContent = item.message || '';
+
+        const timeEl = document.createElement('div');
+        timeEl.className = 'notif-item-time';
+        timeEl.textContent = formatNotificationTime(item.createdAt);
+
+        itemEl.appendChild(headerEl);
+        itemEl.appendChild(msgEl);
+        itemEl.appendChild(timeEl);
+
+        itemEl.addEventListener('click', async () => {
+          try {
+            if (!item.readAt) {
+              await notifApiFetch(`/notifications/${encodeURIComponent(item.notificationId)}/read`, { method: 'PATCH' });
+              item.readAt = new Date().toISOString();
+              itemEl.classList.remove('unread');
+              const dot = headerEl.querySelector('.notif-unread-dot');
+              if (dot) dot.remove();
+              refreshUnreadCount();
+            }
+          } catch (err) {
+            console.warn('Lỗi đánh dấu đã đọc:', err);
+          }
+          navigateForNotification(item);
+        });
+
+        list.appendChild(itemEl);
+      });
+    } catch (e) {
+      console.warn('Lỗi tải danh sách thông báo:', e);
+    }
+  }
+
+  bellBtn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    const isOpen = dropdown.style.display === 'flex';
+    if (isOpen) {
+      dropdown.style.display = 'none';
+      bellBtn.setAttribute('aria-expanded', 'false');
+    } else {
+      dropdown.style.display = 'flex';
+      bellBtn.setAttribute('aria-expanded', 'true');
+      loadNotificationsList();
+      refreshUnreadCount();
+    }
+  });
+
+  if (markAllBtn) {
+    markAllBtn.addEventListener('click', async function(e) {
+      e.stopPropagation();
+      try {
+        await notifApiFetch('/notifications/read-all', { method: 'PATCH' });
+        setBadgeCount(0);
+        await loadNotificationsList();
+      } catch (err) {
+        console.warn('Lỗi đánh dấu đọc tất cả:', err);
+      }
+    });
+  }
+
+  // Đóng dropdown khi click bên ngoài
+  document.addEventListener('click', function(e) {
+    if (wrapper && !wrapper.contains(e.target)) {
+      dropdown.style.display = 'none';
+      bellBtn.setAttribute('aria-expanded', 'false');
+    }
+  });
+
+  // Polling chu kỳ 60 giây và dừng khi ẩn tab
+  function startPolling() {
+    if (notifPollTimer) clearInterval(notifPollTimer);
+    notifPollTimer = setInterval(refreshUnreadCount, 60000);
+  }
+
+  function stopPolling() {
+    if (notifPollTimer) {
+      clearInterval(notifPollTimer);
+      notifPollTimer = null;
+    }
+  }
+
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible') {
+      refreshUnreadCount();
+      startPolling();
+    } else {
+      stopPolling();
+    }
+  });
+
+  // Khởi động lượt kiểm tra đầu tiên
+  refreshUnreadCount();
+  startPolling();
 }
 
 // ------------------------------------------------

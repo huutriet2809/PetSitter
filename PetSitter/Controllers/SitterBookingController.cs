@@ -19,11 +19,19 @@ namespace PetSitter.Controllers
     {
         private readonly PetSitterContext _context;
         private readonly IBookingService _bookingService;
+        private readonly INotificationService _notificationService;
+        private readonly ILogger<SitterBookingController> _logger;
 
-        public SitterBookingController(PetSitterContext context, IBookingService bookingService)
+        public SitterBookingController(
+            PetSitterContext context,
+            IBookingService bookingService,
+            INotificationService notificationService,
+            ILogger<SitterBookingController> logger)
         {
             _context = context;
             _bookingService = bookingService;
+            _notificationService = notificationService;
+            _logger = logger;
         }
 
         [HttpGet]
@@ -115,6 +123,26 @@ namespace PetSitter.Controllers
                 return Conflict(new { message = "Không thể chấp nhận booking. Trạng thái đã thay đổi hoặc không hợp lệ." });
             }
 
+            if (_notificationService != null && !string.IsNullOrEmpty(updatedBooking.OwnerId))
+            {
+                try
+                {
+                    var dedupeKey = $"{updatedBooking.BookingId}:{NotificationType.BOOKING_ACCEPTED}:{updatedBooking.OwnerId}";
+                    await _notificationService.CreateNotificationAsync(
+                        updatedBooking.OwnerId,
+                        NotificationType.BOOKING_ACCEPTED,
+                        updatedBooking.BookingId,
+                        "Yêu cầu đặt lịch đã được chấp nhận",
+                        $"Người chăm sóc đã chấp nhận yêu cầu đặt lịch #{updatedBooking.MaDatLich}.",
+                        dedupeKey
+                    );
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Lỗi khi gửi thông báo BOOKING_ACCEPTED cho chủ nuôi {OwnerId}", updatedBooking.OwnerId);
+                }
+            }
+
             // Kiểm tra trùng ngày với đơn ACCEPTED khác (không chặn, chỉ cảnh báo)
             var hasOverlap = await _context.Bookings.Find(b =>
                 b.SitterId == sitterProfile.SitterId &&
@@ -168,7 +196,7 @@ namespace PetSitter.Controllers
                     ThoiGian = nowUtc
                 });
 
-            var result = await _context.Bookings.FindOneAndUpdateAsync(filter, update);
+            var result = await _context.Bookings.FindOneAndUpdateAsync(filter, update, new FindOneAndUpdateOptions<Booking> { ReturnDocument = ReturnDocument.After });
 
             if (result == null)
             {
@@ -177,6 +205,26 @@ namespace PetSitter.Controllers
                     return NotFound(new { message = "Không tìm thấy booking." });
 
                 return Conflict(new { message = "Không thể từ chối booking. Trạng thái đã thay đổi." });
+            }
+
+            if (_notificationService != null && !string.IsNullOrEmpty(result.OwnerId))
+            {
+                try
+                {
+                    var dedupeKey = $"{result.BookingId}:{NotificationType.BOOKING_REJECTED}:{result.OwnerId}";
+                    await _notificationService.CreateNotificationAsync(
+                        result.OwnerId,
+                        NotificationType.BOOKING_REJECTED,
+                        result.BookingId,
+                        "Yêu cầu đặt lịch bị từ chối",
+                        $"Người chăm sóc đã từ chối yêu cầu đặt lịch #{result.MaDatLich}.",
+                        dedupeKey
+                    );
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Lỗi khi gửi thông báo BOOKING_REJECTED cho chủ nuôi {OwnerId}", result.OwnerId);
+                }
             }
 
             return Ok(new { message = "Đã từ chối booking." });

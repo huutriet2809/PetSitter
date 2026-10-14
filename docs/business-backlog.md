@@ -40,11 +40,8 @@ Tài liệu này ghi nhận các vấn đề nghiệp vụ và quy trình vận 
 ---
 
 ## 3. Hệ thống Thông báo (In-app Notification & Email) khi thay đổi trạng thái đơn
-- **Hiện trạng:** Việc chuyển trạng thái (Sitter hoàn tất -> `COMPLETION_PENDING`, Chủ nuôi khiếu nại -> `DISPUTED`, Admin giải quyết -> `COMPLETED`/`CANCELLED`, hoặc hệ thống `AUTO_COMPLETED`/`EXPIRED`) hiện ghi vào `History` và cập nhật DB, nhưng chưa chủ động bắn thông báo đẩy (push/in-app notification/email) tới đối phương.
-- **Nhu cầu:** Cần xây dựng dịch vụ Notification (hoặc SignalR / WebSockets / Email background job):
-  - Báo cho Chủ nuôi ngay khi Sitter bấm hoàn tất để vào xác nhận hoặc khiếu nại kịp thời trong 3 ngày.
-  - Báo cho Sitter và Admin ngay khi phát sinh tranh chấp `DISPUTED`.
-  - Báo cho cả 2 bên khi Admin đưa ra phán quyết giải quyết khiếu nại kèm ghi chú kết luận.
+- **Đã hoàn thành ở Bước 4**: Hệ thống thông báo in-app (chuông thông báo, bộ đếm chưa đọc, danh sách phân trang con trỏ `before`, đánh dấu đã đọc/tất cả, phân quyền điều hướng thông minh theo vai trò và sự kiện, cơ chế DedupeKey chống trùng lặp, quét nhắc hạn lười theo request).
+- **Tồn đọng tương lai**: Tích hợp thêm kênh gửi Email tự động và thông báo đẩy (Web Push / SignalR real-time).
 
 ---
 
@@ -54,3 +51,20 @@ Tài liệu này ghi nhận các vấn đề nghiệp vụ và quy trình vận 
 - **Đề xuất cải tiến:**
   - Lọc điều kiện tài khoản hợp lệ: `Users.CountDocumentsAsync(u => u.Role != "ADMIN" && u.IsActive != false)`.
   - Tương tự với Sitter: chỉ tính các hồ sơ đang hoạt động và không bị tạm khóa.
+
+---
+
+## 5. BackgroundService quét định kỳ (Periodic Background Worker cho Quét Hết Hạn & Nhắc Hạn)
+- **Hiện trạng Bước 4**: Hệ thống sử dụng cơ chế **Lazy Evaluation** (quét lười) tích hợp vào các request API:
+  - Khi người dùng (Owner hoặc Sitter) thực hiện các thao tác booking hoặc mở danh sách/chi tiết đơn, `ProcessLazyBookingUpdatesAsync` sẽ quét các đơn hết hạn (`ExpiresAt <= now` -> `EXPIRED`, `CompletionDeadline <= now` -> `AUTO_COMPLETED`) và tạo thông báo kèm đối soát 7 ngày.
+  - Khi người dùng tải danh sách thông báo hoặc kiểm tra số lượng chưa đọc, `ScanAndGenerateRemindersAsync` được gọi kèm cơ chế throttle 5 phút/user để sinh các thông báo nhắc hạn.
+- **Hạn chế của cơ chế Lazy**:
+  - Nếu cả Chủ nuôi và Người chăm sóc không đăng nhập hoặc không phát sinh request đọc trong một khoảng thời gian dài, trạng thái đơn chưa được lật trong DB và thông báo in-app chưa được tạo kịp thời vào đúng thời điểm hết hạn.
+- **Kế hoạch triển khai BackgroundService**:
+  - Xây dựng một `IHostedService` / `BackgroundService` trong ASP.NET Core (ví dụ: `BookingMaintenanceBackgroundService`).
+  - Thiết lập chu kỳ chạy ngầm độc lập (ví dụ: mỗi 5 đến 15 phút):
+    1. Quét toàn bộ DB để chuyển trạng thái các đơn `PENDING` quá hạn 48h sang `EXPIRED`.
+    2. Chuyển các đơn `COMPLETION_PENDING` quá `CompletionDeadline` sang `COMPLETED` (`AUTO_COMPLETED`).
+    3. Tạo thông báo in-app và gửi Email/Push notification chủ động tới cả hai bên ngay khi hết hạn mà không cần chờ người dùng tương tác.
+    4. Quét nhắc nhở cho các đơn sắp hết hạn và đơn `ACCEPTED` quá ngày kết thúc.
+  - Sử dụng hàng đợi phân tán hoặc distributed lock (nếu triển khai nhiều instance backend) để tránh xung đột giữa các background workers.
