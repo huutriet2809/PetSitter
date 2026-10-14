@@ -1051,3 +1051,26 @@ textarea { min-height: 96px; resize: vertical; line-height: 1.6; }
   font-size: 0.82rem;
   color: var(--text-muted);
 }
+.notif-badge.hidden,
+.notif-dropdown.hidden,
+.notif-empty.hidden {
+  display: none !important;
+}
+.notif-dropdown.open {
+  display: flex !important;
+}
+.notif-badge.visible {
+  display: inline-block !important;
+}
+.notif-empty.visible {
+  display: block !important;
+}
+.notif-mark-all-btn {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+}
+.booking-highlight {
+  outline: 2px solid var(--accent);
+  box-shadow: 0 0 16px rgba(201, 123, 132, 0.4);
+  transition: box-shadow 0.5s ease, outline 0.5s ease;
+}

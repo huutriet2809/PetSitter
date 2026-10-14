@@ -18,8 +18,16 @@ namespace PetSitter.Services
         private readonly IConfiguration _configuration;
         private readonly ILogger<NotificationService> _logger;
 
-        // Bộ đệm giới hạn tần suất quét nhắc hạn theo từng user (tránh quét liên tục khi polling)
+        // Ghi chú kiến trúc: _lastScanTimes được lưu trữ trong bộ nhớ tiến trình (in-memory ConcurrentDictionary).
+        // Giới hạn hệ thống:
+        // 1. Khi tiến trình restart, thông tin throttle trong bộ đệm sẽ bị xóa và được thiết lập lại từ đầu.
+        // 2. Trong mô hình nhiều instance (multi-instance/load balancing), bộ đệm này độc lập giữa các tiến trình.
+        //    Tuy nhiên, việc quét đồng thời hoặc nhiều lần vẫn an toàn tuyệt đối do cơ chế DedupeKey + unique index tại MongoDB
+        //    sẽ ngăn chặn việc tạo trùng bản ghi thông báo.
+        // 3. Trong tương lai khi mở rộng quy mô hệ thống, có thể chuyển bộ đệm này sang Redis dạng Distributed Cache (Key-Value với TTL).
         private static readonly ConcurrentDictionary<string, DateTime> _lastScanTimes = new();
+        private static DateTime _lastCleanupTime = DateTime.UtcNow;
+        private static readonly object _cleanupLock = new();
 
         public NotificationService(PetSitterContext context, IConfiguration configuration, ILogger<NotificationService> logger)
         {
@@ -28,7 +36,30 @@ namespace PetSitter.Services
             _logger = logger;
         }
 
-        public async Task<bool> CreateNotificationAsync(string userId, string type, string? bookingId, string title, string message, string dedupeKey)
+        private static void CleanupStaleScanTimes()
+        {
+            var now = DateTime.UtcNow;
+            if (now - _lastCleanupTime > TimeSpan.FromMinutes(30) || _lastScanTimes.Count > 1000)
+            {
+                lock (_cleanupLock)
+                {
+                    if (now - _lastCleanupTime > TimeSpan.FromMinutes(30) || _lastScanTimes.Count > 1000)
+                    {
+                        var threshold = now.AddHours(-1);
+                        foreach (var kvp in _lastScanTimes)
+                        {
+                            if (kvp.Value < threshold)
+                            {
+                                _lastScanTimes.TryRemove(kvp.Key, out _);
+                            }
+                        }
+                        _lastCleanupTime = now;
+                    }
+                }
+            }
+        }
+
+        public async Task<bool> CreateNotificationAsync(string userId, string type, string? bookingId, string title, string message, string dedupeKey, string? targetRole = null)
         {
             try
             {
@@ -40,7 +71,8 @@ namespace PetSitter.Services
                     Title = title,
                     Message = message,
                     CreatedAt = DateTime.UtcNow,
-                    DedupeKey = dedupeKey
+                    DedupeKey = dedupeKey,
+                    TargetRole = targetRole
                 };
 
                 await _context.Notifications.InsertOneAsync(notif);
@@ -62,7 +94,7 @@ namespace PetSitter.Services
         {
             foreach (var n in notifications)
             {
-                await CreateNotificationAsync(n.UserId, n.Type, n.BookingId, n.Title, n.Message, n.DedupeKey);
+                await CreateNotificationAsync(n.UserId, n.Type, n.BookingId, n.Title, n.Message, n.DedupeKey, n.TargetRole);
             }
         }
 
@@ -94,7 +126,8 @@ namespace PetSitter.Services
                 Title = n.Title,
                 Message = n.Message,
                 CreatedAt = n.CreatedAt,
-                ReadAt = n.ReadAt
+                ReadAt = n.ReadAt,
+                TargetRole = n.TargetRole
             }).ToList();
         }
 
@@ -114,7 +147,8 @@ namespace PetSitter.Services
         {
             var nowUtc = DateTime.UtcNow;
             var filter = Builders<Notification>.Filter.Eq(n => n.NotificationId, notificationId)
-                       & Builders<Notification>.Filter.Eq(n => n.UserId, currentUserId);
+                       & Builders<Notification>.Filter.Eq(n => n.UserId, currentUserId)
+                       & Builders<Notification>.Filter.Eq(n => n.ReadAt, null);
 
             var update = Builders<Notification>.Update.Set(n => n.ReadAt, nowUtc);
             var result = await _context.Notifications.UpdateOneAsync(filter, update);
@@ -127,6 +161,7 @@ namespace PetSitter.Services
                 {
                     throw new NotFoundException("Không tìm thấy thông tin thông báo.");
                 }
+                // Nếu existing != null && existing.UserId == currentUserId && existing.ReadAt != null: idempotent, không ném lỗi
             }
         }
 
@@ -144,6 +179,8 @@ namespace PetSitter.Services
         {
             try
             {
+                CleanupStaleScanTimes();
+
                 var minScanMinutes = _configuration.GetValue<int>("BookingReminderSettings:MinScanIntervalMinutes", 5);
                 if (!force && _lastScanTimes.TryGetValue(currentUserId, out var lastScan) && DateTime.UtcNow - lastScan < TimeSpan.FromMinutes(minScanMinutes))
                 {
@@ -176,7 +213,8 @@ namespace PetSitter.Services
                         b.BookingId,
                         "Sắp hết hạn xác nhận hoàn tất",
                         $"Đơn #{b.MaDatLich} còn dưới {completionExpiringHours} giờ để xác nhận hoặc báo vấn đề trước khi hệ thống tự động hoàn tất.",
-                        dedupeKey
+                        dedupeKey,
+                        targetRole: "OWNER"
                     );
                 }
 
@@ -202,7 +240,8 @@ namespace PetSitter.Services
                             b.BookingId,
                             "Đơn đặt lịch sắp hết hạn xác nhận",
                             $"Đơn #{b.MaDatLich} chỉ còn dưới {pendingExpiringHours} giờ để phản hồi chấp nhận hoặc từ chối.",
-                            dedupeKey
+                            dedupeKey,
+                            targetRole: "SITTER"
                         );
                     }
 
@@ -231,7 +270,8 @@ namespace PetSitter.Services
                                 b.BookingId,
                                 "Nhắc nhở hoàn tất dịch vụ",
                                 $"Đơn #{b.MaDatLich} đã qua ngày kết thúc ({b.NgayKetThuc:dd/MM/yyyy}), vui lòng kiểm tra và xác nhận hoàn tất dịch vụ.",
-                                dedupeKey
+                                dedupeKey,
+                                targetRole: "SITTER"
                             );
                         }
                     }

@@ -99,7 +99,15 @@
     document.addEventListener('DOMContentLoaded', () => {
       renderNavbar();
       renderFooter();
-      loadBookings('PENDING');
+      const urlParams = new URLSearchParams(window.location.search);
+      const targetBookingId = urlParams.get('bookingId');
+      if (targetBookingId) {
+        const tabs = document.querySelectorAll('.tab');
+        const allTab = tabs[tabs.length - 1]; // Tab 'Tất cả'
+        loadBookings('', allTab);
+      } else {
+        loadBookings('PENDING');
+      }
     });
 
     async function loadBookings(status, tabElement) {
@@ -202,6 +210,16 @@
             </div>
           `;
         }).join('');
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const targetBookingId = urlParams.get('bookingId');
+        if (targetBookingId) {
+          const targetCard = document.getElementById(`card-${targetBookingId}`);
+          if (targetCard) {
+            targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            targetCard.classList.add('booking-highlight');
+          }
+        }
       } catch (err) {
         showError(err.message || 'Lỗi tải danh sách. Bạn có quyền Sitter không?');
         container.innerHTML = '';

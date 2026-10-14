@@ -12,6 +12,7 @@ namespace PetSitter.DTOs
         public DateTime CreatedAt { get; set; }
         public DateTime? ReadAt { get; set; }
         public bool IsRead => ReadAt != null;
+        public string? TargetRole { get; set; }
     }
 
     public class UnreadCountDto

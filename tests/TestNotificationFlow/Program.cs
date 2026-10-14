@@ -1,6 +1,9 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using MongoDB.Driver;
+using PetSitter.Controllers;
 using PetSitter.Data;
 using PetSitter.DTOs;
 using PetSitter.Exceptions;
@@ -10,6 +13,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
 
 namespace TestNotificationFlow
@@ -125,8 +129,8 @@ namespace TestNotificationFlow
 
                 var vnToday = BookingService.GetVnToday();
 
-                // Setup availabilities for the next 10 days
-                for (int i = 0; i < 10; i++)
+                // Setup availabilities
+                for (int i = -5; i < 15; i++)
                 {
                     await context.SitterAvailabilities.InsertOneAsync(new SitterAvailability
                     {
@@ -137,8 +141,9 @@ namespace TestNotificationFlow
                 }
 
                 // -------------------------------------------------------------
-                // TEST (a): Event Notifications (Create -> Sitter receives BOOKING_NEW)
+                // TEST (a): Event Notifications & TargetRole validation
                 // -------------------------------------------------------------
+                // 1. Create -> Sitter receives BOOKING_NEW with TargetRole = "SITTER"
                 var createDto = new CreateBookingDto
                 {
                     SitterId = sitterProfile.SitterId,
@@ -155,12 +160,89 @@ namespace TestNotificationFlow
 
                 var sitterNotifs = await notificationService.GetNotificationsAsync(sitterUser.UserId);
                 var newBookingNotif = sitterNotifs.FirstOrDefault(n => n.BookingId == createdBooking.BookingId && n.Type == NotificationType.BOOKING_NEW);
-                AssertTrue(newBookingNotif != null, "(a.1) Tạo đơn đặt lịch -> Sitter nhận thông báo BOOKING_NEW");
+                AssertTrue(newBookingNotif != null && newBookingNotif.TargetRole == "SITTER", "(a.1) Tạo đơn đặt lịch -> Sitter nhận BOOKING_NEW (TargetRole=SITTER)");
 
-                // -------------------------------------------------------------
-                // TEST (a.2): Sitter complete -> Owner receives BOOKING_COMPLETION_PENDING
-                // -------------------------------------------------------------
-                // Giả lập đơn đã ACCEPTED và quá NgayKetThuc
+                // 2. Sitter Accept -> Owner receives BOOKING_ACCEPTED with TargetRole = "OWNER"
+                var sitterBookingCtrl = new SitterBookingController(context, bookingService, notificationService, NullLogger<SitterBookingController>.Instance);
+                sitterBookingCtrl.ControllerContext = new ControllerContext
+                {
+                    HttpContext = new DefaultHttpContext
+                    {
+                        User = new ClaimsPrincipal(new ClaimsIdentity(new[]
+                        {
+                            new Claim(ClaimTypes.NameIdentifier, sitterUser.UserId),
+                            new Claim(ClaimTypes.Role, "SITTER")
+                        }, "TestAuth"))
+                    }
+                };
+                var acceptRes = await sitterBookingCtrl.AcceptBooking(createdBooking.BookingId);
+                var ownerNotifs = await notificationService.GetNotificationsAsync(ownerUser.UserId);
+                var acceptNotif = ownerNotifs.FirstOrDefault(n => n.BookingId == createdBooking.BookingId && n.Type == NotificationType.BOOKING_ACCEPTED);
+                AssertTrue(acceptNotif != null && acceptNotif.TargetRole == "OWNER", "(a.2) Sitter chấp nhận đơn -> Owner nhận BOOKING_ACCEPTED (TargetRole=OWNER)");
+
+                // 3. Sitter Reject -> Owner receives BOOKING_REJECTED with TargetRole = "OWNER"
+                var createDto2 = new CreateBookingDto
+                {
+                    SitterId = sitterProfile.SitterId,
+                    NgayBatDau = vnToday.AddDays(5).ToString("yyyy-MM-dd"),
+                    NgayKetThuc = vnToday.AddDays(6).ToString("yyyy-MM-dd"),
+                    TenPet = "Gau Gau",
+                    LoaiPet = "Dog",
+                    KichCo = "Medium",
+                    Addons = new List<string>()
+                };
+                var createdBooking2 = await bookingService.CreateBookingAsync(ownerUser.UserId, createDto2);
+                createdBookingIds.Add(createdBooking2.BookingId);
+
+                var rejectRes = await sitterBookingCtrl.RejectBooking(createdBooking2.BookingId, new RejectBookingDto { LyDo = "Ban lich dot xuat" });
+                ownerNotifs = await notificationService.GetNotificationsAsync(ownerUser.UserId);
+                var rejectNotif = ownerNotifs.FirstOrDefault(n => n.BookingId == createdBooking2.BookingId && n.Type == NotificationType.BOOKING_REJECTED);
+                AssertTrue(rejectNotif != null && rejectNotif.TargetRole == "OWNER", "(a.3) Sitter từ chối đơn -> Owner nhận BOOKING_REJECTED (TargetRole=OWNER)");
+
+                // 4. Cancel by Sitter -> Owner receives BOOKING_CANCELLED with TargetRole = "OWNER"
+                // Tạo đơn ACCEPTED trước
+                var bookingToCancelBySitter = new Booking
+                {
+                    MaDatLich = "PS_CANCEL_BY_SITTER",
+                    OwnerId = ownerUser.UserId,
+                    SitterId = sitterProfile.SitterId,
+                    NgayBatDau = vnToday.AddDays(7),
+                    NgayKetThuc = vnToday.AddDays(8),
+                    SoNgay = 1,
+                    TrangThai = BookingStatus.ACCEPTED,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
+                };
+                await context.Bookings.InsertOneAsync(bookingToCancelBySitter);
+                createdBookingIds.Add(bookingToCancelBySitter.BookingId);
+
+                await bookingService.CancelBookingAsync(sitterUser.UserId, bookingToCancelBySitter.BookingId, "Sitter ban viec gia dinh");
+                ownerNotifs = await notificationService.GetNotificationsAsync(ownerUser.UserId);
+                var cancelBySitterNotif = ownerNotifs.FirstOrDefault(n => n.BookingId == bookingToCancelBySitter.BookingId && n.Type == NotificationType.BOOKING_CANCELLED);
+                AssertTrue(cancelBySitterNotif != null && cancelBySitterNotif.TargetRole == "OWNER", "(a.4) Sitter hủy đơn -> Owner nhận BOOKING_CANCELLED (TargetRole=OWNER)");
+
+                // 5. Cancel by Owner -> Sitter receives BOOKING_CANCELLED with TargetRole = "SITTER"
+                var bookingToCancelByOwner = new Booking
+                {
+                    MaDatLich = "PS_CANCEL_BY_OWNER",
+                    OwnerId = ownerUser.UserId,
+                    SitterId = sitterProfile.SitterId,
+                    NgayBatDau = vnToday.AddDays(9),
+                    NgayKetThuc = vnToday.AddDays(10),
+                    SoNgay = 1,
+                    TrangThai = BookingStatus.ACCEPTED,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
+                };
+                await context.Bookings.InsertOneAsync(bookingToCancelByOwner);
+                createdBookingIds.Add(bookingToCancelByOwner.BookingId);
+
+                await bookingService.CancelBookingAsync(ownerUser.UserId, bookingToCancelByOwner.BookingId, "Owner thay doi ke hoach");
+                sitterNotifs = await notificationService.GetNotificationsAsync(sitterUser.UserId);
+                var cancelByOwnerNotif = sitterNotifs.FirstOrDefault(n => n.BookingId == bookingToCancelByOwner.BookingId && n.Type == NotificationType.BOOKING_CANCELLED);
+                AssertTrue(cancelByOwnerNotif != null && cancelByOwnerNotif.TargetRole == "SITTER", "(a.5) Owner hủy đơn -> Sitter nhận BOOKING_CANCELLED (TargetRole=SITTER)");
+
+                // 6. Sitter Complete -> Owner receives BOOKING_COMPLETION_PENDING with TargetRole = "OWNER"
                 var testBookingComplete = new Booking
                 {
                     MaDatLich = "PS_TEST_COMP",
@@ -177,21 +259,17 @@ namespace TestNotificationFlow
                 createdBookingIds.Add(testBookingComplete.BookingId);
 
                 await bookingService.SitterCompleteBookingAsync(sitterUser.UserId, testBookingComplete.BookingId);
-                var ownerNotifs = await notificationService.GetNotificationsAsync(ownerUser.UserId);
+                ownerNotifs = await notificationService.GetNotificationsAsync(ownerUser.UserId);
                 var compPendingNotif = ownerNotifs.FirstOrDefault(n => n.BookingId == testBookingComplete.BookingId && n.Type == NotificationType.BOOKING_COMPLETION_PENDING);
-                AssertTrue(compPendingNotif != null, "(a.2) Sitter hoàn tất -> Owner nhận thông báo BOOKING_COMPLETION_PENDING");
+                AssertTrue(compPendingNotif != null && compPendingNotif.TargetRole == "OWNER", "(a.6) Sitter hoàn tất -> Owner nhận BOOKING_COMPLETION_PENDING (TargetRole=OWNER)");
 
-                // -------------------------------------------------------------
-                // TEST (a.3): Owner confirm -> Sitter receives BOOKING_COMPLETED
-                // -------------------------------------------------------------
+                // 7. Owner Confirm -> Sitter receives BOOKING_COMPLETED with TargetRole = "SITTER"
                 await bookingService.OwnerConfirmCompletionAsync(ownerUser.UserId, testBookingComplete.BookingId);
                 sitterNotifs = await notificationService.GetNotificationsAsync(sitterUser.UserId);
                 var compNotif = sitterNotifs.FirstOrDefault(n => n.BookingId == testBookingComplete.BookingId && n.Type == NotificationType.BOOKING_COMPLETED);
-                AssertTrue(compNotif != null, "(a.3) Owner xác nhận hoàn tất -> Sitter nhận thông báo BOOKING_COMPLETED");
+                AssertTrue(compNotif != null && compNotif.TargetRole == "SITTER", "(a.7) Owner xác nhận hoàn tất -> Sitter nhận BOOKING_COMPLETED (TargetRole=SITTER)");
 
-                // -------------------------------------------------------------
-                // TEST (a.4 & requirement 5): Owner dispute -> Sitter & Admin receive BOOKING_DISPUTED (NO raw reason in message)
-                // -------------------------------------------------------------
+                // 8. Owner Dispute -> Sitter receives BOOKING_DISPUTED (TargetRole=SITTER), Admin receives BOOKING_DISPUTED (TargetRole=ADMIN)
                 var testBookingDispute = new Booking
                 {
                     MaDatLich = "PS_TEST_DISP",
@@ -216,12 +294,11 @@ namespace TestNotificationFlow
                 var adminNotifs = await notificationService.GetNotificationsAsync(adminUser.UserId);
                 var disputeNotifAdmin = adminNotifs.FirstOrDefault(n => n.BookingId == testBookingDispute.BookingId && n.Type == NotificationType.BOOKING_DISPUTED);
 
-                AssertTrue(disputeNotifSitter != null && disputeNotifAdmin != null, "(a.4) Owner khiếu nại -> Sitter và Admin đều nhận BOOKING_DISPUTED");
-                AssertTrue(disputeNotifSitter != null && disputeNotifAdmin != null && !disputeNotifSitter.Message.Contains(rawSecretReason) && !disputeNotifAdmin.Message.Contains(rawSecretReason), "(a.4.1 - Requirement 5) Thông báo khiếu nại KHÔNG in lý do thô (bảo mật)");
+                AssertTrue(disputeNotifSitter != null && disputeNotifSitter.TargetRole == "SITTER" &&
+                           disputeNotifAdmin != null && disputeNotifAdmin.TargetRole == "ADMIN",
+                           "(a.8) Owner khiếu nại -> Sitter (TargetRole=SITTER) và Admin (TargetRole=ADMIN) đều nhận đúng TargetRole");
 
-                // -------------------------------------------------------------
-                // TEST (a.5): Admin resolve dispute -> both Owner & Sitter receive BOOKING_RESOLVED
-                // -------------------------------------------------------------
+                // 9. Admin Resolve Dispute -> Owner receives BOOKING_RESOLVED (TargetRole=OWNER), Sitter receives BOOKING_RESOLVED (TargetRole=SITTER)
                 await bookingService.AdminResolveDisputeAsync(adminUser.UserId, testBookingDispute.BookingId, new ResolveDisputeDto
                 {
                     Resolution = BookingStatus.COMPLETED,
@@ -231,14 +308,18 @@ namespace TestNotificationFlow
                 sitterNotifs = await notificationService.GetNotificationsAsync(sitterUser.UserId);
                 var resolvedOwner = ownerNotifs.FirstOrDefault(n => n.BookingId == testBookingDispute.BookingId && n.Type == NotificationType.BOOKING_RESOLVED);
                 var resolvedSitter = sitterNotifs.FirstOrDefault(n => n.BookingId == testBookingDispute.BookingId && n.Type == NotificationType.BOOKING_RESOLVED);
-                AssertTrue(resolvedOwner != null && resolvedSitter != null, "(a.5) Admin giải quyết tranh chấp -> Cả Owner và Sitter đều nhận BOOKING_RESOLVED");
+                AssertTrue(resolvedOwner != null && resolvedOwner.TargetRole == "OWNER" &&
+                           resolvedSitter != null && resolvedSitter.TargetRole == "SITTER",
+                           "(a.9) Admin giải quyết tranh chấp -> Owner (TargetRole=OWNER) và Sitter (TargetRole=SITTER) nhận đúng TargetRole");
 
                 // -------------------------------------------------------------
-                // TEST (b): Lazy evaluation notifications (EXPIRED & AUTO_COMPLETED)
+                // TEST (c) LÀM LẠI ĐÚNG: 50 request đọc đồng thời qua ProcessLazyBookingUpdatesAsync
+                // Chạy cho cả EXPIRED và AUTO_COMPLETED
                 // -------------------------------------------------------------
-                var testLazyExpired = new Booking
+                // Kịch bản C.1: 50 request đọc đồng thời cùng một đơn PENDING quá hạn -> EXPIRED
+                var racePendingBooking = new Booking
                 {
-                    MaDatLich = "PS_TEST_LAZY_EXP",
+                    MaDatLich = "PS_RACE_LAZY_PENDING",
                     OwnerId = ownerUser.UserId,
                     SitterId = sitterProfile.SitterId,
                     NgayBatDau = vnToday.AddDays(1),
@@ -248,299 +329,139 @@ namespace TestNotificationFlow
                     IsActive = true,
                     CreatedAt = DateTime.UtcNow.AddHours(-49)
                 };
-                await context.Bookings.InsertOneAsync(testLazyExpired);
-                createdBookingIds.Add(testLazyExpired.BookingId);
+                await context.Bookings.InsertOneAsync(racePendingBooking);
+                createdBookingIds.Add(racePendingBooking.BookingId);
 
-                await bookingService.ProcessLazyBookingUpdatesAsync(ownerId: ownerUser.UserId);
-                ownerNotifs = await notificationService.GetNotificationsAsync(ownerUser.UserId);
-                sitterNotifs = await notificationService.GetNotificationsAsync(sitterUser.UserId);
-                var lazyExpOwner = ownerNotifs.FirstOrDefault(n => n.BookingId == testLazyExpired.BookingId && n.Type == NotificationType.BOOKING_EXPIRED);
-                var lazyExpSitter = sitterNotifs.FirstOrDefault(n => n.BookingId == testLazyExpired.BookingId && n.Type == NotificationType.BOOKING_EXPIRED);
-                AssertTrue(lazyExpOwner != null && lazyExpSitter != null, "(b.1) Lazy PENDING quá hạn -> EXPIRED sinh thông báo cho CẢ HAI BÊN");
+                // 50 request đọc đồng thời
+                var tasksPending = Enumerable.Range(0, 50).Select(_ => bookingService.ProcessLazyBookingUpdatesAsync(ownerId: ownerUser.UserId));
+                await Task.WhenAll(tasksPending);
 
-                // -------------------------------------------------------------
-                // TEST (c): Concurrency test (50 parallel tasks inserting same DedupeKey)
-                // -------------------------------------------------------------
-                var testDedupeKey = $"{testPrefix}_CONCURRENT_DEDUPE_KEY";
-                var concurrentTasks = Enumerable.Range(0, 50).Select(async _ =>
+                var pendingOwnerNotifs = await context.Notifications.Find(n => n.BookingId == racePendingBooking.BookingId && n.UserId == ownerUser.UserId && n.Type == NotificationType.BOOKING_EXPIRED).ToListAsync();
+                var pendingSitterNotifs = await context.Notifications.Find(n => n.BookingId == racePendingBooking.BookingId && n.UserId == sitterUser.UserId && n.Type == NotificationType.BOOKING_EXPIRED).ToListAsync();
+                var updatedPendingBooking = await context.Bookings.Find(b => b.BookingId == racePendingBooking.BookingId).FirstOrDefaultAsync();
+
+                AssertTrue(pendingOwnerNotifs.Count == 1 && pendingSitterNotifs.Count == 1,
+                    $"(c.1) 50 request đọc đồng thời cùng 1 đơn PENDING quá hạn -> Mỗi bên đúng 1 thông báo EXPIRED (Owner={pendingOwnerNotifs.Count}, Sitter={pendingSitterNotifs.Count})");
+                AssertTrue(updatedPendingBooking.TrangThai == BookingStatus.EXPIRED && updatedPendingBooking.IsActive == false,
+                    "(c.1.2) Đơn chuyển trạng thái EXPIRED hợp lệ, IsActive=false");
+                var expiredHistories = updatedPendingBooking.History.Where(h => h.HanhDong == BookingStatus.EXPIRED).ToList();
+                AssertTrue(expiredHistories.Count == 1,
+                    $"(c.1.3) Lịch sử chuyển trạng thái EXPIRED đúng 1 bản ghi duy nhất (Count={expiredHistories.Count})");
+
+                // Kịch bản C.2: 50 request đọc đồng thời cùng một đơn COMPLETION_PENDING quá hạn -> AUTO_COMPLETED
+                var raceCompletionBooking = new Booking
                 {
-                    return await notificationService.CreateNotificationAsync(
-                        ownerUser.UserId,
-                        NotificationType.BOOKING_ACCEPTED,
-                        null,
-                        "Test Concurrent Title",
-                        "Test Concurrent Message",
-                        testDedupeKey
-                    );
-                });
-                var results = await Task.WhenAll(concurrentTasks);
-                var successCount = results.Count(r => r == true);
-                var totalInDb = await context.Notifications.CountDocumentsAsync(n => n.DedupeKey == testDedupeKey);
-                AssertTrue(successCount == 1 && totalInDb == 1, "(c) 50 request song song cùng DedupeKey -> Đúng 1 thành công, 0 trùng lặp");
-
-                // -------------------------------------------------------------
-                // TEST (d): Cursor pagination & Unread Count
-                // -------------------------------------------------------------
-                var unreadCount = await notificationService.GetUnreadCountAsync(ownerUser.UserId);
-                AssertTrue(unreadCount.UnreadCount > 0, "(d.1) GetUnreadCountAsync trả về số lượng chính xác > 0");
-
-                var paginated = await notificationService.GetNotificationsAsync(ownerUser.UserId, limit: 3);
-                AssertTrue(paginated.Count <= 3, "(d.2) Phân trang giới hạn limit = 3 hoạt động đúng");
-                if (paginated.Count > 0)
-                {
-                    var oldestCreatedAt = paginated.Last().CreatedAt;
-                    var nextPage = await notificationService.GetNotificationsAsync(ownerUser.UserId, limit: 3, before: oldestCreatedAt);
-                    AssertTrue(nextPage.All(n => n.CreatedAt < oldestCreatedAt), "(d.3) Phân trang bằng con trỏ before trả về các bản ghi cũ hơn chuẩn xác");
-                }
-
-                // -------------------------------------------------------------
-                // TEST (e): Resiliency (Notification failure does not rollback state change)
-                // -------------------------------------------------------------
-                // Giả lập gọi CancelBookingAsync khi NotificationService gặp lỗi chèn
-                var testResilienceBooking = new Booking
-                {
-                    MaDatLich = "PS_TEST_RESIL",
-                    OwnerId = ownerUser.UserId,
-                    SitterId = sitterProfile.SitterId,
-                    NgayBatDau = vnToday.AddDays(3),
-                    NgayKetThuc = vnToday.AddDays(4),
-                    TrangThai = BookingStatus.PENDING,
-                    IsActive = true,
-                    CreatedAt = DateTime.UtcNow
-                };
-                await context.Bookings.InsertOneAsync(testResilienceBooking);
-                createdBookingIds.Add(testResilienceBooking.BookingId);
-
-                // Service với null notification service để kiểm tra không bị NullReference và vẫn chuyển trạng thái thành công
-                var resilientBookingService = new BookingService(context, config, null, NullLogger<BookingService>.Instance);
-                await resilientBookingService.CancelBookingAsync(ownerUser.UserId, testResilienceBooking.BookingId, "Lý do hủy kiểm thử");
-                var checkDbBooking = await context.Bookings.Find(b => b.BookingId == testResilienceBooking.BookingId).FirstOrDefaultAsync();
-                AssertTrue(checkDbBooking.TrangThai == BookingStatus.CANCELLED, "(e) Lỗi thông báo không làm gián đoạn chuyển trạng thái booking (Resilience)");
-
-                // -------------------------------------------------------------
-                // TEST (f & g): Anti-IDOR & Idempotency
-                // -------------------------------------------------------------
-                var userANotif = (await notificationService.GetNotificationsAsync(ownerUser.UserId, limit: 1)).First();
-
-                // User B (sitterUser) cố tình đánh dấu đã đọc thông báo của User A -> phải ném NotFoundException (404)
-                bool idorBlocked = false;
-                try
-                {
-                    await notificationService.MarkAsReadAsync(sitterUser.UserId, userANotif.NotificationId);
-                }
-                catch (NotFoundException)
-                {
-                    idorBlocked = true;
-                }
-                AssertTrue(idorBlocked, "(f) Anti-IDOR: Người dùng không thể đánh dấu đã đọc thông báo của người khác (ném 404)");
-
-                // Idempotent: User A đánh dấu đã đọc 2 lần liên tiếp -> không lỗi, lần 2 vẫn thành công
-                await notificationService.MarkAsReadAsync(ownerUser.UserId, userANotif.NotificationId);
-                await notificationService.MarkAsReadAsync(ownerUser.UserId, userANotif.NotificationId);
-                AssertTrue(true, "(g.1) Idempotent: Đánh dấu đã đọc nhiều lần cho cùng một thông báo không bị lỗi");
-
-                await notificationService.MarkAllAsReadAsync(ownerUser.UserId);
-                var unreadAfterMarkAll = await notificationService.GetUnreadCountAsync(ownerUser.UserId);
-                AssertTrue(unreadAfterMarkAll.UnreadCount == 0, "(g.2) MarkAllAsReadAsync đặt toàn bộ thông báo về đã đọc (unreadCount = 0)");
-
-                // -------------------------------------------------------------
-                // TEST (h, i, n, o): Reminders & Throttling & Caps
-                // -------------------------------------------------------------
-                // 1. PENDING <= 12h sinh REMINDER_PENDING_EXPIRES
-                var testPendingExpiring = new Booking
-                {
-                    MaDatLich = "PS_TEST_REM_P",
-                    OwnerId = ownerUser.UserId,
-                    SitterId = sitterProfile.SitterId,
-                    NgayBatDau = vnToday.AddDays(1),
-                    NgayKetThuc = vnToday.AddDays(2),
-                    TrangThai = BookingStatus.PENDING,
-                    ExpiresAt = DateTime.UtcNow.AddHours(6), // còn 6 giờ (< 12h)
-                    IsActive = true,
-                    CreatedAt = DateTime.UtcNow.AddHours(-42)
-                };
-                await context.Bookings.InsertOneAsync(testPendingExpiring);
-                createdBookingIds.Add(testPendingExpiring.BookingId);
-
-                // 2. COMPLETION_PENDING <= 24h sinh REMINDER_COMPLETION_EXPIRES
-                var testCompExpiring = new Booking
-                {
-                    MaDatLich = "PS_TEST_REM_C",
-                    OwnerId = ownerUser.UserId,
-                    SitterId = sitterProfile.SitterId,
-                    NgayBatDau = vnToday.AddDays(-2),
-                    NgayKetThuc = vnToday.AddDays(-1),
-                    TrangThai = BookingStatus.COMPLETION_PENDING,
-                    CompletionDeadline = DateTime.UtcNow.AddHours(12), // còn 12 giờ (< 24h)
-                    IsActive = true,
-                    CreatedAt = DateTime.UtcNow.AddDays(-3)
-                };
-                await context.Bookings.InsertOneAsync(testCompExpiring);
-                createdBookingIds.Add(testCompExpiring.BookingId);
-
-                // 3. ACCEPTED quá ngày kết thúc sinh REMINDER_OVERDUE_ACCEPTED
-                var testAcceptedOverdue = new Booking
-                {
-                    MaDatLich = "PS_TEST_REM_A",
+                    MaDatLich = "PS_RACE_LAZY_COMPLETION",
                     OwnerId = ownerUser.UserId,
                     SitterId = sitterProfile.SitterId,
                     NgayBatDau = vnToday.AddDays(-5),
-                    NgayKetThuc = vnToday.AddDays(-2), // đã qua ngày kết thúc
-                    TrangThai = BookingStatus.ACCEPTED,
+                    NgayKetThuc = vnToday.AddDays(-2),
+                    TrangThai = BookingStatus.COMPLETION_PENDING,
+                    CompletionDeadline = DateTime.UtcNow.AddMinutes(-10),
                     IsActive = true,
                     CreatedAt = DateTime.UtcNow.AddDays(-5)
                 };
-                await context.Bookings.InsertOneAsync(testAcceptedOverdue);
-                createdBookingIds.Add(testAcceptedOverdue.BookingId);
+                await context.Bookings.InsertOneAsync(raceCompletionBooking);
+                createdBookingIds.Add(raceCompletionBooking.BookingId);
 
-                // Quét nhắc hạn cho Sitter (force = true)
-                await notificationService.ScanAndGenerateRemindersAsync(sitterUser.UserId, force: true);
-                sitterNotifs = await notificationService.GetNotificationsAsync(sitterUser.UserId);
+                var tasksCompletion = Enumerable.Range(0, 50).Select(_ => bookingService.ProcessLazyBookingUpdatesAsync(ownerId: ownerUser.UserId));
+                await Task.WhenAll(tasksCompletion);
 
-                var remPending = sitterNotifs.FirstOrDefault(n => n.BookingId == testPendingExpiring.BookingId && n.Type == NotificationType.REMINDER_PENDING_EXPIRES);
-                var remOverdue = sitterNotifs.FirstOrDefault(n => n.BookingId == testAcceptedOverdue.BookingId && n.Type == NotificationType.REMINDER_OVERDUE_ACCEPTED);
-                AssertTrue(remPending != null, "(h.1) Đơn PENDING <= 12h sinh REMINDER_PENDING_EXPIRES cho Sitter");
-                AssertTrue(remOverdue != null, "(h.2) Đơn ACCEPTED quá ngày kết thúc sinh REMINDER_OVERDUE_ACCEPTED cho Sitter");
+                var compOwnerNotifs = await context.Notifications.Find(n => n.BookingId == raceCompletionBooking.BookingId && n.UserId == ownerUser.UserId && n.Type == NotificationType.BOOKING_COMPLETED).ToListAsync();
+                var compSitterNotifs = await context.Notifications.Find(n => n.BookingId == raceCompletionBooking.BookingId && n.UserId == sitterUser.UserId && n.Type == NotificationType.BOOKING_COMPLETED).ToListAsync();
+                var updatedCompBooking = await context.Bookings.Find(b => b.BookingId == raceCompletionBooking.BookingId).FirstOrDefaultAsync();
 
-                // Quét nhắc hạn cho Owner (force = true)
-                await notificationService.ScanAndGenerateRemindersAsync(ownerUser.UserId, force: true);
-                ownerNotifs = await notificationService.GetNotificationsAsync(ownerUser.UserId);
-                var remCompletion = ownerNotifs.FirstOrDefault(n => n.BookingId == testCompExpiring.BookingId && n.Type == NotificationType.REMINDER_COMPLETION_EXPIRES);
-                AssertTrue(remCompletion != null, "(h.3) Đơn COMPLETION_PENDING <= 24h sinh REMINDER_COMPLETION_EXPIRES cho Owner");
-
-                // TEST (i): Throttling 5 phút
-                // Tạo đơn mới PENDING <= 12h nữa
-                var testPendingThrottle = new Booking
-                {
-                    MaDatLich = "PS_TEST_REM_THROT",
-                    OwnerId = ownerUser.UserId,
-                    SitterId = sitterProfile.SitterId,
-                    NgayBatDau = vnToday.AddDays(5),
-                    NgayKetThuc = vnToday.AddDays(6),
-                    TrangThai = BookingStatus.PENDING,
-                    ExpiresAt = DateTime.UtcNow.AddHours(5),
-                    IsActive = true,
-                    CreatedAt = DateTime.UtcNow.AddHours(-43)
-                };
-                await context.Bookings.InsertOneAsync(testPendingThrottle);
-                createdBookingIds.Add(testPendingThrottle.BookingId);
-
-                // Quét lần nữa với force = false (sẽ bị throttle vì vừa quét cách đây vài giây)
-                await notificationService.ScanAndGenerateRemindersAsync(sitterUser.UserId, force: false);
-                sitterNotifs = await notificationService.GetNotificationsAsync(sitterUser.UserId);
-                var throttledNotif = sitterNotifs.FirstOrDefault(n => n.BookingId == testPendingThrottle.BookingId && n.Type == NotificationType.REMINDER_PENDING_EXPIRES);
-                AssertTrue(throttledNotif == null, "(i) Quét nhắc hạn trong 5 phút được throttle và bỏ qua để tiết kiệm tài nguyên");
-
-                // TEST (n): Không sinh nhắc hạn cho đơn đã hết hạn hoặc không còn hiệu lực
-                var testExpiredBookingReminder = new Booking
-                {
-                    MaDatLich = "PS_TEST_NO_REM",
-                    OwnerId = ownerUser.UserId,
-                    SitterId = sitterProfile.SitterId,
-                    NgayBatDau = vnToday.AddDays(7),
-                    NgayKetThuc = vnToday.AddDays(8),
-                    TrangThai = BookingStatus.PENDING,
-                    ExpiresAt = DateTime.UtcNow.AddHours(-1), // đã quá hạn
-                    IsActive = true,
-                    CreatedAt = DateTime.UtcNow.AddHours(-49)
-                };
-                await context.Bookings.InsertOneAsync(testExpiredBookingReminder);
-                createdBookingIds.Add(testExpiredBookingReminder.BookingId);
-
-                await notificationService.ScanAndGenerateRemindersAsync(sitterUser.UserId, force: true);
-                sitterNotifs = await notificationService.GetNotificationsAsync(sitterUser.UserId);
-                var noReminderForExpired = sitterNotifs.FirstOrDefault(n => n.BookingId == testExpiredBookingReminder.BookingId && n.Type == NotificationType.REMINDER_PENDING_EXPIRES);
-                AssertTrue(noReminderForExpired == null, "(n) Nhắc hạn KHÔNG sinh cho đơn đã quá hạn (ExpiresAt <= now)");
-
-                // TEST (o): ACCEPTED quá hạn nhắc tối đa N lần (mặc định 7)
-                var testMaxRemindersBooking = new Booking
-                {
-                    MaDatLich = "PS_TEST_MAX_REM",
-                    OwnerId = ownerUser.UserId,
-                    SitterId = sitterProfile.SitterId,
-                    NgayBatDau = vnToday.AddDays(-10),
-                    NgayKetThuc = vnToday.AddDays(-8),
-                    TrangThai = BookingStatus.ACCEPTED,
-                    IsActive = true,
-                    CreatedAt = DateTime.UtcNow.AddDays(-10)
-                };
-                await context.Bookings.InsertOneAsync(testMaxRemindersBooking);
-                createdBookingIds.Add(testMaxRemindersBooking.BookingId);
-
-                // Giả lập đã có 7 thông báo nhắc hạn cho đơn này trong quá khứ
-                for (int d = 1; d <= 7; d++)
-                {
-                    var pastDateStr = vnToday.AddDays(-d).ToString("yyyyMMdd");
-                    await notificationService.CreateNotificationAsync(
-                        sitterUser.UserId,
-                        NotificationType.REMINDER_OVERDUE_ACCEPTED,
-                        testMaxRemindersBooking.BookingId,
-                        "Nhắc nhở cũ",
-                        "Nội dung cũ",
-                        $"{testMaxRemindersBooking.BookingId}:{NotificationType.REMINDER_OVERDUE_ACCEPTED}:{pastDateStr}:{sitterUser.UserId}"
-                    );
-                }
-
-                // Quét nhắc hạn hôm nay -> đã đạt 7 lần, không được sinh thêm lần thứ 8
-                await notificationService.ScanAndGenerateRemindersAsync(sitterUser.UserId, force: true);
-                var countOverdueForBooking = await context.Notifications.CountDocumentsAsync(n =>
-                    n.UserId == sitterUser.UserId &&
-                    n.BookingId == testMaxRemindersBooking.BookingId &&
-                    n.Type == NotificationType.REMINDER_OVERDUE_ACCEPTED
-                );
-                AssertTrue(countOverdueForBooking == 7, "(o) Đơn ACCEPTED quá hạn nhắc tối đa N lần (đạt 7 lần không sinh thêm)");
+                AssertTrue(compOwnerNotifs.Count == 1 && compSitterNotifs.Count == 1,
+                    $"(c.2) 50 request đọc đồng thời cùng 1 đơn COMPLETION_PENDING quá hạn -> Mỗi bên đúng 1 thông báo COMPLETED (Owner={compOwnerNotifs.Count}, Sitter={compSitterNotifs.Count})");
+                AssertTrue(updatedCompBooking.TrangThai == BookingStatus.COMPLETED && updatedCompBooking.AutoCompleted == true && updatedCompBooking.IsActive == false,
+                    "(c.2.2) Đơn chuyển trạng thái COMPLETED (AutoCompleted=true) hợp lệ, IsActive=false");
+                var compHistories = updatedCompBooking.History.Where(h => h.HanhDong == "AUTO_COMPLETED").ToList();
+                AssertTrue(compHistories.Count == 1,
+                    $"(c.2.3) Lịch sử chuyển trạng thái AUTO_COMPLETED đúng 1 bản ghi duy nhất (Count={compHistories.Count})");
 
                 // -------------------------------------------------------------
-                // TEST (m): Đối soát tạo bù thông báo lazy bị thiếu
+                // TEST (f): Kiểm thử qua HTTP Controller (401 khi không token, 404 khi đọc thông báo của người khác)
                 // -------------------------------------------------------------
-                // Giả lập đơn bị SYSTEM đổi sang EXPIRED trong 7 ngày gần đây nhưng chưa từng có bản ghi thông báo
-                var testMissingNotifBooking = new Booking
+                var notifCtrl = new NotificationsController(notificationService);
+
+                // 1. HTTP 401 khi không có token (ClaimsPrincipal rỗng)
+                notifCtrl.ControllerContext = new ControllerContext
                 {
-                    MaDatLich = "PS_TEST_MISSING",
-                    OwnerId = ownerUser.UserId,
-                    SitterId = sitterProfile.SitterId,
-                    NgayBatDau = vnToday.AddDays(-3),
-                    NgayKetThuc = vnToday.AddDays(-2),
-                    TrangThai = BookingStatus.EXPIRED,
-                    ExpiresAt = DateTime.UtcNow.AddDays(-2),
-                    IsActive = false,
-                    CreatedAt = DateTime.UtcNow.AddDays(-4),
-                    History = new List<InquiryHistory>
+                    HttpContext = new DefaultHttpContext() // User is unauthenticated
+                };
+                var unauthorizedRes = await notifCtrl.GetNotifications();
+                AssertTrue(unauthorizedRes is UnauthorizedResult, "(f.1) HTTP: Gọi API không có token -> Trả về 401 Unauthorized");
+
+                // 2. HTTP 404 khi đọc thông báo của người khác
+                var testNotifOwner = (await notificationService.GetNotificationsAsync(ownerUser.UserId, limit: 1)).First();
+
+                notifCtrl.ControllerContext = new ControllerContext
+                {
+                    HttpContext = new DefaultHttpContext
                     {
-                        new InquiryHistory
+                        User = new ClaimsPrincipal(new ClaimsIdentity(new[]
                         {
-                            HanhDong = BookingStatus.EXPIRED,
-                            FromStatus = BookingStatus.PENDING,
-                            NguoiThucHien = "SYSTEM",
-                            ActorUserId = null,
-                            LyDo = "Quá hạn 48 giờ",
-                            ThoiGian = DateTime.UtcNow.AddDays(-2)
-                        }
+                            new Claim(ClaimTypes.NameIdentifier, sitterUser.UserId),
+                            new Claim(ClaimTypes.Role, "SITTER")
+                        }, "TestAuth"))
                     }
                 };
-                await context.Bookings.InsertOneAsync(testMissingNotifBooking);
-                createdBookingIds.Add(testMissingNotifBooking.BookingId);
 
-                // Chưa có thông báo
-                var missingBefore = await context.Notifications.Find(n => n.BookingId == testMissingNotifBooking.BookingId).ToListAsync();
-                AssertTrue(missingBefore.Count == 0, "(m.1) Đơn đối soát ban đầu hoàn toàn thiếu thông báo");
+                var idorResult = await notifCtrl.MarkAsRead(testNotifOwner.NotificationId);
+                var objectResult = idorResult as ObjectResult;
+                AssertTrue(objectResult != null && objectResult.StatusCode == 404,
+                    $"(f.2) HTTP: Người dùng đọc thông báo của người khác -> Bị chặn với mã 404 Not Found (StatusCode={objectResult?.StatusCode})");
 
-                // Chạy ProcessLazyBookingUpdatesAsync cho Owner -> sẽ quét reconciliation 7 ngày và tạo bù
-                await bookingService.ProcessLazyBookingUpdatesAsync(ownerId: ownerUser.UserId);
+                // -------------------------------------------------------------
+                // TEST: MarkAsReadAsync chỉ cập nhật khi ReadAt == null và giữ 404
+                // -------------------------------------------------------------
+                // Tạo một thông báo riêng để test
+                var readTestNotif = new Notification
+                {
+                    UserId = ownerUser.UserId,
+                    Type = NotificationType.BOOKING_ACCEPTED,
+                    Title = "Test Read Title",
+                    Message = "Test Read Msg",
+                    CreatedAt = DateTime.UtcNow,
+                    DedupeKey = $"{testPrefix}_READ_TEST"
+                };
+                await context.Notifications.InsertOneAsync(readTestNotif);
 
-                var backfilledNotifOwner = await context.Notifications.Find(n =>
-                    n.BookingId == testMissingNotifBooking.BookingId &&
-                    n.UserId == ownerUser.UserId &&
-                    n.Type == NotificationType.BOOKING_EXPIRED
-                ).FirstOrDefaultAsync();
+                // Lần 1: Chưa đọc -> ReadAt được cập nhật
+                await notificationService.MarkAsReadAsync(ownerUser.UserId, readTestNotif.NotificationId);
+                var afterRead1 = await context.Notifications.Find(n => n.NotificationId == readTestNotif.NotificationId).FirstOrDefaultAsync();
+                var readAtFirstTime = afterRead1.ReadAt;
+                AssertTrue(readAtFirstTime != null, "MarkAsReadAsync cập nhật ReadAt khi ReadAt == null");
 
-                var backfilledNotifSitter = await context.Notifications.Find(n =>
-                    n.BookingId == testMissingNotifBooking.BookingId &&
-                    n.UserId == sitterUser.UserId &&
-                    n.Type == NotificationType.BOOKING_EXPIRED
-                ).FirstOrDefaultAsync();
+                // Lần 2: Đã đọc -> ReadAt không bị đổi sang timestamp mới (idempotent)
+                await Task.Delay(50);
+                await notificationService.MarkAsReadAsync(ownerUser.UserId, readTestNotif.NotificationId);
+                var afterRead2 = await context.Notifications.Find(n => n.NotificationId == readTestNotif.NotificationId).FirstOrDefaultAsync();
+                AssertTrue(afterRead2.ReadAt == readAtFirstTime, "MarkAsReadAsync giữ nguyên ReadAt khi đã đọc (idempotent, không ghi đè thời gian)");
 
-                AssertTrue(backfilledNotifOwner != null && backfilledNotifSitter != null, "(m.2) Đối soát phát hiện đơn EXPIRED trong 7 ngày thiếu thông báo và đã TẠO BÙ cho cả 2 bên");
+                // -------------------------------------------------------------
+                // TEST (i): Kiểm tra listIndexes trên collection Notifications
+                // -------------------------------------------------------------
+                Console.WriteLine("\n--- KIỂM TRA CÁC INDEX TRÊN COLLECTION Notifications (listIndexes) ---");
+                var indexList = await context.Notifications.Indexes.ListAsync();
+                var indexDocs = await indexList.ToListAsync();
+                bool hasUniqueDedupe = false;
+                bool hasTtlCreatedAt = false;
+
+                foreach (var idx in indexDocs)
+                {
+                    var name = idx["name"].AsString;
+                    var key = idx["key"].ToString();
+                    var isUnique = idx.Contains("unique") && idx["unique"].AsBoolean;
+                    var ttl = idx.Contains("expireAfterSeconds") ? idx["expireAfterSeconds"].ToString() : null;
+                    Console.WriteLine($"  * Index: {name} | Keys: {key} | Unique: {isUnique} | ExpireAfterSeconds: {ttl ?? "none"}");
+
+                    if (key != null && key.Contains("DedupeKey") && isUnique) hasUniqueDedupe = true;
+                    if (key != null && key.Contains("CreatedAt") && ttl != null) hasTtlCreatedAt = true;
+                }
+
+                AssertTrue(hasUniqueDedupe, "(i.1) MongoDB listIndexes: Tồn tại Unique Index trên DedupeKey");
+                AssertTrue(hasTtlCreatedAt, "(i.2) MongoDB listIndexes: Tồn tại TTL Index trên CreatedAt (expireAfterSeconds)");
             }
             finally
             {

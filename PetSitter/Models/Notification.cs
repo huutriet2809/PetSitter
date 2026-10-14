@@ -28,5 +28,8 @@ namespace PetSitter.Models
         public DateTime? ReadAt { get; set; }
 
         public string DedupeKey { get; set; } = string.Empty;
+
+        // OWNER, SITTER, ADMIN (hỗ trợ điều hướng chính xác cho người dùng có nhiều vai trò)
+        public string? TargetRole { get; set; }
     }
 }

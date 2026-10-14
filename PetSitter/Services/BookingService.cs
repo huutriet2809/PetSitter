@@ -5,6 +5,7 @@ using PetSitter.DTOs;
 using PetSitter.Exceptions;
 using PetSitter.Models;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -18,6 +19,11 @@ namespace PetSitter.Services
         private readonly IConfiguration _configuration;
         private readonly INotificationService? _notificationService;
         private readonly ILogger<BookingService>? _logger;
+
+        // Ghi chú kiến trúc: _lastReconcileTimes lưu trữ throttle đối soát trong bộ nhớ tiến trình (ConcurrentDictionary).
+        // Giới hạn hệ thống: Khi restart tiến trình hoặc chạy nhiều instance phân tán, bộ đệm này bị reset hoặc độc lập.
+        // Tuy nhiên, tính toàn vẹn dữ liệu được bảo đảm 100% nhờ truy vấn $in tra DedupeKey và unique index trên MongoDB.
+        private static readonly ConcurrentDictionary<string, DateTime> _lastReconcileTimes = new();
 
         public BookingService(
             PetSitterContext context,
@@ -141,16 +147,30 @@ namespace PetSitter.Services
             }
 
             // 3. Đối soát (Reconciliation): Tìm các đơn EXPIRED / AUTO_COMPLETED do SYSTEM đổi trong 7 ngày gần đây của người đọc
-            var sevenDaysAgo = effectiveNowUtc.AddDays(-7);
-            var reconcileFilter = (filterBuilder.Eq(b => b.TrangThai, BookingStatus.EXPIRED) & filterBuilder.Gte(b => b.ExpiresAt, sevenDaysAgo))
-                                | (filterBuilder.Eq(b => b.TrangThai, BookingStatus.COMPLETED) & filterBuilder.Eq(b => b.AutoCompleted, true) & filterBuilder.Gte(b => b.CompletionDeadline, sevenDaysAgo));
+            var minScanMinutes = _configuration.GetValue<int>("BookingReminderSettings:MinScanIntervalMinutes", 5);
+            var userKey = ownerId ?? sitterId ?? "system";
+            var shouldReconcile = false;
 
-            if (!string.IsNullOrEmpty(ownerId))
-                reconcileFilter &= filterBuilder.Eq(b => b.OwnerId, ownerId);
-            if (!string.IsNullOrEmpty(sitterId))
-                reconcileFilter &= filterBuilder.Eq(b => b.SitterId, sitterId);
+            if (!_lastReconcileTimes.TryGetValue(userKey, out var lastReconcile) || effectiveNowUtc - lastReconcile >= TimeSpan.FromMinutes(minScanMinutes))
+            {
+                _lastReconcileTimes[userKey] = effectiveNowUtc;
+                shouldReconcile = true;
+            }
 
-            var recentSystemBookings = await _context.Bookings.Find(reconcileFilter).ToListAsync();
+            var recentSystemBookings = new List<Booking>();
+            if (shouldReconcile)
+            {
+                var sevenDaysAgo = effectiveNowUtc.AddDays(-7);
+                var reconcileFilter = (filterBuilder.Eq(b => b.TrangThai, BookingStatus.EXPIRED) & filterBuilder.Gte(b => b.ExpiresAt, sevenDaysAgo))
+                                    | (filterBuilder.Eq(b => b.TrangThai, BookingStatus.COMPLETED) & filterBuilder.Eq(b => b.AutoCompleted, true) & filterBuilder.Gte(b => b.CompletionDeadline, sevenDaysAgo));
+
+                if (!string.IsNullOrEmpty(ownerId))
+                    reconcileFilter &= filterBuilder.Eq(b => b.OwnerId, ownerId);
+                if (!string.IsNullOrEmpty(sitterId))
+                    reconcileFilter &= filterBuilder.Eq(b => b.SitterId, sitterId);
+
+                recentSystemBookings = await _context.Bookings.Find(reconcileFilter).ToListAsync();
+            }
 
             var allExpiredToNotify = expiredWonBookings.Concat(recentSystemBookings.Where(b => b.TrangThai == BookingStatus.EXPIRED)).DistinctBy(b => b.BookingId).ToList();
             var allAutoCompletedToNotify = autoCompletedWonBookings.Concat(recentSystemBookings.Where(b => b.TrangThai == BookingStatus.COMPLETED && b.AutoCompleted == true)).DistinctBy(b => b.BookingId).ToList();
@@ -174,62 +194,95 @@ namespace PetSitter.Services
                         .Where(s => !string.IsNullOrEmpty(s.UserId))
                         .ToDictionary(s => s.SitterId, s => s.UserId);
 
-                    // Gửi / Tạo bù thông báo cho các đơn EXPIRED (cho cả 2 bên)
+                    // Chuẩn bị danh sách ứng viên thông báo (Candidate notifications)
+                    var candidates = new List<(string UserId, string Type, string BookingId, string Title, string Message, string DedupeKey, string TargetRole)>();
+
+                    // Cho các đơn EXPIRED (cả 2 bên)
                     foreach (var b in allExpiredToNotify)
                     {
                         if (!string.IsNullOrEmpty(b.OwnerId))
                         {
                             var ownerDedupeKey = $"{b.BookingId}:{NotificationType.BOOKING_EXPIRED}:{b.OwnerId}";
-                            await _notificationService.CreateNotificationAsync(
+                            candidates.Add((
                                 b.OwnerId,
                                 NotificationType.BOOKING_EXPIRED,
                                 b.BookingId,
                                 "Đơn đặt lịch đã hết hạn",
                                 $"Đơn đặt lịch #{b.MaDatLich} đã hết hạn do không được phản hồi trong 48 giờ.",
-                                ownerDedupeKey
-                            );
+                                ownerDedupeKey,
+                                "OWNER"
+                            ));
                         }
 
                         if (sitterUserMap.TryGetValue(b.SitterId, out var sitterUserId))
                         {
                             var sitterDedupeKey = $"{b.BookingId}:{NotificationType.BOOKING_EXPIRED}:{sitterUserId}";
-                            await _notificationService.CreateNotificationAsync(
+                            candidates.Add((
                                 sitterUserId,
                                 NotificationType.BOOKING_EXPIRED,
                                 b.BookingId,
                                 "Đơn đặt lịch đã hết hạn",
                                 $"Đơn đặt lịch #{b.MaDatLich} đã hết hạn do không được phản hồi trong 48 giờ.",
-                                sitterDedupeKey
-                            );
+                                sitterDedupeKey,
+                                "SITTER"
+                            ));
                         }
                     }
 
-                    // Gửi / Tạo bù thông báo cho các đơn AUTO_COMPLETED (cho cả 2 bên)
+                    // Cho các đơn AUTO_COMPLETED (cả 2 bên)
                     foreach (var b in allAutoCompletedToNotify)
                     {
                         if (!string.IsNullOrEmpty(b.OwnerId))
                         {
                             var ownerDedupeKey = $"{b.BookingId}:{NotificationType.BOOKING_COMPLETED}:{b.OwnerId}";
-                            await _notificationService.CreateNotificationAsync(
+                            candidates.Add((
                                 b.OwnerId,
                                 NotificationType.BOOKING_COMPLETED,
                                 b.BookingId,
                                 "Đơn đặt lịch đã tự động hoàn tất",
                                 $"Đơn đặt lịch #{b.MaDatLich} đã được hệ thống tự động hoàn tất do hết thời hạn xác nhận.",
-                                ownerDedupeKey
-                            );
+                                ownerDedupeKey,
+                                "OWNER"
+                            ));
                         }
 
                         if (sitterUserMap.TryGetValue(b.SitterId, out var sitterUserId))
                         {
                             var sitterDedupeKey = $"{b.BookingId}:{NotificationType.BOOKING_COMPLETED}:{sitterUserId}";
-                            await _notificationService.CreateNotificationAsync(
+                            candidates.Add((
                                 sitterUserId,
                                 NotificationType.BOOKING_COMPLETED,
                                 b.BookingId,
                                 "Đơn đặt lịch đã tự động hoàn tất",
                                 $"Đơn đặt lịch #{b.MaDatLich} đã được hệ thống tự động hoàn tất do hết thời hạn xác nhận.",
-                                sitterDedupeKey
+                                sitterDedupeKey,
+                                "SITTER"
+                            ));
+                        }
+                    }
+
+                    // Tra trước các DedupeKey đã tồn tại bằng một truy vấn $in và chỉ insert phần thiếu
+                    var candidateKeys = candidates.Select(c => c.DedupeKey).Distinct().ToList();
+                    if (candidateKeys.Any())
+                    {
+                        var existingKeys = (await _context.Notifications
+                            .Find(Builders<Notification>.Filter.In(n => n.DedupeKey, candidateKeys))
+                            .Project(n => n.DedupeKey)
+                            .ToListAsync())
+                            .ToHashSet();
+
+                        var missingCandidates = candidates.Where(c => !existingKeys.Contains(c.DedupeKey)).ToList();
+
+                        foreach (var c in missingCandidates)
+                        {
+                            await _notificationService.CreateNotificationAsync(
+                                c.UserId,
+                                c.Type,
+                                c.BookingId,
+                                c.Title,
+                                c.Message,
+                                c.DedupeKey,
+                                c.TargetRole
                             );
                         }
                     }
@@ -422,7 +475,8 @@ namespace PetSitter.Services
                             booking.BookingId,
                             "Có yêu cầu đặt lịch mới",
                             $"Bạn có yêu cầu đặt lịch mới #{booking.MaDatLich} từ {ownerUser?.FullName ?? "chủ nuôi"}.",
-                            dedupeKey
+                            dedupeKey,
+                            targetRole: "SITTER"
                         );
                     }
                 }
@@ -561,7 +615,8 @@ namespace PetSitter.Services
                             bookingId,
                             "Đơn đặt lịch đã bị hủy",
                             $"Người chăm sóc đã hủy đơn đặt lịch #{booking.MaDatLich}.",
-                            dedupeKey
+                            dedupeKey,
+                            targetRole: "OWNER"
                         );
                     }
                     catch (Exception ex)
@@ -644,7 +699,8 @@ namespace PetSitter.Services
                                 bookingId,
                                 "Đơn đặt lịch đã bị hủy",
                                 $"Chủ nuôi đã hủy đơn đặt lịch #{booking.MaDatLich}.",
-                                dedupeKey
+                                dedupeKey,
+                                targetRole: "SITTER"
                             );
                         }
                     }
@@ -768,7 +824,8 @@ namespace PetSitter.Services
                         result.BookingId,
                         "Dịch vụ đã hoàn tất - Chờ xác nhận",
                         $"Người chăm sóc đã đánh dấu hoàn tất dịch vụ #{result.MaDatLich}. Vui lòng xác nhận trước {deadlineStr}.",
-                        dedupeKey
+                        dedupeKey,
+                        targetRole: "OWNER"
                     );
                 }
                 catch (Exception ex)
@@ -837,7 +894,8 @@ namespace PetSitter.Services
                             result.BookingId,
                             "Chủ nuôi đã xác nhận hoàn tất",
                             $"Chủ nuôi đã xác nhận hoàn tất dịch vụ cho đơn #{result.MaDatLich}.",
-                            dedupeKey
+                            dedupeKey,
+                            targetRole: "SITTER"
                         );
                     }
                 }
@@ -914,11 +972,16 @@ namespace PetSitter.Services
                             result.BookingId,
                             "Đơn đặt lịch có khiếu nại",
                             $"Đơn đặt lịch #{result.MaDatLich} có khiếu nại đang chờ xử lý.",
-                            dedupeKey
+                            dedupeKey,
+                            targetRole: "SITTER"
                         );
                     }
 
-                    // 2. Cho tất cả Admin (giới hạn tối đa 50 tài khoản để tránh tràn tải)
+                    // 2. Cho tất cả Admin (giới hạn tối đa 50 tài khoản để tránh tràn tải / write amplification)
+                    // Ghi chú kiến trúc & giới hạn tải: Giới hạn tối đa 50 tài khoản Admin được thông báo khi có khiếu nại
+                    // nhằm ngăn chặn bùng nổ fan-out tải ghi trong CSDL nếu số lượng Admin lớn.
+                    // Trong hệ thống mở rộng tương lai, nên sử dụng queue/message broker (RabbitMQ/Kafka) hoặc phân luồng
+                    // thông báo theo nhóm trực/ca trực thay vì fan-out trực tiếp trong luồng request HTTP.
                     var admins = await _context.Users.Find(u => u.Role == "ADMIN").Limit(50).ToListAsync();
                     foreach (var admin in admins)
                     {
@@ -929,7 +992,8 @@ namespace PetSitter.Services
                             result.BookingId,
                             "Có khiếu nại đơn đặt lịch mới",
                             $"Đơn đặt lịch #{result.MaDatLich} có khiếu nại đang chờ xử lý.",
-                            adminDedupeKey
+                            adminDedupeKey,
+                            targetRole: "ADMIN"
                         );
                     }
                 }
@@ -1012,7 +1076,8 @@ namespace PetSitter.Services
                             result.BookingId,
                             "Khiếu nại đã được xử lý",
                             $"Khiếu nại cho đơn #{result.MaDatLich} đã được Admin xử lý: {resolutionText}.",
-                            ownerDedupeKey
+                            ownerDedupeKey,
+                            targetRole: "OWNER"
                         );
                     }
 
@@ -1026,7 +1091,8 @@ namespace PetSitter.Services
                             result.BookingId,
                             "Khiếu nại đã được xử lý",
                             $"Khiếu nại cho đơn #{result.MaDatLich} đã được Admin xử lý: {resolutionText}.",
-                            sitterDedupeKey
+                            sitterDedupeKey,
+                            targetRole: "SITTER"
                         );
                     }
                 }

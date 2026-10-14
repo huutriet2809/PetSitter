@@ -89,15 +89,15 @@ function renderNavbar() {
   const notifBellHtml = user
     ? `<div class="notif-wrapper" id="notif-wrapper">
          <button id="notif-bell-btn" class="notif-bell" aria-label="Thông báo" aria-expanded="false" type="button">
-           🔔<span id="notif-badge" class="notif-badge" style="display:none;"></span>
+           🔔<span id="notif-badge" class="notif-badge hidden"></span>
          </button>
-         <div id="notif-dropdown" class="notif-dropdown" style="display:none;">
+         <div id="notif-dropdown" class="notif-dropdown hidden">
            <div class="notif-header">
              <span>Thông báo</span>
-             <button id="notif-mark-all" class="btn btn-ghost btn-sm" style="font-size:0.75rem;padding:2px 8px;" type="button">Đã đọc tất cả</button>
+             <button id="notif-mark-all" class="btn btn-ghost btn-sm notif-mark-all-btn" type="button">Đã đọc tất cả</button>
            </div>
            <div id="notif-list" class="notif-list"></div>
-           <div id="notif-empty" class="notif-empty" style="display:none;">
+           <div id="notif-empty" class="notif-empty hidden">
              Không có thông báo nào
            </div>
          </div>
@@ -196,43 +196,36 @@ let notifPollTimer = null;
 
 function navigateForNotification(item) {
   if (!item || !item.bookingId) return;
-  const user = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
-  const role = (user && user.role ? user.role : '').toUpperCase();
-  const type = item.type;
   const bid = encodeURIComponent(item.bookingId);
 
-  // Đơn mới hoặc nhắc hạn dành cho Sitter
+  // 1. Điều hướng trực tiếp theo TargetRole (OWNER / SITTER / ADMIN) lúc tạo
+  const targetRole = (item.targetRole || '').toUpperCase();
+  if (targetRole === 'OWNER') {
+    window.location.href = `my-bookings.html?bookingId=${bid}`;
+    return;
+  }
+  if (targetRole === 'SITTER') {
+    window.location.href = `sitter-dashboard.html?bookingId=${bid}`;
+    return;
+  }
+  if (targetRole === 'ADMIN') {
+    window.location.href = `admin.html?bookingId=${bid}`;
+    return;
+  }
+
+  // 2. Ghi chú migration: Fallback cho các bản ghi thông báo cũ chưa có trường targetRole theo Type
+  const type = item.type;
   if (type === 'BOOKING_NEW' || type === 'REMINDER_PENDING_EXPIRES' || type === 'REMINDER_OVERDUE_ACCEPTED') {
     window.location.href = `sitter-dashboard.html?bookingId=${bid}`;
     return;
   }
-
-  // Chờ xác nhận hoặc nhắc hạn dành cho Owner
   if (type === 'BOOKING_COMPLETION_PENDING' || type === 'REMINDER_COMPLETION_EXPIRES' || type === 'BOOKING_ACCEPTED' || type === 'BOOKING_REJECTED') {
     window.location.href = `my-bookings.html?bookingId=${bid}`;
     return;
   }
 
-  // Khiếu nại (DISPUTED): Phân quyền theo vai trò thực tế
-  if (type === 'BOOKING_DISPUTED') {
-    if (role === 'ADMIN') {
-      window.location.href = `admin.html?bookingId=${bid}`;
-    } else if (role === 'SITTER') {
-      window.location.href = `sitter-dashboard.html?bookingId=${bid}`;
-    } else {
-      window.location.href = `my-bookings.html?bookingId=${bid}`;
-    }
-    return;
-  }
-
-  // Các sự kiện chung (COMPLETED, CANCELLED, EXPIRED, RESOLVED)
-  if (role === 'ADMIN') {
-    window.location.href = `admin.html?bookingId=${bid}`;
-  } else if (role === 'SITTER') {
-    window.location.href = `sitter-dashboard.html?bookingId=${bid}`;
-  } else {
-    window.location.href = `my-bookings.html?bookingId=${bid}`;
-  }
+  // Mặc định fallback
+  window.location.href = `my-bookings.html?bookingId=${bid}`;
 }
 
 function formatNotificationTime(isoStr) {
@@ -262,12 +255,24 @@ async function notifApiFetch(endpoint, options = {}) {
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
   if (token) headers['Authorization'] = 'Bearer ' + token;
   const res = await fetch('/api' + endpoint, { ...options, headers });
+  if (res.status === 401) {
+    if (typeof window.stopNotifPolling === 'function') {
+      window.stopNotifPolling();
+    }
+    throw new Error('Unauthorized');
+  }
   if (!res.ok) throw new Error('Request failed: ' + res.status);
   return await res.json();
 }
 
 function initNotificationSystem(user) {
   if (!user) return;
+
+  // Không chạy polling thông báo trên trang login và signup
+  const currentPath = window.location.pathname.toLowerCase();
+  if (currentPath.endsWith('login.html') || currentPath.endsWith('signup.html')) {
+    return;
+  }
 
   const bellBtn = document.getElementById('notif-bell-btn');
   const badge = document.getElementById('notif-badge');
@@ -283,10 +288,12 @@ function initNotificationSystem(user) {
     if (!badge) return;
     if (count > 0) {
       badge.textContent = count > 9 ? '9+' : String(count);
-      badge.style.display = 'inline-block';
+      badge.classList.remove('hidden');
+      badge.classList.add('visible');
     } else {
       badge.textContent = '0';
-      badge.style.display = 'none';
+      badge.classList.remove('visible');
+      badge.classList.add('hidden');
     }
   }
 
@@ -304,14 +311,20 @@ function initNotificationSystem(user) {
   async function loadNotificationsList() {
     try {
       const items = await notifApiFetch('/notifications?limit=20');
-      list.innerHTML = '';
+      while (list.firstChild) list.removeChild(list.firstChild);
 
       if (!items || items.length === 0) {
-        if (empty) empty.style.display = 'block';
+        if (empty) {
+          empty.classList.remove('hidden');
+          empty.classList.add('visible');
+        }
         return;
       }
 
-      if (empty) empty.style.display = 'none';
+      if (empty) {
+        empty.classList.remove('visible');
+        empty.classList.add('hidden');
+      }
 
       items.forEach(item => {
         const itemEl = document.createElement('div');
@@ -368,12 +381,14 @@ function initNotificationSystem(user) {
 
   bellBtn.addEventListener('click', function(e) {
     e.stopPropagation();
-    const isOpen = dropdown.style.display === 'flex';
+    const isOpen = dropdown.classList.contains('open');
     if (isOpen) {
-      dropdown.style.display = 'none';
+      dropdown.classList.remove('open');
+      dropdown.classList.add('hidden');
       bellBtn.setAttribute('aria-expanded', 'false');
     } else {
-      dropdown.style.display = 'flex';
+      dropdown.classList.remove('hidden');
+      dropdown.classList.add('open');
       bellBtn.setAttribute('aria-expanded', 'true');
       loadNotificationsList();
       refreshUnreadCount();
@@ -396,7 +411,8 @@ function initNotificationSystem(user) {
   // Đóng dropdown khi click bên ngoài
   document.addEventListener('click', function(e) {
     if (wrapper && !wrapper.contains(e.target)) {
-      dropdown.style.display = 'none';
+      dropdown.classList.remove('open');
+      dropdown.classList.add('hidden');
       bellBtn.setAttribute('aria-expanded', 'false');
     }
   });
@@ -413,6 +429,8 @@ function initNotificationSystem(user) {
       notifPollTimer = null;
     }
   }
+
+  window.stopNotifPolling = stopPolling;
 
   document.addEventListener('visibilitychange', function() {
     if (document.visibilityState === 'visible') {

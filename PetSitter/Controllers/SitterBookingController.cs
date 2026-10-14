@@ -134,7 +134,8 @@ namespace PetSitter.Controllers
                         updatedBooking.BookingId,
                         "Yêu cầu đặt lịch đã được chấp nhận",
                         $"Người chăm sóc đã chấp nhận yêu cầu đặt lịch #{updatedBooking.MaDatLich}.",
-                        dedupeKey
+                        dedupeKey,
+                        targetRole: "OWNER"
                     );
                 }
                 catch (Exception ex)
@@ -218,7 +219,8 @@ namespace PetSitter.Controllers
                         result.BookingId,
                         "Yêu cầu đặt lịch bị từ chối",
                         $"Người chăm sóc đã từ chối yêu cầu đặt lịch #{result.MaDatLich}.",
-                        dedupeKey
+                        dedupeKey,
+                        targetRole: "OWNER"
                     );
                 }
                 catch (Exception ex)

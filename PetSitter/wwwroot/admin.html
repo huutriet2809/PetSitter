@@ -41,7 +41,13 @@
         window.location.href = 'login.html';
         return;
       }
-      loadApplications();
+      const urlParams = new URLSearchParams(window.location.search);
+      const targetBookingId = urlParams.get('bookingId');
+      if (targetBookingId) {
+        switchTab('disputes');
+      } else {
+        loadApplications();
+      }
     });
 
     function switchTab(tab) {
@@ -132,6 +138,16 @@
             </div>
           </div>
         `).join('');
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const targetBookingId = urlParams.get('bookingId');
+        if (targetBookingId) {
+          const targetCard = document.getElementById(`dispute-${targetBookingId}`);
+          if (targetCard) {
+            targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            targetCard.classList.add('booking-highlight');
+          }
+        }
       } catch (err) {
         showError(err.message || 'Lỗi tải danh sách khiếu nại.');
         container.innerHTML = '';
