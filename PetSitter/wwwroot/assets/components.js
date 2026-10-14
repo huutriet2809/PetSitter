@@ -215,16 +215,46 @@ function navigateForNotification(item) {
 
   // 2. Ghi chú migration: Fallback cho các bản ghi thông báo cũ chưa có trường targetRole theo Type
   const type = item.type;
+  const user = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
+  const currentRole = (user && user.role ? user.role : '').toUpperCase();
+
+  // Nhóm 1: Các loại thông báo chỉ gửi riêng cho Sitter
   if (type === 'BOOKING_NEW' || type === 'REMINDER_PENDING_EXPIRES' || type === 'REMINDER_OVERDUE_ACCEPTED') {
     window.location.href = `sitter-dashboard.html?bookingId=${bid}`;
     return;
   }
+
+  // Nhóm 2: Các loại thông báo chỉ gửi riêng cho Owner
   if (type === 'BOOKING_COMPLETION_PENDING' || type === 'REMINDER_COMPLETION_EXPIRES' || type === 'BOOKING_ACCEPTED' || type === 'BOOKING_REJECTED') {
     window.location.href = `my-bookings.html?bookingId=${bid}`;
     return;
   }
 
-  // Mặc định fallback
+  // Nhóm 3: Khiếu nại (BOOKING_DISPUTED) - có thể gửi cho Sitter hoặc Admin
+  if (type === 'BOOKING_DISPUTED') {
+    if (currentRole === 'ADMIN') {
+      window.location.href = `admin.html?bookingId=${bid}`;
+    } else if (currentRole === 'SITTER') {
+      window.location.href = `sitter-dashboard.html?bookingId=${bid}`;
+    } else {
+      window.location.href = `my-bookings.html?bookingId=${bid}`;
+    }
+    return;
+  }
+
+  // Nhóm 4: Các loại sự kiện chung cho cả 2 bên (COMPLETED, CANCELLED, EXPIRED, RESOLVED)
+  if (type === 'BOOKING_COMPLETED' || type === 'BOOKING_CANCELLED' || type === 'BOOKING_EXPIRED' || type === 'BOOKING_RESOLVED') {
+    if (currentRole === 'ADMIN') {
+      window.location.href = `admin.html?bookingId=${bid}`;
+    } else if (currentRole === 'SITTER') {
+      window.location.href = `sitter-dashboard.html?bookingId=${bid}`;
+    } else {
+      window.location.href = `my-bookings.html?bookingId=${bid}`;
+    }
+    return;
+  }
+
+  // Mặc định an toàn fallback
   window.location.href = `my-bookings.html?bookingId=${bid}`;
 }
 

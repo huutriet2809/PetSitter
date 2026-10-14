@@ -50,7 +50,7 @@ namespace PetSitter.Services
         // Hoặc từ PENDING -> REJECTED / CANCELLED / EXPIRED; ACCEPTED -> CANCELLED.
         // Không có bất kỳ trạng thái nào có thể bị lặp lại hoặc quay lui trên cùng một BookingId.
         // Do đó, định dạng DedupeKey "{BookingId}:{Type}:{RecipientUserId}" là duy nhất tuyệt đối cho mỗi sự kiện thông báo.
-        public async Task ProcessLazyBookingUpdatesAsync(string? ownerId = null, string? sitterId = null, DateTime? nowUtc = null)
+        public async Task ProcessLazyBookingUpdatesAsync(string? ownerId = null, string? sitterId = null, DateTime? nowUtc = null, bool forceReconcile = false)
         {
             if (string.IsNullOrEmpty(ownerId) && string.IsNullOrEmpty(sitterId))
                 return;
@@ -151,7 +151,7 @@ namespace PetSitter.Services
             var userKey = ownerId ?? sitterId ?? "system";
             var shouldReconcile = false;
 
-            if (!_lastReconcileTimes.TryGetValue(userKey, out var lastReconcile) || effectiveNowUtc - lastReconcile >= TimeSpan.FromMinutes(minScanMinutes))
+            if (forceReconcile || !_lastReconcileTimes.TryGetValue(userKey, out var lastReconcile) || effectiveNowUtc - lastReconcile >= TimeSpan.FromMinutes(minScanMinutes))
             {
                 _lastReconcileTimes[userKey] = effectiveNowUtc;
                 shouldReconcile = true;

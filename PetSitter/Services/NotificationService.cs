@@ -181,15 +181,20 @@ namespace PetSitter.Services
             {
                 CleanupStaleScanTimes();
 
+                // Lấy nowUtc một lần duy nhất ở đầu hàm và dùng chung cho toàn bộ logic
+                var nowUtc = DateTime.UtcNow;
+
+                // Ghi chú nghiệp vụ: Do cơ chế throttle theo user qua MinScanIntervalMinutes để tối ưu hóa hiệu năng,
+                // thời điểm phát sinh thông báo nhắc hạn có thể trễ tối đa tới MinScanIntervalMinutes so với mốc thời gian lý thuyết.
+                // Đây là sự đánh đổi có chủ ý và hoàn toàn chấp nhận được trong mô hình thông báo in-app.
                 var minScanMinutes = _configuration.GetValue<int>("BookingReminderSettings:MinScanIntervalMinutes", 5);
-                if (!force && _lastScanTimes.TryGetValue(currentUserId, out var lastScan) && DateTime.UtcNow - lastScan < TimeSpan.FromMinutes(minScanMinutes))
+                if (!force && _lastScanTimes.TryGetValue(currentUserId, out var lastScan) && nowUtc - lastScan < TimeSpan.FromMinutes(minScanMinutes))
                 {
-                    return; // Đã quét trong vòng 5 phút gần đây, bỏ qua để tiết kiệm tài nguyên
+                    return; // Đã quét trong vòng MinScanIntervalMinutes gần đây, bỏ qua để tiết kiệm tài nguyên
                 }
 
-                _lastScanTimes[currentUserId] = DateTime.UtcNow;
+                _lastScanTimes[currentUserId] = nowUtc;
 
-                var nowUtc = DateTime.UtcNow;
                 var vnToday = BookingService.GetVnToday();
                 var pendingExpiringHours = _configuration.GetValue<int>("BookingReminderSettings:PendingExpiringHours", 12);
                 var completionExpiringHours = _configuration.GetValue<int>("BookingReminderSettings:CompletionExpiringHours", 24);
@@ -252,27 +257,40 @@ namespace PetSitter.Services
                         b.NgayKetThuc < vnToday
                     ).ToListAsync();
 
-                    foreach (var b in overdueAcceptedBookings)
+                    if (overdueAcceptedBookings.Any())
                     {
-                        var prefix = $"{b.BookingId}:{NotificationType.REMINDER_OVERDUE_ACCEPTED}:";
-                        var countFilter = Builders<Notification>.Filter.Eq(n => n.UserId, currentUserId)
-                                        & Builders<Notification>.Filter.Regex(n => n.DedupeKey, new MongoDB.Bson.BsonRegularExpression("^" + System.Text.RegularExpressions.Regex.Escape(prefix)));
+                        var bookingIds = overdueAcceptedBookings.Select(b => b.BookingId).Where(id => id != null).ToHashSet();
 
-                        var existingCount = await _context.Notifications.CountDocumentsAsync(countFilter);
+                        // Gom đếm các nhắc nhở REMINDER_OVERDUE_ACCEPTED đã gửi cho các đơn này bằng 1 truy vấn duy nhất
+                        var existingOverdueNotifs = await _context.Notifications.Find(n =>
+                            n.UserId == currentUserId &&
+                            n.Type == NotificationType.REMINDER_OVERDUE_ACCEPTED &&
+                            n.BookingId != null &&
+                            bookingIds.Contains(n.BookingId)
+                        ).Project(n => new { n.BookingId }).ToListAsync();
 
-                        if (existingCount < maxOverdueAccepted)
+                        var existingCountMap = existingOverdueNotifs
+                            .Where(n => !string.IsNullOrEmpty(n.BookingId))
+                            .GroupBy(n => n.BookingId!)
+                            .ToDictionary(g => g.Key, g => g.Count());
+
+                        foreach (var b in overdueAcceptedBookings)
                         {
-                            var vnDateStr = vnToday.ToString("yyyyMMdd");
-                            var dedupeKey = $"{prefix}{vnDateStr}:{currentUserId}";
-                            await CreateNotificationAsync(
-                                currentUserId,
-                                NotificationType.REMINDER_OVERDUE_ACCEPTED,
-                                b.BookingId,
-                                "Nhắc nhở hoàn tất dịch vụ",
-                                $"Đơn #{b.MaDatLich} đã qua ngày kết thúc ({b.NgayKetThuc:dd/MM/yyyy}), vui lòng kiểm tra và xác nhận hoàn tất dịch vụ.",
-                                dedupeKey,
-                                targetRole: "SITTER"
-                            );
+                            var existingCount = existingCountMap.TryGetValue(b.BookingId, out var cnt) ? cnt : 0;
+                            if (existingCount < maxOverdueAccepted)
+                            {
+                                var vnDateStr = vnToday.ToString("yyyyMMdd");
+                                var dedupeKey = $"{b.BookingId}:{NotificationType.REMINDER_OVERDUE_ACCEPTED}:{vnDateStr}:{currentUserId}";
+                                await CreateNotificationAsync(
+                                    currentUserId,
+                                    NotificationType.REMINDER_OVERDUE_ACCEPTED,
+                                    b.BookingId,
+                                    "Nhắc nhở hoàn tất dịch vụ",
+                                    $"Đơn #{b.MaDatLich} đã qua ngày kết thúc ({b.NgayKetThuc:dd/MM/yyyy}), vui lòng kiểm tra và xác nhận hoàn tất dịch vụ.",
+                                    dedupeKey,
+                                    targetRole: "SITTER"
+                                );
+                            }
                         }
                     }
                 }
