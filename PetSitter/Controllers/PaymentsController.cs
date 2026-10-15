@@ -66,6 +66,7 @@ namespace PetSitter.Controllers
         /// Bắt buộc xác thực chữ ký HMAC-SHA256 trước mọi truy vấn DB.
         /// </summary>
         [HttpPost("payments/payos/webhook")]
+        [HttpPost("payments/payos-webhook")]
         [AllowAnonymous]
         [DisableRateLimiting]
         public async Task<IActionResult> PayOsWebhook()

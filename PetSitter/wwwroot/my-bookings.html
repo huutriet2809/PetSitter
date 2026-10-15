@@ -193,6 +193,10 @@
             paymentBadge = `<span class="badge" style="background:rgba(100, 116, 139, 0.15); color:#64748b; border:1px solid #64748b; padding:2px 8px; border-radius:12px; font-size:0.8rem; margin-left:8px;">Đã hoàn tiền</span>`;
           } else if (b.paymentStatus === 'PARTIALLY_REFUNDED') {
             paymentBadge = `<span class="badge" style="background:rgba(59, 130, 246, 0.15); color:#2563eb; border:1px solid #2563eb; padding:2px 8px; border-radius:12px; font-size:0.8rem; margin-left:8px;">Hoàn một phần</span>`;
+          } else if (b.paymentStatus === 'EXPIRED') {
+            paymentBadge = `<span class="badge" style="background:rgba(239, 68, 68, 0.15); color:#dc2626; border:1px solid #dc2626; padding:2px 8px; border-radius:12px; font-size:0.8rem; margin-left:8px;">Hết hạn thanh toán</span>`;
+          } else if (b.paymentStatus === 'RELEASED') {
+            paymentBadge = `<span class="badge" style="background:rgba(22, 163, 74, 0.15); color:#16a34a; border:1px solid #16a34a; padding:2px 8px; border-radius:12px; font-size:0.8rem; margin-left:8px;">Đã giải ngân</span>`;
           }
 
           let completionBtns = '';

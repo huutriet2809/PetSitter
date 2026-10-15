@@ -79,6 +79,7 @@ namespace PetSitter.DTOs
         
         public PetSitter.Models.BookingPet Pet { get; set; } = new();
         public List<PetSitter.Models.BookingAddon> Addons { get; set; } = new();
+        public List<PetSitter.Models.PricingItemSnapshot> PriceBreakdown { get; set; } = new();
         public List<InquiryHistoryDto> History { get; set; } = new();
     }
 

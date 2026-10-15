@@ -12,6 +12,19 @@ namespace PetSitter.Models
         public string KichCo { get; set; } = string.Empty;
     }
 
+    public class PricingItemSnapshot
+    {
+        public string ItemType { get; set; } = "BASE"; // "BASE_SERVICE" or "ADDON"
+        public string? Type { get => ItemType; set => ItemType = value ?? "BASE"; }
+        public string ServiceId { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public long UnitPrice { get; set; }
+        public int Quantity { get; set; }
+        public bool IsDaily { get; set; }
+        public long TotalAmount { get; set; }
+        public long Total { get => TotalAmount; set => TotalAmount = value; }
+    }
+
     public class BookingAddon
     {
         public string ServiceId { get; set; } = string.Empty;
@@ -58,6 +71,7 @@ namespace PetSitter.Models
 
         public BookingPet Pet { get; set; } = new BookingPet();
         public List<BookingAddon> Addons { get; set; } = new List<BookingAddon>();
+        public List<PricingItemSnapshot> PriceBreakdown { get; set; } = new List<PricingItemSnapshot>();
 
         [BsonRepresentation(BsonType.Decimal128)]
         public decimal GiaSitter { get; set; }
@@ -86,6 +100,9 @@ namespace PetSitter.Models
         public string? DisputeReason { get; set; }
         public string? AdminResolutionNote { get; set; }
         public bool? ResolvedByAdmin { get; set; }
+
+        public DateTime? UpdatedAt { get; set; }
+        public DateTime? EscrowReleasedAt { get; set; }
 
         public List<InquiryHistory> History { get; set; } = new List<InquiryHistory>();
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

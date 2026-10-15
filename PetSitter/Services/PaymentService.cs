@@ -156,7 +156,7 @@ namespace PetSitter.Services
 
         public async Task ProcessWebhookAsync(string rawBody, string signature, DateTime nowUtc)
         {
-            // BƯỚC 1: XÁC THỰC CHỮ KÝ TRƯỚC MỌI TRUY VẤN DATABASE
+            // BƯỚC 1: XÁC THỰC CHỮ KÝ TRƯỚC MỌI TRUY VẤN DATABASE (Requirement 5 & 8)
             if (!_gateway.VerifyWebhookSignature(rawBody, signature))
             {
                 _logger.LogWarning("PayOS Webhook rejected: Invalid signature.");
@@ -188,25 +188,28 @@ namespace PetSitter.Services
             var payment = await _context.Payments.Find(p => p.OrderCode == orderCode).FirstOrDefaultAsync();
             if (payment == null)
             {
-                _logger.LogError("Webhook received for unknown OrderCode {OrderCode}", orderCode);
-                throw new BadRequestException("OrderCode không tồn tại trong hệ thống.");
-            }
-
-            // BƯỚC 3: KIỂM TRA SỐ TIỀN CHÍNH XÁC (long)
-            if (payment.Amount != amount)
-            {
-                _logger.LogError("Webhook amount mismatch for OrderCode {OrderCode}: expected {Expected}, got {Actual}", orderCode, payment.Amount, amount);
-                throw new BadRequestException("Số tiền thanh toán không khớp với hóa đơn.");
-            }
-
-            // BƯỚC 4: IDEMPOTENCY CHECK - NẾU ĐÃ PAID THÌ TRẢ 200 ÊM, KHÔNG GHI SỔ ĐÔI
-            if (payment.Status == PaymentLinkStatus.PAID)
-            {
-                _logger.LogInformation("Webhook duplicate ignored for already PAID payment {PaymentId} (OrderCode {OrderCode})", payment.PaymentId, orderCode);
+                // Requirement 5: Chữ ký đúng nhưng OrderCode không tồn tại -> 200 + log cảnh báo, không ghi sổ
+                // (PayOS gửi payload thử nghiệm khi thêm URL webhook trên cổng quản trị)
+                _logger.LogWarning("Webhook signature valid but OrderCode {OrderCode} not found in system (PayOS test probe). Returning OK.", orderCode);
                 return;
             }
 
-            // BƯỚC 5: TRÍCH XUẤT VÀ MÃ HÓA THÔNG TIN NGƯỜI TRẢ (PayerInfo)
+            // BƯỚC 3: TRA CỨU VÀ KIỂM TRA SỐ TIỀN VỚI BOOKING (Requirement 5)
+            var booking = await _context.Bookings.Find(b => b.BookingId == payment.BookingId).FirstOrDefaultAsync();
+            if (booking == null)
+            {
+                throw new BadRequestException("Không tìm thấy đơn đặt lịch gắn với giao dịch.");
+            }
+
+            var expectedBookingAmount = booking.TotalAmount > 0 ? booking.TotalAmount : (long)booking.TongTien;
+            if (payment.Amount != amount || expectedBookingAmount != amount)
+            {
+                _logger.LogError("Webhook amount mismatch for OrderCode {OrderCode}: data.Amount={Amount}, Payment.Amount={PayAmount}, Booking.TotalAmount={BookAmount}",
+                    orderCode, amount, payment.Amount, expectedBookingAmount);
+                throw new BadRequestException("Số tiền thanh toán không khớp với hóa đơn hoặc đơn hàng.");
+            }
+
+            // BƯỚC 4: TRÍCH XUẤT VÀ MÃ HÓA THÔNG TIN NGƯỜI TRẢ (PayerInfo)
             var payerInfo = new PayerInfo
             {
                 AccountNumber = dataElem.TryGetProperty("counterAccountNumber", out var can) ? can.GetString() : null,
@@ -219,109 +222,50 @@ namespace PetSitter.Services
             var payerInfoJson = JsonSerializer.Serialize(payerInfo);
             var encryptedPayerInfo = _protector.Protect(payerInfoJson);
 
-            // BƯỚC 6: CẬP NHẬT TRẠNG THÁI PAYMENT SANG PAID
-            var paymentUpdate = Builders<Payment>.Update
+            // BƯỚC 5: CLAIM NGUYÊN TỬ PAYMENT (PENDING / EXPIRED / CANCELLED) -> PAID BẰNG FindOneAndUpdate TRƯỚC (Requirement 1 & 4)
+            var paymentClaimFilter = Builders<Payment>.Filter.And(
+                Builders<Payment>.Filter.Eq(p => p.OrderCode, orderCode),
+                Builders<Payment>.Filter.In(p => p.Status, new[] { PaymentLinkStatus.PENDING, PaymentLinkStatus.EXPIRED, PaymentLinkStatus.CANCELLED })
+            );
+            var paymentClaimUpdate = Builders<Payment>.Update
                 .Set(p => p.Status, PaymentLinkStatus.PAID)
                 .Set(p => p.PaidAt, nowUtc)
                 .Set(p => p.EncryptedPayerInfo, encryptedPayerInfo)
                 .Set(p => p.RawWebhook, $"{{\"orderCode\":{orderCode},\"amount\":{amount},\"reference\":\"{payerInfo.Reference}\"}}");
 
-            await _context.Payments.UpdateOneAsync(p => p.PaymentId == payment.PaymentId, paymentUpdate);
-
-            // BƯỚC 7: NGUYÊN TỬ CẬP NHẬT TRẠNG THÁI BOOKING
-            // Tìm đơn đang ở PENDING_PAYMENT để chuyển sang HELD
-            var bookingFilter = Builders<Booking>.Filter.Eq(b => b.BookingId, payment.BookingId)
-                              & Builders<Booking>.Filter.Eq(b => b.PaymentStatus, PaymentStatus.PENDING_PAYMENT);
-
-            var bookingUpdate = Builders<Booking>.Update
-                .Set(b => b.PaymentStatus, PaymentStatus.HELD)
-                .Push(b => b.History, new InquiryHistory
-                {
-                    HanhDong = "PAYMENT_HELD",
-                    FromStatus = BookingStatus.ACCEPTED,
-                    NguoiThucHien = "SYSTEM",
-                    ActorUserId = null,
-                    LyDo = "Thanh toán thành công qua PayOS",
-                    ThoiGian = nowUtc
-                });
-
-            var updatedBooking = await _context.Bookings.FindOneAndUpdateAsync(
-                bookingFilter,
-                bookingUpdate,
-                new FindOneAndUpdateOptions<Booking> { ReturnDocument = ReturnDocument.After }
+            var claimedPayment = await _context.Payments.FindOneAndUpdateAsync(
+                paymentClaimFilter,
+                paymentClaimUpdate,
+                new FindOneAndUpdateOptions<Payment> { ReturnDocument = ReturnDocument.After }
             );
 
-            // KỊCH BẢN A: CẬP NHẬT THÀNH CÔNG (Webhook thắng đua lệnh)
-            if (updatedBooking != null)
+            // Nếu không claim được (do đã PAID từ lần gọi trước bị đứt giữa chừng), xác nhận payment đã ở trạng thái PAID
+            if (claimedPayment == null)
             {
-                // Ghi sổ kép: DEBIT GATEWAY_CLEARING, CREDIT ESCROW_HELD
-                var journalEntry = new JournalEntry
+                var existingPay = await _context.Payments.Find(p => p.OrderCode == orderCode).FirstOrDefaultAsync();
+                if (existingPay == null || existingPay.Status != PaymentLinkStatus.PAID)
                 {
-                    EntryId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
-                    BookingId = payment.BookingId,
-                    TransactionId = "TX" + nowUtc.ToString("yyMMddHHmmss") + orderCode.ToString().Substring(Math.Max(0, orderCode.ToString().Length - 4)),
-                    Type = JournalType.PAYMENT_HELD,
-                    ActorUserId = "SYSTEM",
-                    CreatedAt = nowUtc,
-                    IdempotencyKey = $"{payment.BookingId}:PAYMENT_HELD:1",
-                    Lines = new List<JournalLine>
-                    {
-                        new JournalLine
-                        {
-                            Account = LedgerAccount.GATEWAY_CLEARING,
-                            Direction = LedgerDirection.DEBIT,
-                            Amount = amount
-                        },
-                        new JournalLine
-                        {
-                            Account = LedgerAccount.ESCROW_HELD,
-                            Direction = LedgerDirection.CREDIT,
-                            Amount = amount
-                        }
-                    }
-                };
-                await _ledgerService.RecordEntryAsync(journalEntry);
-
-                // Gửi thông báo in-app
-                try
-                {
-                    // Cho Owner
-                    await _notificationService.CreateNotificationAsync(
-                        updatedBooking.OwnerId,
-                        NotificationType.PAYMENT_SUCCESS,
-                        updatedBooking.BookingId,
-                        "Thanh toán thành công",
-                        $"Đơn {updatedBooking.MaDatLich} đã thanh toán thành công {amount:N0} ₫. Tiền được tạm giữ an toàn cho tới khi hoàn tất.",
-                        $"{updatedBooking.BookingId}:{NotificationType.PAYMENT_SUCCESS}:{updatedBooking.OwnerId}",
-                        targetRole: "OWNER"
-                    );
-
-                    // Cho Sitter
-                    var sitterProfile = await _context.SitterProfiles.Find(s => s.SitterId == updatedBooking.SitterId).FirstOrDefaultAsync();
-                    if (sitterProfile != null && !string.IsNullOrEmpty(sitterProfile.UserId))
-                    {
-                        await _notificationService.CreateNotificationAsync(
-                            sitterProfile.UserId,
-                            NotificationType.PAYMENT_SUCCESS,
-                            updatedBooking.BookingId,
-                            "Khách hàng đã thanh toán",
-                            $"Khách hàng đã thanh toán {amount:N0} ₫ cho đơn {updatedBooking.MaDatLich}. Bạn có thể an tâm thực hiện dịch vụ.",
-                            $"{updatedBooking.BookingId}:{NotificationType.PAYMENT_SUCCESS}:{sitterProfile.UserId}",
-                            targetRole: "SITTER"
-                        );
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Lỗi khi gửi thông báo thanh toán thành công cho đơn {BookingId}", payment.BookingId);
+                    _logger.LogWarning("Payment for OrderCode {OrderCode} is not in PENDING or PAID state (current status: {Status}).", orderCode, existingPay?.Status);
+                    return;
                 }
             }
-            else
-            {
-                // KỊCH BẢN B: ĐƠN ĐÃ ĐÓNG (Lazy EXPIRED hoặc CANCELLED đã thắng trước đó) -> THANH TOÁN ĐẾN MUỘN
-                _logger.LogWarning("Late payment received for closed booking {BookingId} (OrderCode {OrderCode}). Moving to REFUND_PENDING.", payment.BookingId, orderCode);
 
-                // Ghi sổ kép: DEBIT GATEWAY_CLEARING, CREDIT REFUND_PENDING
+            // BƯỚC 6: XÁC ĐỊNH ĐƠN ĐÃ ĐÓNG THẬT HAY CHƯA (Requirement 1)
+            // Chỉ vào nhánh hoàn tiền khi đơn đã đóng thật (EXPIRED hoặc CANCELLED)
+            var isTrulyClosed = (booking.TrangThai == BookingStatus.EXPIRED || booking.TrangThai == BookingStatus.CANCELLED ||
+                                 booking.PaymentStatus == PaymentStatus.EXPIRED || booking.PaymentStatus == PaymentStatus.CANCELLED);
+
+            if (isTrulyClosed)
+            {
+                // KỊCH BẢN B: ĐƠN ĐÃ ĐÓNG THẬT (Lazy EXPIRED hoặc CANCELLED đã thắng trước đó) -> THANH TOÁN ĐẾN MUỘN
+                _logger.LogWarning("Late payment received for truly closed booking {BookingId} (OrderCode {OrderCode}). Moving to REFUND_PENDING.", payment.BookingId, orderCode);
+
+                await _context.Bookings.UpdateOneAsync(
+                    b => b.BookingId == booking.BookingId,
+                    Builders<Booking>.Update.Set(b => b.PaymentStatus, PaymentStatus.REFUND_PENDING)
+                );
+
+                // Ghi sổ kép: DEBIT GATEWAY_CLEARING, CREDIT REFUND_PENDING (Idempotent theo key)
                 var lateRefundEntry = new JournalEntry
                 {
                     EntryId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
@@ -349,47 +293,38 @@ namespace PetSitter.Services
                 };
                 await _ledgerService.RecordEntryAsync(lateRefundEntry);
 
-                // Tạo yêu cầu hoàn tiền cho Admin
-                var booking = await _context.Bookings.Find(b => b.BookingId == payment.BookingId).FirstOrDefaultAsync();
-                var ownerUserId = booking?.OwnerId ?? "unknown";
-
-                var refundRequest = new RefundRequest
+                // Tạo yêu cầu hoàn tiền nếu chưa tồn tại
+                var existingRefund = await _context.RefundRequests.Find(r => r.BookingId == booking.BookingId).FirstOrDefaultAsync();
+                if (existingRefund == null)
                 {
-                    RefundId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
-                    BookingId = payment.BookingId,
-                    PaymentId = payment.PaymentId,
-                    OwnerUserId = ownerUserId,
-                    Amount = amount,
-                    Reason = "LATE_PAYMENT_AFTER_EXPIRY",
-                    Status = RefundStatus.REFUND_PENDING,
-                    EncryptedRefundAccount = encryptedPayerInfo,
-                    CreatedAt = nowUtc
-                };
-                await _context.RefundRequests.InsertOneAsync(refundRequest);
-
-                // Đổi Booking PaymentStatus sang REFUND_PENDING
-                await _context.Bookings.UpdateOneAsync(
-                    b => b.BookingId == payment.BookingId,
-                    Builders<Booking>.Update.Set(b => b.PaymentStatus, PaymentStatus.REFUND_PENDING)
-                );
+                    var refundReq = new RefundRequest
+                    {
+                        RefundId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                        BookingId = booking.BookingId,
+                        PaymentId = payment.PaymentId,
+                        OwnerUserId = booking.OwnerId,
+                        Amount = amount,
+                        Reason = "LATE_PAYMENT_ON_CLOSED_BOOKING",
+                        Status = RefundStatus.REFUND_PENDING,
+                        EncryptedRefundAccount = encryptedPayerInfo,
+                        CreatedAt = nowUtc
+                    };
+                    await _context.RefundRequests.InsertOneAsync(refundReq);
+                }
 
                 // Gửi thông báo cho Owner và Admin
                 try
                 {
-                    if (booking != null)
-                    {
-                        await _notificationService.CreateNotificationAsync(
-                            ownerUserId,
-                            NotificationType.REFUND_PENDING,
-                            booking.BookingId,
-                            "Hoàn tiền do thanh toán muộn",
-                            $"Thanh toán {amount:N0} ₫ cho đơn {booking.MaDatLich} được nhận sau khi đơn đã hết hạn. Hệ thống đang tiến hành hoàn tiền cho bạn.",
-                            $"{booking.BookingId}:{NotificationType.REFUND_PENDING}:{ownerUserId}",
-                            targetRole: "OWNER"
-                        );
-                    }
+                    await _notificationService.CreateNotificationAsync(
+                        booking.OwnerId,
+                        NotificationType.REFUND_PENDING,
+                        booking.BookingId,
+                        "Hoàn tiền do thanh toán muộn",
+                        $"Thanh toán {amount:N0} ₫ cho đơn {booking.MaDatLich} được nhận sau khi đơn đã hết hạn. Hệ thống đang tiến hành hoàn tiền cho bạn.",
+                        $"{booking.BookingId}:{NotificationType.REFUND_PENDING}:{booking.OwnerId}",
+                        targetRole: "OWNER"
+                    );
 
-                    // Thông báo Admin
                     var admins = await _context.Users.Find(u => u.Role == "Admin").ToListAsync();
                     foreach (var admin in admins)
                     {
@@ -408,6 +343,90 @@ namespace PetSitter.Services
                 {
                     _logger.LogError(ex, "Lỗi gửi thông báo thanh toán muộn cho đơn {BookingId}", payment.BookingId);
                 }
+
+                return;
+            }
+
+            // BƯỚC 7: ĐƠN CHƯA ĐÓNG -> HOÀN THIỆN ĐƠN (Booking -> HELD, Ghi sổ kép)
+            // Chạy lặp lại được (idempotent): Chuyển PENDING_PAYMENT sang HELD nếu đơn vẫn ở PENDING_PAYMENT
+            var bookingFilter = Builders<Booking>.Filter.And(
+                Builders<Booking>.Filter.Eq(b => b.BookingId, payment.BookingId),
+                Builders<Booking>.Filter.Eq(b => b.PaymentStatus, PaymentStatus.PENDING_PAYMENT)
+            );
+            var bookingUpdate = Builders<Booking>.Update
+                .Set(b => b.PaymentStatus, PaymentStatus.HELD)
+                .Push(b => b.History, new InquiryHistory
+                {
+                    HanhDong = "PAYMENT_HELD",
+                    FromStatus = BookingStatus.ACCEPTED,
+                    NguoiThucHien = "SYSTEM",
+                    ActorUserId = null,
+                    LyDo = "Thanh toán thành công qua PayOS",
+                    ThoiGian = nowUtc
+                });
+
+            await _context.Bookings.UpdateOneAsync(bookingFilter, bookingUpdate);
+
+            // Ghi sổ kép: DEBIT GATEWAY_CLEARING, CREDIT ESCROW_HELD (Bắt buộc đúng một bút toán, idempotent theo IdempotencyKey)
+            var journalEntry = new JournalEntry
+            {
+                EntryId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                BookingId = payment.BookingId,
+                TransactionId = "TX" + nowUtc.ToString("yyMMddHHmmss") + orderCode.ToString().Substring(Math.Max(0, orderCode.ToString().Length - 4)),
+                Type = JournalType.PAYMENT_HELD,
+                ActorUserId = "SYSTEM",
+                CreatedAt = nowUtc,
+                IdempotencyKey = $"{payment.BookingId}:PAYMENT_HELD:1",
+                Lines = new List<JournalLine>
+                {
+                    new JournalLine
+                    {
+                        Account = LedgerAccount.GATEWAY_CLEARING,
+                        Direction = LedgerDirection.DEBIT,
+                        Amount = amount
+                    },
+                    new JournalLine
+                    {
+                        Account = LedgerAccount.ESCROW_HELD,
+                        Direction = LedgerDirection.CREDIT,
+                        Amount = amount
+                    }
+                }
+            };
+            await _ledgerService.RecordEntryAsync(journalEntry);
+
+            // Gửi thông báo in-app (an toàn với DedupeKey)
+            try
+            {
+                // Cho Owner
+                await _notificationService.CreateNotificationAsync(
+                    booking.OwnerId,
+                    NotificationType.PAYMENT_SUCCESS,
+                    booking.BookingId,
+                    "Thanh toán thành công",
+                    $"Đơn {booking.MaDatLich} đã thanh toán thành công {amount:N0} ₫. Tiền được tạm giữ an toàn cho tới khi hoàn tất.",
+                    $"{booking.BookingId}:{NotificationType.PAYMENT_SUCCESS}:{booking.OwnerId}",
+                    targetRole: "OWNER"
+                );
+
+                // Cho Sitter
+                var sitterProfile = await _context.SitterProfiles.Find(s => s.SitterId == booking.SitterId).FirstOrDefaultAsync();
+                if (sitterProfile != null && !string.IsNullOrEmpty(sitterProfile.UserId))
+                {
+                    await _notificationService.CreateNotificationAsync(
+                        sitterProfile.UserId,
+                        NotificationType.PAYMENT_SUCCESS,
+                        booking.BookingId,
+                        "Khách hàng đã thanh toán",
+                        $"Khách hàng đã thanh toán {amount:N0} ₫ cho đơn {booking.MaDatLich}. Bạn có thể an tâm thực hiện dịch vụ.",
+                        $"{booking.BookingId}:{NotificationType.PAYMENT_SUCCESS}:{sitterProfile.UserId}",
+                        targetRole: "SITTER"
+                    );
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Lỗi khi gửi thông báo thanh toán thành công cho đơn {BookingId}", payment.BookingId);
             }
         }
 

@@ -615,6 +615,9 @@
     // Render giao diện form đặt lịch đầy đủ
     function renderBookingPage(container, sitter) {
       const initials = getInitials(sitter.ten);
+      const baseDailyPrice = (sitter.dichVu && sitter.dichVu.length > 0)
+        ? (sitter.dichVu.find(s => (s.gia || s.price) > 0)?.gia || sitter.dichVu.find(s => (s.gia || s.price) > 0)?.price || sitter.giaTu || 0)
+        : (sitter.giaTu || 0);
       
       // Render các add-ons
       const addonsHtml = ADDONS.map(addon => {
@@ -761,7 +764,7 @@
                 </div>
               </div>
               <div class="preview-price">
-                <span class="preview-price-amount">${formatTien(100000)}</span>
+                <span class="preview-price-amount">${formatTien(baseDailyPrice)}</span>
                 <span class="preview-price-unit">/ ngày</span>
               </div>
             </div>
@@ -913,7 +916,11 @@
         return;
       }
 
-      const giaSitter = 100000 * soNgay;
+      const baseDailyPrice = (selectedSitter.dichVu && selectedSitter.dichVu.length > 0)
+        ? (selectedSitter.dichVu.find(s => (s.gia || s.price) > 0)?.gia || selectedSitter.dichVu.find(s => (s.gia || s.price) > 0)?.price || selectedSitter.giaTu || 0)
+        : (selectedSitter.giaTu || 0);
+
+      const giaSitter = baseDailyPrice * soNgay;
 
       // Tính tổng dịch vụ bổ sung
       let tongAddons = 0;
@@ -948,7 +955,7 @@
         <div class="price-row">
           <div>
             <span>Chi phí trông giữ</span>
-            <span class="price-row-label-sub">${formatTien(100000)} × ${/* safe */ soNgay} ngày</span>
+            <span class="price-row-label-sub">${formatTien(baseDailyPrice)} × ${/* safe */ soNgay} ngày</span>
           </div>
           <span>${formatTien(giaSitter)}</span>
         </div>
@@ -967,7 +974,7 @@
           <span class="amount">${formatTien(tongCuoi)}</span>
         </div>
         <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 6px; text-align: right;">
-          💡 Hai bên tự thanh toán trực tiếp khi giao nhận thú cưng
+          💡 Thanh toán an toàn qua VietQR (PayOS) sau khi Sitter chấp nhận đơn. Tiền được tạm giữ an toàn đến khi hoàn tất dịch vụ.
         </div>
       `;
     }
