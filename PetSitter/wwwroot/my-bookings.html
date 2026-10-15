@@ -78,6 +78,34 @@
     </div>
   </div>
 
+  <!-- Modal Nhập tài khoản ngân hàng nhận tiền hoàn -->
+  <div class="modal" id="refund-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">Thông tin nhận tiền hoàn</h3>
+        <button class="modal-close" onclick="closeRefundAccountModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="refund-account-form">
+          <input type="hidden" id="refund-booking-id" />
+          <div style="margin-bottom: 14px;">
+            <label style="display:block; margin-bottom:6px; font-weight:600;">Ngân hàng <span style="color:#ef4444;">*</span></label>
+            <input type="text" id="refund-bank" required placeholder="VD: Vietcombank, MB Bank, Techcombank..." style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--border); background:var(--bg-primary);" />
+          </div>
+          <div style="margin-bottom: 14px;">
+            <label style="display:block; margin-bottom:6px; font-weight:600;">Số tài khoản <span style="color:#ef4444;">*</span></label>
+            <input type="text" id="refund-account-num" required placeholder="Nhập số tài khoản ngân hàng" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--border); background:var(--bg-primary);" />
+          </div>
+          <div style="margin-bottom: 16px;">
+            <label style="display:block; margin-bottom:6px; font-weight:600;">Tên chủ tài khoản <span style="color:#ef4444;">*</span></label>
+            <input type="text" id="refund-account-name" required placeholder="VD: NGUYEN VAN A" style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--border); background:var(--bg-primary);" />
+          </div>
+          <button type="submit" class="btn btn-primary" style="width:100%;">Lưu thông tin nhận hoàn</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <script src="assets/data.js"></script>
   <script src="assets/api.js"></script>
   <script src="assets/components.js"></script>
@@ -151,9 +179,32 @@
             cancelBtn = `<button class="btn btn-outline btn-sm" onclick="cancelBooking('${/* safe */ b.bookingId}')">Hủy chuyến</button>`;
           }
 
+          let payBtn = '';
+          let paymentBadge = '';
+          if (b.paymentStatus === 'PENDING_PAYMENT') {
+            payBtn = `<button class="btn btn-primary btn-sm" onclick="payBooking('${/* safe */ b.bookingId}')" style="background:#16a34a; border-color:#16a34a;">💳 Thanh toán ngay (VietQR)</button>`;
+            paymentBadge = `<span class="badge" style="background:rgba(234, 179, 8, 0.15); color:#ca8a04; border:1px solid #ca8a04; padding:2px 8px; border-radius:12px; font-size:0.8rem; margin-left:8px;">Chờ thanh toán</span>`;
+          } else if (b.paymentStatus === 'HELD') {
+            paymentBadge = `<span class="badge" style="background:rgba(22, 163, 74, 0.15); color:#16a34a; border:1px solid #16a34a; padding:2px 8px; border-radius:12px; font-size:0.8rem; margin-left:8px;">Đã thanh toán (Giữ an toàn)</span>`;
+          } else if (b.paymentStatus === 'REFUND_PENDING') {
+            paymentBadge = `<span class="badge" style="background:rgba(249, 115, 22, 0.15); color:#ea580c; border:1px solid #ea580c; padding:2px 8px; border-radius:12px; font-size:0.8rem; margin-left:8px;">Chờ hoàn tiền</span>`;
+            payBtn = `<button class="btn btn-outline btn-sm" onclick="openRefundAccountModal('${/* safe */ b.bookingId}')">🏦 Nhập STK hoàn tiền</button>`;
+          } else if (b.paymentStatus === 'REFUNDED') {
+            paymentBadge = `<span class="badge" style="background:rgba(100, 116, 139, 0.15); color:#64748b; border:1px solid #64748b; padding:2px 8px; border-radius:12px; font-size:0.8rem; margin-left:8px;">Đã hoàn tiền</span>`;
+          } else if (b.paymentStatus === 'PARTIALLY_REFUNDED') {
+            paymentBadge = `<span class="badge" style="background:rgba(59, 130, 246, 0.15); color:#2563eb; border:1px solid #2563eb; padding:2px 8px; border-radius:12px; font-size:0.8rem; margin-left:8px;">Hoàn một phần</span>`;
+          }
+
           let completionBtns = '';
           let noticeHtml = '';
-          if (b.trangThai === 'COMPLETION_PENDING') {
+          if (b.paymentStatus === 'PENDING_PAYMENT') {
+            const payTimeRem = formatTimeRemaining(b.paymentDeadline);
+            noticeHtml = `
+              <div style="grid-column: 1 / -1; margin-top: 10px; padding: 10px; background: rgba(34, 197, 94, 0.08); border-radius: 6px; font-size: 0.9rem; color: #15803d;">
+                💳 <strong>Sitter đã chấp nhận:</strong> Vui lòng hoàn tất thanh toán ${escapeHtml(payTimeRem)} để xác nhận giữ chỗ dịch vụ.
+              </div>
+            `;
+          } else if (b.trangThai === 'COMPLETION_PENDING') {
             const timeRem = formatTimeRemaining(b.completionDeadline);
             completionBtns = `
               <button class="btn btn-primary btn-sm" onclick="confirmCompletion('${/* safe */ b.bookingId}')">Xác nhận hoàn tất</button>
@@ -174,6 +225,7 @@
 
           let actionBtns = `
             <div class="booking-actions" style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+              ${/* safe */ payBtn}
               ${/* safe */ cancelBtn}
               ${/* safe */ completionBtns}
               <a href="stay-updates.html?bookingId=${/* safe */ b.bookingId}" class="btn btn-outline btn-sm">Nhật ký chăm sóc</a>
@@ -190,6 +242,7 @@
                 </div>
                 <div style="text-align:right;">
                   <span class="status-badge ${/* safe */ statusClass}">${escapeHtml(getStatusLabel(b.trangThai))}</span>
+                  ${/* safe */ paymentBadge}
                 </div>
               </div>
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
@@ -199,7 +252,7 @@
                   ${/* safe */ (b.trangThai === 'PENDING' && b.expiresAt) ? `<p style="font-size:0.85rem; color:#eab308;"><strong>Hạn phản hồi:</strong> ${formatNgayDep(b.expiresAt)}</p>` : ''}
                 </div>
                 <div>
-                  <p><strong>Chi phí ước tính:</strong> ${formatTien(b.tongTien)}</p>
+                  <p><strong>Tổng tiền:</strong> ${formatTien(b.tongTien)}</p>
                   ${/* safe */ b.lyDoTuChoi ? `<p style="color: #ef4444; margin-top: 5px;"><strong>Lý do:</strong> ${escapeHtml(b.lyDoTuChoi)}</p>` : ''}
                 </div>
                 ${/* safe */ noticeHtml}
@@ -307,6 +360,52 @@
         showError(e.message);
       }
     }
+
+    async function payBooking(bookingId) {
+      try {
+        const res = await apiFetch(`/bookings/${bookingId}/pay`, { method: 'POST' });
+        if (res && res.checkoutUrl) {
+          window.location.href = res.checkoutUrl;
+        } else {
+          showToast('Đang kết nối cổng thanh toán...', 3000, '💳');
+          loadBookings();
+        }
+      } catch (err) {
+        showError(err.message || 'Không thể tạo link thanh toán.');
+      }
+    }
+
+    function openRefundAccountModal(bookingId) {
+      document.getElementById('refund-booking-id').value = bookingId;
+      document.getElementById('refund-bank').value = '';
+      document.getElementById('refund-account-num').value = '';
+      document.getElementById('refund-account-name').value = '';
+      document.getElementById('refund-modal').classList.add('open');
+    }
+
+    function closeRefundAccountModal() {
+      document.getElementById('refund-modal').classList.remove('open');
+    }
+
+    document.getElementById('refund-account-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const bookingId = document.getElementById('refund-booking-id').value;
+      const bankName = document.getElementById('refund-bank').value.trim();
+      const accountNumber = document.getElementById('refund-account-num').value.trim();
+      const accountName = document.getElementById('refund-account-name').value.trim();
+
+      try {
+        await apiFetch(`/bookings/${bookingId}/refund-account`, {
+          method: 'POST',
+          body: JSON.stringify({ bankName, accountNumber, accountName })
+        });
+        showToast('Đã lưu thông tin tài khoản nhận hoàn tiền!', 3000, '✅');
+        closeRefundAccountModal();
+        loadBookings();
+      } catch (err) {
+        showError(err.message || 'Không thể cập nhật thông tin tài khoản hoàn tiền.');
+      }
+    });
   </script>
 </body>
 </html>

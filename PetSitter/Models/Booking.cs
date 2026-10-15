@@ -71,6 +71,14 @@ namespace PetSitter.Models
         public DateTime? ExpiresAt { get; set; }
         public string? LyDoTuChoi { get; set; }
 
+        // Financial Snapshot & Payment (Prompt 5A)
+        public string PaymentStatus { get; set; } = Models.PaymentStatus.NONE;
+        public DateTime? PaymentDeadline { get; set; }
+        public long TotalAmount { get; set; }
+        public int CommissionBps { get; set; } = 1000; // 1000 bps = 10%
+        public long CommissionAmount { get; set; }
+        public long SitterAmount { get; set; }
+
         public DateTime? SitterCompletedAt { get; set; }
         public DateTime? CompletionDeadline { get; set; }
         public DateTime? OwnerConfirmedAt { get; set; }

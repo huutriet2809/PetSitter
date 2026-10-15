@@ -87,6 +87,33 @@ builder.Services.AddScoped<IBookingService, BookingService>();
 builder.Services.AddScoped<IPetService, PetService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 
+// Data Protection cho mã hóa PayerInfo & tài khoản ngân hàng
+builder.Services.AddDataProtection();
+builder.Services.AddHttpClient();
+
+// Cấu hình Cổng thanh toán (PayOS vs Fake Mock) & Sổ cái (Ledger)
+var isLiveMode = builder.Configuration.GetValue<bool>("Payments:LiveMode", false);
+if (isLiveMode)
+{
+    var clientId = builder.Configuration.GetValue<string>("PayOS:ClientId");
+    var apiKey = builder.Configuration.GetValue<string>("PayOS:ApiKey");
+    var checksumKey = builder.Configuration.GetValue<string>("PayOS:ChecksumKey");
+    if (string.IsNullOrWhiteSpace(clientId) || clientId.StartsWith("YOUR_") ||
+        string.IsNullOrWhiteSpace(apiKey) || apiKey.StartsWith("YOUR_") ||
+        string.IsNullOrWhiteSpace(checksumKey) || checksumKey.StartsWith("YOUR_"))
+    {
+        throw new InvalidOperationException("Lỗi cấu hình PayOS: Payments:LiveMode đang bật nhưng PayOS:ClientId, PayOS:ApiKey hoặc PayOS:ChecksumKey chưa được thiết lập khóa thật.");
+    }
+    builder.Services.AddScoped<IPaymentGateway, PayOsGateway>();
+}
+else
+{
+    builder.Services.AddSingleton<IPaymentGateway, FakePaymentGateway>();
+}
+
+builder.Services.AddScoped<ILedgerService, LedgerService>();
+builder.Services.AddScoped<IPaymentService, PaymentService>();
+
 // Configure JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
 var secretKey = jwtSettings.GetValue<string>("Secret");
@@ -174,9 +201,14 @@ builder.Services.AddRateLimiter(options =>
         });
     });
 
-    // 4. Global limiter: 100 request/phút/user (fallback IP)
+    // 4. Global limiter: 100 request/phút/user (fallback IP), ngoại lệ hoàn toàn cho PayOS Webhook
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
     {
+        if (httpContext.Request.Path.StartsWithSegments("/api/payments/payos/webhook", StringComparison.OrdinalIgnoreCase))
+        {
+            return RateLimitPartition.GetNoLimiter("webhook");
+        }
+
         var partitionKey = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)
                            ?? httpContext.Connection.RemoteIpAddress?.ToString()
                            ?? "unknown";

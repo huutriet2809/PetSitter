@@ -16,5 +16,12 @@ namespace PetSitter.Models
         public const string REMINDER_PENDING_EXPIRES = "REMINDER_PENDING_EXPIRES";
         public const string REMINDER_COMPLETION_EXPIRES = "REMINDER_COMPLETION_EXPIRES";
         public const string REMINDER_OVERDUE_ACCEPTED = "REMINDER_OVERDUE_ACCEPTED";
+        public const string REMINDER_PAYMENT_EXPIRES = "REMINDER_PAYMENT_EXPIRES";
+
+        // Payments & Refunds
+        public const string PAYMENT_SUCCESS = "PAYMENT_SUCCESS";
+        public const string EARNINGS_CREDITED = "EARNINGS_CREDITED";
+        public const string REFUND_PENDING = "REFUND_PENDING";
+        public const string REFUND_COMPLETED = "REFUND_COMPLETED";
     }
 }

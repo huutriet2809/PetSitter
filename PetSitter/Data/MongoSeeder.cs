@@ -285,6 +285,76 @@ namespace PetSitter.Data
                 Console.WriteLine("[Seeder Lỗi] Không thể tạo Notification indexes: " + ex.Message);
             }
 
+            // Create Indexes for Payments:
+            // 1. Unique index on OrderCode
+            // 2. Compound index on (BookingId, Status)
+            try
+            {
+                var payCol = context.Payments;
+                var payOrderCodeModel = new CreateIndexModel<Payment>(
+                    Builders<Payment>.IndexKeys.Ascending(p => p.OrderCode),
+                    new CreateIndexOptions { Unique = true }
+                );
+                var payBookingStatusModel = new CreateIndexModel<Payment>(
+                    Builders<Payment>.IndexKeys.Ascending(p => p.BookingId).Ascending(p => p.Status)
+                );
+                await payCol.Indexes.CreateManyAsync(new[] { payOrderCodeModel, payBookingStatusModel });
+                Console.WriteLine("[Seeder] Tạo thành công các index cho Payments.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[Seeder Lỗi] Không thể tạo Payments indexes: " + ex.Message);
+            }
+
+            // Create Indexes for JournalEntries (Sổ cái):
+            // 1. Unique index on IdempotencyKey
+            // 2. Multikey index on Lines.Account và CreatedAt cho truy vấn số dư
+            // 3. Index on (BookingId, Type)
+            try
+            {
+                var ledgerCol = context.JournalEntries;
+                var ledgerIdempModel = new CreateIndexModel<JournalEntry>(
+                    Builders<JournalEntry>.IndexKeys.Ascending(j => j.IdempotencyKey),
+                    new CreateIndexOptions { Unique = true }
+                );
+                var ledgerAccountCreatedModel = new CreateIndexModel<JournalEntry>(
+                    Builders<JournalEntry>.IndexKeys.Ascending("Lines.Account").Descending(j => j.CreatedAt)
+                );
+                var ledgerBookingTypeModel = new CreateIndexModel<JournalEntry>(
+                    Builders<JournalEntry>.IndexKeys.Ascending(j => j.BookingId).Ascending(j => j.Type)
+                );
+                await ledgerCol.Indexes.CreateManyAsync(new[] { ledgerIdempModel, ledgerAccountCreatedModel, ledgerBookingTypeModel });
+                Console.WriteLine("[Seeder] Tạo thành công các index cho JournalEntries.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[Seeder Lỗi] Không thể tạo JournalEntries indexes: " + ex.Message);
+            }
+
+            // Create Indexes for RefundRequests:
+            // 1. Compound index on (Status, CreatedAt)
+            // 2. Index on OwnerUserId
+            // 3. Index on BookingId
+            try
+            {
+                var refCol = context.RefundRequests;
+                var refStatusCreatedModel = new CreateIndexModel<RefundRequest>(
+                    Builders<RefundRequest>.IndexKeys.Ascending(r => r.Status).Descending(r => r.CreatedAt)
+                );
+                var refOwnerModel = new CreateIndexModel<RefundRequest>(
+                    Builders<RefundRequest>.IndexKeys.Ascending(r => r.OwnerUserId)
+                );
+                var refBookingModel = new CreateIndexModel<RefundRequest>(
+                    Builders<RefundRequest>.IndexKeys.Ascending(r => r.BookingId)
+                );
+                await refCol.Indexes.CreateManyAsync(new[] { refStatusCreatedModel, refOwnerModel, refBookingModel });
+                Console.WriteLine("[Seeder] Tạo thành công các index cho RefundRequests.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[Seeder Lỗi] Không thể tạo RefundRequests indexes: " + ex.Message);
+            }
+
             if (seedDemo)
             {
                 var admin = await usersCollection.Find(u => u.Role == "ADMIN").FirstOrDefaultAsync();

@@ -69,6 +69,13 @@ namespace PetSitter.DTOs
         public string? DisputeReason { get; set; }
         public string? AdminResolutionNote { get; set; }
         public bool? ResolvedByAdmin { get; set; }
+
+        public string PaymentStatus { get; set; } = Models.PaymentStatus.NONE;
+        public DateTime? PaymentDeadline { get; set; }
+        public long TotalAmount { get; set; }
+        public int CommissionBps { get; set; }
+        public long CommissionAmount { get; set; }
+        public long SitterAmount { get; set; }
         
         public PetSitter.Models.BookingPet Pet { get; set; } = new();
         public List<PetSitter.Models.BookingAddon> Addons { get; set; } = new();
@@ -85,12 +92,14 @@ namespace PetSitter.DTOs
     public class ResolveDisputeDto
     {
         [Required(ErrorMessage = "Hướng xử lý là bắt buộc.")]
-        [RegularExpression("^(COMPLETED|CANCELLED)$", ErrorMessage = "Resolution chỉ nhận COMPLETED hoặc CANCELLED.")]
+        [RegularExpression("^(COMPLETED|CANCELLED|SPLIT)$", ErrorMessage = "Resolution chỉ nhận COMPLETED, CANCELLED hoặc SPLIT.")]
         public string Resolution { get; set; } = string.Empty;
 
         [Required(AllowEmptyStrings = false, ErrorMessage = "Ghi chú xử lý là bắt buộc.")]
         [StringLength(500, MinimumLength = 10, ErrorMessage = "Ghi chú xử lý phải từ 10 đến 500 ký tự.")]
         public string Note { get; set; } = string.Empty;
+
+        public long? RefundToOwnerAmount { get; set; }
     }
 
     public class RejectBookingDto

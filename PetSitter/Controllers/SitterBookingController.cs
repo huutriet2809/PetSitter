@@ -20,17 +20,20 @@ namespace PetSitter.Controllers
         private readonly PetSitterContext _context;
         private readonly IBookingService _bookingService;
         private readonly INotificationService _notificationService;
+        private readonly IPaymentService? _paymentService;
         private readonly ILogger<SitterBookingController> _logger;
 
         public SitterBookingController(
             PetSitterContext context,
             IBookingService bookingService,
             INotificationService notificationService,
-            ILogger<SitterBookingController> logger)
+            ILogger<SitterBookingController> logger,
+            IPaymentService? paymentService = null)
         {
             _context = context;
             _bookingService = bookingService;
             _notificationService = notificationService;
+            _paymentService = paymentService;
             _logger = logger;
         }
 
@@ -76,8 +79,13 @@ namespace PetSitter.Controllers
                        & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.PENDING)
                        & Builders<Booking>.Filter.Gt(b => b.ExpiresAt, nowUtc);
 
+            var windowHours = 24;
+            var paymentDeadline = nowUtc.AddHours(windowHours);
+
             var update = Builders<Booking>.Update
                 .Set(b => b.TrangThai, BookingStatus.ACCEPTED)
+                .Set(b => b.PaymentStatus, PaymentStatus.PENDING_PAYMENT)
+                .Set(b => b.PaymentDeadline, paymentDeadline)
                 .Set(b => b.IsActive, true)
                 .Push(b => b.History, new InquiryHistory
                 {
@@ -123,6 +131,19 @@ namespace PetSitter.Controllers
                 return Conflict(new { message = "Không thể chấp nhận booking. Trạng thái đã thay đổi hoặc không hợp lệ." });
             }
 
+            // Best-effort tạo link thanh toán, lỗi cổng không rollback accept (Requirement 6)
+            if (_paymentService != null)
+            {
+                try
+                {
+                    await _paymentService.CreateOrGetPaymentLinkAsync(updatedBooking.OwnerId, updatedBooking.BookingId, nowUtc);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Không thể tạo trước link PayOS cho đơn {BookingId} lúc Accept: {Message}", updatedBooking.BookingId, ex.Message);
+                }
+            }
+
             if (_notificationService != null && !string.IsNullOrEmpty(updatedBooking.OwnerId))
             {
                 try
@@ -133,7 +154,7 @@ namespace PetSitter.Controllers
                         NotificationType.BOOKING_ACCEPTED,
                         updatedBooking.BookingId,
                         "Yêu cầu đặt lịch đã được chấp nhận",
-                        $"Người chăm sóc đã chấp nhận yêu cầu đặt lịch #{updatedBooking.MaDatLich}.",
+                        $"Người chăm sóc đã chấp nhận yêu cầu đặt lịch #{updatedBooking.MaDatLich}. Vui lòng thanh toán trong vòng {windowHours} giờ.",
                         dedupeKey,
                         targetRole: "OWNER"
                     );

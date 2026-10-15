@@ -25,6 +25,7 @@
     <div class="tabs">
       <div class="tab active" id="tab-applications" onclick="switchTab('applications')">Hồ sơ Sitter chờ duyệt</div>
       <div class="tab" id="tab-disputes" onclick="switchTab('disputes')">Đơn khiếu nại (Disputed)</div>
+      <div class="tab" id="tab-payments" onclick="switchTab('payments')">Thanh toán & Hoàn tiền</div>
     </div>
     <div id="error-msg"></div>
     <div id="list-container">Đang tải...</div>
@@ -58,8 +59,10 @@
 
       if (tab === 'applications') {
         loadApplications();
-      } else {
+      } else if (tab === 'disputes') {
         loadDisputes();
+      } else if (tab === 'payments') {
+        loadPaymentsOverview();
       }
     }
 
@@ -215,6 +218,105 @@
         document.getElementById(`app-${id}`).remove();
       } catch (err) {
         showError(err.message);
+      }
+    }
+
+    async function loadPaymentsOverview() {
+      const container = document.getElementById('list-container');
+      container.innerHTML = 'Đang tải dữ liệu tài chính...';
+      try {
+        const [overview, refunds] = await Promise.all([
+          apiFetch('/admin/payments/overview'),
+          apiFetch('/admin/refunds?status=REFUND_PENDING')
+        ]);
+
+        let refundRows = '<p style="color:var(--text-muted); margin-top:10px;">Không có yêu cầu hoàn tiền nào đang chờ xử lý.</p>';
+        if (refunds && refunds.length > 0) {
+          refundRows = `
+            <table style="width:100%; border-collapse:collapse; margin-top:15px; font-size:0.9rem;">
+              <thead>
+                <tr style="text-align:left; border-bottom:2px solid var(--border);">
+                  <th style="padding:8px;">Mã đơn</th>
+                  <th style="padding:8px;">Số tiền</th>
+                  <th style="padding:8px;">Lý do</th>
+                  <th style="padding:8px;">Tài khoản nhận</th>
+                  <th style="padding:8px;">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${refunds.map(r => `
+                  <tr style="border-bottom:1px solid var(--border);">
+                    <td style="padding:8px;"><strong>${escapeHtml(r.bookingCode || r.bookingId)}</strong></td>
+                    <td style="padding:8px; color:#ef4444; font-weight:600;">${formatTien(r.amount)}</td>
+                    <td style="padding:8px;">${escapeHtml(r.reason)}</td>
+                    <td style="padding:8px;">
+                      ${/* safe */ r.refundAccount ? `${escapeHtml(r.refundAccount.bankName)} - <strong>${escapeHtml(r.refundAccount.accountNumber)}</strong> (${escapeHtml(r.refundAccount.accountName)})` : '<span style="color:#ca8a04;">Chờ khách nhập STK</span>'}
+                    </td>
+                    <td style="padding:8px;">
+                      <div style="display:flex; gap:6px; align-items:center;">
+                        <input type="text" id="ref-code-${/* safe */ r.refundId}" placeholder="Mã GD ngân hàng..." style="padding:4px 8px; font-size:0.85rem; border:1px solid var(--border); border-radius:4px; width:140px;" />
+                        <button class="btn btn-primary btn-sm" onclick="completeRefund('${/* safe */ r.refundId}')">Xác nhận đã chuyển</button>
+                      </div>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          `;
+        }
+
+        container.innerHTML = `
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:15px; margin-bottom:25px;">
+            <div style="background:var(--bg-secondary); padding:16px; border-radius:8px; border-left:4px solid #16a34a;">
+              <div style="font-size:0.85rem; color:var(--text-muted);">Tổng tiền giữ đảm bảo (Escrow)</div>
+              <div style="font-size:1.5rem; font-weight:700; color:#16a34a; margin-top:6px;">${/* safe */ formatTien(overview.escrowHeldAmount)}</div>
+            </div>
+            <div style="background:var(--bg-secondary); padding:16px; border-radius:8px; border-left:4px solid #3b82f6;">
+              <div style="font-size:0.85rem; color:var(--text-muted);">Doanh thu hoa hồng (10%)</div>
+              <div style="font-size:1.5rem; font-weight:700; color:#2563eb; margin-top:6px;">${/* safe */ formatTien(overview.platformRevenueAmount)}</div>
+            </div>
+            <div style="background:var(--bg-secondary); padding:16px; border-radius:8px; border-left:4px solid #ea580c;">
+              <div style="font-size:0.85rem; color:var(--text-muted);">Tiền chờ hoàn cho khách</div>
+              <div style="font-size:1.5rem; font-weight:700; color:#ea580c; margin-top:6px;">${/* safe */ formatTien(overview.refundPendingAmount)}</div>
+            </div>
+            <div style="background:var(--bg-secondary); padding:16px; border-radius:8px; border-left:4px solid #8b5cf6;">
+              <div style="font-size:0.85rem; color:var(--text-muted);">Tổng đơn đã thanh toán</div>
+              <div style="font-size:1.5rem; font-weight:700; color:#7c3aed; margin-top:6px;">${/* safe */ overview.totalPaidBookingsCount}</div>
+            </div>
+          </div>
+
+          <div style="background:var(--bg-primary); border:1px solid var(--border); border-radius:8px; padding:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <h3 style="margin:0;">Hàng đợi hoàn tiền (Refund Queue)</h3>
+              <button class="btn btn-outline btn-sm" onclick="loadPaymentsOverview()">Làm mới</button>
+            </div>
+            ${/* safe */ refundRows}
+          </div>
+        `;
+      } catch (err) {
+        showError(err.message || 'Lỗi khi tải dữ liệu thanh toán & hoàn tiền.');
+        container.innerHTML = '';
+      }
+    }
+
+    async function completeRefund(refundId) {
+      const refInput = document.getElementById(`ref-code-${refundId}`);
+      const bankRef = refInput ? refInput.value.trim() : '';
+      if (!bankRef) {
+        showError('Vui lòng nhập mã giao dịch ngân hàng để đối soát.');
+        return;
+      }
+      if (!confirm('Xác nhận bạn đã chuyển khoản hoàn tiền thành công cho khách hàng?')) return;
+
+      try {
+        await apiFetch(`/admin/refunds/${refundId}/complete`, {
+          method: 'POST',
+          body: JSON.stringify({ bankTransactionRef: bankRef })
+        });
+        showToast('Đã xác nhận hoàn tất hoàn tiền!', 3000, '✅');
+        loadPaymentsOverview();
+      } catch (err) {
+        showError(err.message || 'Lỗi khi xác nhận hoàn tiền.');
       }
     }
   </script>

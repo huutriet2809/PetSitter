@@ -18,6 +18,8 @@ namespace PetSitter.Services
         private readonly PetSitterContext _context;
         private readonly IConfiguration _configuration;
         private readonly INotificationService? _notificationService;
+        private readonly ILedgerService? _ledgerService;
+        private readonly IPaymentGateway? _paymentGateway;
         private readonly ILogger<BookingService>? _logger;
 
         // Ghi chú kiến trúc: _lastReconcileTimes lưu trữ throttle đối soát trong bộ nhớ tiến trình (ConcurrentDictionary).
@@ -29,18 +31,122 @@ namespace PetSitter.Services
             PetSitterContext context,
             IConfiguration configuration,
             INotificationService? notificationService = null,
+            ILedgerService? ledgerService = null,
+            IPaymentGateway? paymentGateway = null,
             ILogger<BookingService>? logger = null)
         {
             _context = context;
             _configuration = configuration;
             _notificationService = notificationService;
+            _ledgerService = ledgerService;
+            _paymentGateway = paymentGateway;
             _logger = logger;
+        }
+
+        public BookingService(
+            PetSitterContext context,
+            IConfiguration configuration,
+            INotificationService? notificationService,
+            ILogger<BookingService>? logger)
+            : this(context, configuration, notificationService, null, null, logger)
+        {
         }
 
         public static DateTime GetVnToday()
         {
             var vnNow = DateTime.UtcNow.AddHours(7);
             return DateTime.SpecifyKind(vnNow.Date, DateTimeKind.Utc);
+        }
+
+        /// <summary>
+        /// Hàm giải ngân dùng chung cho mọi luồng hoàn tất đơn (Owner confirm, Lazy auto-complete, Admin resolve).
+        /// Đơn cũ PaymentStatus == NONE thì bỏ qua giải ngân hoàn toàn (Requirement 1, 13).
+        /// </summary>
+        public async Task ReleaseEscrowToSitterAndPlatformAsync(Booking booking, DateTime nowUtc, string actionSource)
+        {
+            if (booking == null) return;
+
+            // Đơn cũ PaymentStatus == NONE hoặc không ở HELD thì bỏ qua giải ngân
+            if (booking.PaymentStatus == PaymentStatus.NONE || booking.PaymentStatus != PaymentStatus.HELD)
+            {
+                return;
+            }
+
+            var totalAmount = booking.TotalAmount > 0 ? booking.TotalAmount : (long)booking.TongTien;
+            if (totalAmount <= 0) return;
+
+            var bps = booking.CommissionBps > 0 ? booking.CommissionBps : _configuration.GetValue<int>("Payments:CommissionBps", 1000);
+            var commissionAmount = (totalAmount * bps) / 10000;
+            var sitterAmount = totalAmount - commissionAmount;
+
+            var sitterProfile = await _context.SitterProfiles.Find(s => s.SitterId == booking.SitterId).FirstOrDefaultAsync();
+            var sitterUserId = sitterProfile?.UserId ?? "unknown_sitter";
+
+            var holdHours = _configuration.GetValue<int>("Payments:EarningsHoldHours", 48);
+            var availableAt = nowUtc.AddHours(holdHours);
+
+            var journalEntry = new JournalEntry
+            {
+                EntryId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                BookingId = booking.BookingId,
+                TransactionId = "TX" + nowUtc.ToString("yyMMddHHmmss") + "REL",
+                Type = JournalType.ESCROW_RELEASE,
+                ActorUserId = "SYSTEM",
+                CreatedAt = nowUtc,
+                IdempotencyKey = $"{booking.BookingId}:ESCROW_RELEASE:1",
+                Lines = new List<JournalLine>
+                {
+                    new JournalLine
+                    {
+                        Account = LedgerAccount.ESCROW_HELD,
+                        Direction = LedgerDirection.DEBIT,
+                        Amount = totalAmount
+                    },
+                    new JournalLine
+                    {
+                        Account = LedgerAccount.PLATFORM_REVENUE,
+                        Direction = LedgerDirection.CREDIT,
+                        Amount = commissionAmount
+                    },
+                    new JournalLine
+                    {
+                        Account = LedgerAccount.SitterEarnings(sitterUserId),
+                        Direction = LedgerDirection.CREDIT,
+                        Amount = sitterAmount,
+                        AvailableAt = availableAt
+                    }
+                }
+            };
+
+            try
+            {
+                if (_ledgerService != null)
+                {
+                    await _ledgerService.RecordEntryAsync(journalEntry);
+                }
+
+                await _context.Bookings.UpdateOneAsync(
+                    b => b.BookingId == booking.BookingId,
+                    Builders<Booking>.Update.Set(b => b.PaymentStatus, PaymentStatus.RELEASED)
+                );
+
+                if (_notificationService != null && !string.IsNullOrEmpty(sitterUserId) && sitterUserId != "unknown_sitter")
+                {
+                    await _notificationService.CreateNotificationAsync(
+                        sitterUserId,
+                        NotificationType.EARNINGS_CREDITED,
+                        booking.BookingId,
+                        "Thu nhập đã được ghi nhận",
+                        $"Đơn #{booking.MaDatLich} đã hoàn tất. Bạn nhận được {sitterAmount:N0} ₫ (sau khi trừ {bps / 100.0}% hoa hồng). Số dư sẽ khả dụng sau {holdHours} giờ.",
+                        $"{booking.BookingId}:{NotificationType.EARNINGS_CREDITED}:{sitterUserId}",
+                        targetRole: "SITTER"
+                    );
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Lỗi khi ghi sổ giải ngân cho đơn {BookingId} từ nguồn {Source}", booking.BookingId, actionSource);
+            }
         }
 
         // GHI CHÚ BẢO MẬT VÀ TOÀN VẸN TRẠNG THÁI:
@@ -60,6 +166,77 @@ namespace PetSitter.Services
 
             var expiredWonBookings = new List<Booking>();
             var autoCompletedWonBookings = new List<Booking>();
+
+            // 0. Quét tìm các ứng viên ACCEPTED có PaymentStatus == PENDING_PAYMENT quá hạn PaymentDeadline -> EXPIRED (Prompt 5A)
+            var graceMinutes = _configuration.GetValue<int>("Payments:PaymentGracePeriodMinutes", 5);
+            var paymentExpiredCandidateFilter = filterBuilder.Eq(b => b.TrangThai, BookingStatus.ACCEPTED)
+                                              & filterBuilder.Eq(b => b.PaymentStatus, PaymentStatus.PENDING_PAYMENT)
+                                              & filterBuilder.Lte(b => b.PaymentDeadline, effectiveNowUtc.AddMinutes(-graceMinutes));
+
+            if (!string.IsNullOrEmpty(ownerId))
+                paymentExpiredCandidateFilter &= filterBuilder.Eq(b => b.OwnerId, ownerId);
+            if (!string.IsNullOrEmpty(sitterId))
+                paymentExpiredCandidateFilter &= filterBuilder.Eq(b => b.SitterId, sitterId);
+
+            var paymentExpiredCandidates = await _context.Bookings.Find(paymentExpiredCandidateFilter).ToListAsync();
+
+            foreach (var candidate in paymentExpiredCandidates)
+            {
+                var atomicFilter = filterBuilder.Eq(b => b.BookingId, candidate.BookingId)
+                                 & filterBuilder.Eq(b => b.TrangThai, BookingStatus.ACCEPTED)
+                                 & filterBuilder.Eq(b => b.PaymentStatus, PaymentStatus.PENDING_PAYMENT)
+                                 & filterBuilder.Lte(b => b.PaymentDeadline, effectiveNowUtc.AddMinutes(-graceMinutes));
+
+                var paymentExpiredUpdate = Builders<Booking>.Update
+                    .Set(b => b.TrangThai, BookingStatus.EXPIRED)
+                    .Set(b => b.PaymentStatus, PaymentStatus.EXPIRED)
+                    .Set(b => b.IsActive, false)
+                    .Push(b => b.History, new InquiryHistory
+                    {
+                        HanhDong = BookingStatus.EXPIRED,
+                        FromStatus = BookingStatus.ACCEPTED,
+                        NguoiThucHien = "SYSTEM",
+                        ActorUserId = null,
+                        LyDo = "Quá hạn thanh toán 24 giờ",
+                        ThoiGian = effectiveNowUtc
+                    });
+
+                var updated = await _context.Bookings.FindOneAndUpdateAsync(
+                    atomicFilter,
+                    paymentExpiredUpdate,
+                    new FindOneAndUpdateOptions<Booking> { ReturnDocument = ReturnDocument.After }
+                );
+
+                if (updated != null)
+                {
+                    expiredWonBookings.Add(updated);
+
+                    // Hủy link thanh toán PayOS (best-effort)
+                    var lastPayment = await _context.Payments
+                        .Find(p => p.BookingId == updated.BookingId && p.Status == PaymentLinkStatus.PENDING)
+                        .FirstOrDefaultAsync();
+
+                    if (lastPayment != null)
+                    {
+                        await _context.Payments.UpdateOneAsync(
+                            p => p.PaymentId == lastPayment.PaymentId,
+                            Builders<Payment>.Update.Set(p => p.Status, PaymentLinkStatus.EXPIRED)
+                        );
+
+                        if (_paymentGateway != null)
+                        {
+                            try
+                            {
+                                await _paymentGateway.CancelPaymentLinkAsync(lastPayment.OrderCode, "Đơn quá hạn thanh toán");
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger?.LogWarning(ex, "Lỗi hủy link PayOS cho orderCode {OrderCode}", lastPayment.OrderCode);
+                            }
+                        }
+                    }
+                }
+            }
 
             // 1. Quét tìm các ứng viên PENDING quá hạn 48h -> EXPIRED
             var pendingCandidateFilter = filterBuilder.Eq(b => b.TrangThai, BookingStatus.PENDING)
@@ -143,6 +320,8 @@ namespace PetSitter.Services
                 if (updated != null)
                 {
                     autoCompletedWonBookings.Add(updated);
+                    // Giải ngân tự động cho đơn hoàn tất qua đường AUTO_COMPLETED
+                    await ReleaseEscrowToSitterAndPlatformAsync(updated, effectiveNowUtc, "AUTO_COMPLETED");
                 }
             }
 
@@ -160,6 +339,18 @@ namespace PetSitter.Services
             var recentSystemBookings = new List<Booking>();
             if (shouldReconcile)
             {
+                // Đối soát tự sửa: đơn COMPLETED có PaymentStatus == HELD -> giải ngân bù (Requirement 13)
+                var stuckEscrowBookings = await _context.Bookings.Find(b =>
+                    b.TrangThai == BookingStatus.COMPLETED &&
+                    b.PaymentStatus == PaymentStatus.HELD
+                ).ToListAsync();
+
+                foreach (var stuck in stuckEscrowBookings)
+                {
+                    _logger?.LogWarning("Phát hiện đơn COMPLETED còn kẹt tiền HELD {BookingId}. Tiến hành đối soát giải ngân bù...", stuck.BookingId);
+                    await ReleaseEscrowToSitterAndPlatformAsync(stuck, effectiveNowUtc, "RECONCILIATION_BACKFILL");
+                }
+
                 var sevenDaysAgo = effectiveNowUtc.AddDays(-7);
                 var reconcileFilter = (filterBuilder.Eq(b => b.TrangThai, BookingStatus.EXPIRED) & filterBuilder.Gte(b => b.ExpiresAt, sevenDaysAgo))
                                     | (filterBuilder.Eq(b => b.TrangThai, BookingStatus.COMPLETED) & filterBuilder.Eq(b => b.AutoCompleted, true) & filterBuilder.Gte(b => b.CompletionDeadline, sevenDaysAgo));
@@ -200,6 +391,9 @@ namespace PetSitter.Services
                     // Cho các đơn EXPIRED (cả 2 bên)
                     foreach (var b in allExpiredToNotify)
                     {
+                        var isPaymentExpiry = b.PaymentStatus == PaymentStatus.EXPIRED;
+                        var reasonDesc = isPaymentExpiry ? "do không được thanh toán trong 24 giờ." : "do không được phản hồi trong 48 giờ.";
+
                         if (!string.IsNullOrEmpty(b.OwnerId))
                         {
                             var ownerDedupeKey = $"{b.BookingId}:{NotificationType.BOOKING_EXPIRED}:{b.OwnerId}";
@@ -208,7 +402,7 @@ namespace PetSitter.Services
                                 NotificationType.BOOKING_EXPIRED,
                                 b.BookingId,
                                 "Đơn đặt lịch đã hết hạn",
-                                $"Đơn đặt lịch #{b.MaDatLich} đã hết hạn do không được phản hồi trong 48 giờ.",
+                                $"Đơn đặt lịch #{b.MaDatLich} đã hết hạn {reasonDesc}",
                                 ownerDedupeKey,
                                 "OWNER"
                             ));
@@ -222,7 +416,7 @@ namespace PetSitter.Services
                                 NotificationType.BOOKING_EXPIRED,
                                 b.BookingId,
                                 "Đơn đặt lịch đã hết hạn",
-                                $"Đơn đặt lịch #{b.MaDatLich} đã hết hạn do không được phản hồi trong 48 giờ.",
+                                $"Đơn đặt lịch #{b.MaDatLich} đã hết hạn {reasonDesc}",
                                 sitterDedupeKey,
                                 "SITTER"
                             ));
@@ -376,7 +570,11 @@ namespace PetSitter.Services
 
             // 4. Calculate SitterPrice (base)
             var allSitterServices = await _context.SitterServices.Find(ss => ss.SitterId == dto.SitterId).ToListAsync();
-            var giaMotNgay = allSitterServices.Any() ? allSitterServices.Min(ss => ss.Price) : 100000;
+            if (!allSitterServices.Any() || allSitterServices.All(ss => ss.Price <= 0))
+            {
+                throw new BadRequestException("Sitter chưa cấu hình giá dịch vụ hợp lệ.");
+            }
+            var giaMotNgay = allSitterServices.Where(ss => ss.Price > 0).Min(ss => ss.Price);
             var giaSitter = giaMotNgay * soNgay;
 
             // 5. Calculate Addons
@@ -409,6 +607,18 @@ namespace PetSitter.Services
 
             // 6. Calculate Totals (Chi phí ước tính)
             var tongTien = giaSitter + tongAddons;
+            var totalAmountLong = (long)tongTien;
+
+            var minOrderAmount = _configuration.GetValue<long>("Payments:MinOrderAmount", 2000);
+            if (totalAmountLong < minOrderAmount)
+            {
+                throw new BadRequestException($"Tổng tiền đơn đặt lịch ({totalAmountLong:N0} ₫) phải tối thiểu là {minOrderAmount:N0} ₫.");
+            }
+
+            var commissionBps = _configuration.GetValue<int>("Payments:CommissionBps", 1000); // 1000 = 10%
+            var commissionAmount = (totalAmountLong * commissionBps) / 10000;
+            var sitterAmount = totalAmountLong - commissionAmount;
+
             var bookingId = MongoDB.Bson.ObjectId.GenerateNewId().ToString();
             var maDatLich = "PS" + DateTime.UtcNow.ToString("yyMMdd") + new Random().Next(1000, 9999).ToString();
 
@@ -434,6 +644,11 @@ namespace PetSitter.Services
                 GiaSitter = giaSitter,
                 TongAddons = tongAddons,
                 TongTien = tongTien,
+                TotalAmount = totalAmountLong,
+                CommissionBps = commissionBps,
+                CommissionAmount = commissionAmount,
+                SitterAmount = sitterAmount,
+                PaymentStatus = PaymentStatus.NONE,
                 TrangThai = BookingStatus.PENDING,
                 IsActive = true,
                 ExpiresAt = nowUtc.AddHours(48),
@@ -539,6 +754,225 @@ namespace PetSitter.Services
             return dtos;
         }
 
+        private async Task HandleCancellationPaymentAndRefundAsync(Booking booking, bool isSitter, DateTime nowUtc)
+        {
+            if (booking.PaymentStatus == PaymentStatus.NONE)
+            {
+                return;
+            }
+
+            if (booking.PaymentStatus == PaymentStatus.PENDING_PAYMENT)
+            {
+                await _context.Bookings.UpdateOneAsync(
+                    b => b.BookingId == booking.BookingId,
+                    Builders<Booking>.Update.Set(b => b.PaymentStatus, PaymentStatus.CANCELLED)
+                );
+
+                var pendingPayment = await _context.Payments
+                    .Find(p => p.BookingId == booking.BookingId && p.Status == PaymentLinkStatus.PENDING)
+                    .FirstOrDefaultAsync();
+
+                if (pendingPayment != null)
+                {
+                    await _context.Payments.UpdateOneAsync(
+                        p => p.PaymentId == pendingPayment.PaymentId,
+                        Builders<Payment>.Update.Set(p => p.Status, PaymentLinkStatus.CANCELLED)
+                    );
+
+                    if (_paymentGateway != null)
+                    {
+                        try
+                        {
+                            await _paymentGateway.CancelPaymentLinkAsync(pendingPayment.OrderCode, "Đơn đã bị hủy");
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger?.LogWarning(ex, "Lỗi khi hủy payment link PayOS cho orderCode {OrderCode}", pendingPayment.OrderCode);
+                        }
+                    }
+                }
+                return;
+            }
+
+            if (booking.PaymentStatus == PaymentStatus.HELD)
+            {
+                var totalAmount = booking.TotalAmount > 0 ? booking.TotalAmount : (long)booking.TongTien;
+                if (totalAmount <= 0) return;
+
+                var sitterProfile = await _context.SitterProfiles.Find(s => s.SitterId == booking.SitterId).FirstOrDefaultAsync();
+                var sitterUserId = sitterProfile?.UserId ?? "unknown_sitter";
+                var holdHours = _configuration.GetValue<int>("Payments:EarningsHoldHours", 48);
+
+                if (isSitter)
+                {
+                    // Sitter hủy -> Hoàn 100% cho Owner (Requirement 14)
+                    var refundEntry = new JournalEntry
+                    {
+                        EntryId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                        BookingId = booking.BookingId,
+                        TransactionId = "TX" + nowUtc.ToString("yyMMddHHmmss") + "SITCAN",
+                        Type = JournalType.REFUND_PENDING,
+                        ActorUserId = booking.SitterId,
+                        CreatedAt = nowUtc,
+                        IdempotencyKey = $"{booking.BookingId}:REFUND_PENDING:SITTER_CANCEL",
+                        Lines = new List<JournalLine>
+                        {
+                            new JournalLine
+                            {
+                                Account = LedgerAccount.ESCROW_HELD,
+                                Direction = LedgerDirection.DEBIT,
+                                Amount = totalAmount
+                            },
+                            new JournalLine
+                            {
+                                Account = LedgerAccount.REFUND_PENDING,
+                                Direction = LedgerDirection.CREDIT,
+                                Amount = totalAmount
+                            }
+                        }
+                    };
+
+                    if (_ledgerService != null) await _ledgerService.RecordEntryAsync(refundEntry);
+
+                    var refundReq = new RefundRequest
+                    {
+                        RefundId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                        BookingId = booking.BookingId,
+                        OwnerUserId = booking.OwnerId,
+                        Amount = totalAmount,
+                        Reason = "SITTER_CANCELLED",
+                        Status = RefundStatus.REFUND_PENDING,
+                        CreatedAt = nowUtc
+                    };
+                    await _context.RefundRequests.InsertOneAsync(refundReq);
+
+                    await _context.Bookings.UpdateOneAsync(
+                        b => b.BookingId == booking.BookingId,
+                        Builders<Booking>.Update.Set(b => b.PaymentStatus, PaymentStatus.REFUND_PENDING)
+                    );
+                }
+                else
+                {
+                    // Owner hủy -> Theo thang giờ trước NgayBatDau 00:00:00 giờ VN (Requirement 7 & 14)
+                    var vnStartMidnightUtc = new DateTimeOffset(booking.NgayBatDau.Year, booking.NgayBatDau.Month, booking.NgayBatDau.Day, 0, 0, 0, TimeSpan.FromHours(7)).UtcDateTime;
+                    var remaining = vnStartMidnightUtc - nowUtc;
+
+                    if (remaining >= TimeSpan.FromHours(48))
+                    {
+                        // Nấc 1 (>= 48h): Hoàn 100%
+                        var refundEntry = new JournalEntry
+                        {
+                            EntryId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                            BookingId = booking.BookingId,
+                            TransactionId = "TX" + nowUtc.ToString("yyMMddHHmmss") + "OWNCAN48",
+                            Type = JournalType.REFUND_PENDING,
+                            ActorUserId = booking.OwnerId,
+                            CreatedAt = nowUtc,
+                            IdempotencyKey = $"{booking.BookingId}:REFUND_PENDING:OWNER_CANCEL_100",
+                            Lines = new List<JournalLine>
+                            {
+                                new JournalLine { Account = LedgerAccount.ESCROW_HELD, Direction = LedgerDirection.DEBIT, Amount = totalAmount },
+                                new JournalLine { Account = LedgerAccount.REFUND_PENDING, Direction = LedgerDirection.CREDIT, Amount = totalAmount }
+                            }
+                        };
+                        if (_ledgerService != null) await _ledgerService.RecordEntryAsync(refundEntry);
+
+                        var refundReq = new RefundRequest
+                        {
+                            RefundId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                            BookingId = booking.BookingId,
+                            OwnerUserId = booking.OwnerId,
+                            Amount = totalAmount,
+                            Reason = "OWNER_CANCELLED_GE_48H",
+                            Status = RefundStatus.REFUND_PENDING,
+                            CreatedAt = nowUtc
+                        };
+                        await _context.RefundRequests.InsertOneAsync(refundReq);
+
+                        await _context.Bookings.UpdateOneAsync(
+                            b => b.BookingId == booking.BookingId,
+                            Builders<Booking>.Update.Set(b => b.PaymentStatus, PaymentStatus.REFUND_PENDING)
+                        );
+                    }
+                    else if (remaining >= TimeSpan.FromHours(24))
+                    {
+                        // Nấc 2 (24h - 48h): Hoàn 50%, đền bù Sitter 50%
+                        var refundAmount = (totalAmount * 50) / 100;
+                        var compensation = totalAmount - refundAmount;
+                        var bps = booking.CommissionBps > 0 ? booking.CommissionBps : 1000;
+                        var commission = (compensation * bps) / 10000;
+                        var sitterNet = compensation - commission;
+
+                        var splitEntry = new JournalEntry
+                        {
+                            EntryId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                            BookingId = booking.BookingId,
+                            TransactionId = "TX" + nowUtc.ToString("yyMMddHHmmss") + "OWNCAN24",
+                            Type = JournalType.REFUND_PENDING,
+                            ActorUserId = booking.OwnerId,
+                            CreatedAt = nowUtc,
+                            IdempotencyKey = $"{booking.BookingId}:REFUND_PENDING:OWNER_CANCEL_50",
+                            Lines = new List<JournalLine>
+                            {
+                                new JournalLine { Account = LedgerAccount.ESCROW_HELD, Direction = LedgerDirection.DEBIT, Amount = totalAmount },
+                                new JournalLine { Account = LedgerAccount.REFUND_PENDING, Direction = LedgerDirection.CREDIT, Amount = refundAmount },
+                                new JournalLine { Account = LedgerAccount.PLATFORM_REVENUE, Direction = LedgerDirection.CREDIT, Amount = commission },
+                                new JournalLine { Account = LedgerAccount.SitterEarnings(sitterUserId), Direction = LedgerDirection.CREDIT, Amount = sitterNet, AvailableAt = nowUtc.AddHours(holdHours) }
+                            }
+                        };
+                        if (_ledgerService != null) await _ledgerService.RecordEntryAsync(splitEntry);
+
+                        var refundReq = new RefundRequest
+                        {
+                            RefundId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                            BookingId = booking.BookingId,
+                            OwnerUserId = booking.OwnerId,
+                            Amount = refundAmount,
+                            Reason = "OWNER_CANCELLED_24_TO_48H",
+                            Status = RefundStatus.REFUND_PENDING,
+                            CreatedAt = nowUtc
+                        };
+                        await _context.RefundRequests.InsertOneAsync(refundReq);
+
+                        await _context.Bookings.UpdateOneAsync(
+                            b => b.BookingId == booking.BookingId,
+                            Builders<Booking>.Update.Set(b => b.PaymentStatus, PaymentStatus.REFUND_PENDING)
+                        );
+                    }
+                    else
+                    {
+                        // Nấc 3 (< 24h): Hoàn 0%, đền bù Sitter 100%
+                        var bps = booking.CommissionBps > 0 ? booking.CommissionBps : 1000;
+                        var commission = (totalAmount * bps) / 10000;
+                        var sitterNet = totalAmount - commission;
+
+                        var forfeitEntry = new JournalEntry
+                        {
+                            EntryId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                            BookingId = booking.BookingId,
+                            TransactionId = "TX" + nowUtc.ToString("yyMMddHHmmss") + "OWNCAN0",
+                            Type = JournalType.ESCROW_RELEASE,
+                            ActorUserId = booking.OwnerId,
+                            CreatedAt = nowUtc,
+                            IdempotencyKey = $"{booking.BookingId}:ESCROW_RELEASE:OWNER_CANCEL_0",
+                            Lines = new List<JournalLine>
+                            {
+                                new JournalLine { Account = LedgerAccount.ESCROW_HELD, Direction = LedgerDirection.DEBIT, Amount = totalAmount },
+                                new JournalLine { Account = LedgerAccount.PLATFORM_REVENUE, Direction = LedgerDirection.CREDIT, Amount = commission },
+                                new JournalLine { Account = LedgerAccount.SitterEarnings(sitterUserId), Direction = LedgerDirection.CREDIT, Amount = sitterNet, AvailableAt = nowUtc.AddHours(holdHours) }
+                            }
+                        };
+                        if (_ledgerService != null) await _ledgerService.RecordEntryAsync(forfeitEntry);
+
+                        await _context.Bookings.UpdateOneAsync(
+                            b => b.BookingId == booking.BookingId,
+                            Builders<Booking>.Update.Set(b => b.PaymentStatus, PaymentStatus.RELEASED)
+                        );
+                    }
+                }
+            }
+        }
+
         public async Task CancelBookingAsync(string currentUserId, string bookingId, string? lyDo = null, string? expectedStatus = null)
         {
             var booking = await _context.Bookings.Find(b => b.BookingId == bookingId).FirstOrDefaultAsync();
@@ -604,6 +1038,9 @@ namespace PetSitter.Services
                 if (updated == null)
                     throw new ConflictException("Không thể hủy đơn. Trạng thái hoặc điều kiện thời gian của đơn đã thay đổi.");
 
+                // Xử lý tài chính/hoàn tiền khi Sitter hủy
+                await HandleCancellationPaymentAndRefundAsync(booking, isSitter: true, nowUtc);
+
                 if (_notificationService != null && !string.IsNullOrEmpty(booking.OwnerId))
                 {
                     try
@@ -653,6 +1090,8 @@ namespace PetSitter.Services
                     var updated = await _context.Bookings.FindOneAndUpdateAsync(filter, update);
                     if (updated == null)
                         throw new ConflictException("Không thể hủy đơn. Trạng thái đơn đã thay đổi.");
+
+                    await HandleCancellationPaymentAndRefundAsync(booking, isSitter: false, nowUtc);
                 }
                 else if (booking.TrangThai == BookingStatus.ACCEPTED)
                 {
@@ -679,6 +1118,8 @@ namespace PetSitter.Services
                     var updated = await _context.Bookings.FindOneAndUpdateAsync(filter, update);
                     if (updated == null)
                         throw new ConflictException("Không thể hủy đơn. Trạng thái hoặc điều kiện thời gian của đơn đã thay đổi.");
+
+                    await HandleCancellationPaymentAndRefundAsync(booking, isSitter: false, nowUtc);
                 }
                 else
                 {
@@ -777,11 +1218,12 @@ namespace PetSitter.Services
             if (deadlineDays <= 0) deadlineDays = 3;
             var completionDeadline = nowUtc.AddDays(deadlineDays);
 
-            // Chỉ hoàn tất khi TrangThai == ACCEPTED và NgayKetThuc < vnToday (qua ngày kết thúc)
+            // Ràng buộc HELD: Chỉ áp cho đơn có PaymentStatus khác NONE (Yêu cầu 1)
             var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, bookingId)
                        & Builders<Booking>.Filter.Eq(b => b.SitterId, sitterProfile.SitterId)
                        & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.ACCEPTED)
-                       & Builders<Booking>.Filter.Lt(b => b.NgayKetThuc, vnToday);
+                       & Builders<Booking>.Filter.Lt(b => b.NgayKetThuc, vnToday)
+                       & (Builders<Booking>.Filter.Eq(b => b.PaymentStatus, PaymentStatus.NONE) | Builders<Booking>.Filter.Eq(b => b.PaymentStatus, PaymentStatus.HELD));
 
             var update = Builders<Booking>.Update
                 .Set(b => b.TrangThai, BookingStatus.COMPLETION_PENDING)
@@ -805,6 +1247,9 @@ namespace PetSitter.Services
                 var existing = await _context.Bookings.Find(b => b.BookingId == bookingId).FirstOrDefaultAsync();
                 if (existing == null || existing.SitterId != sitterProfile.SitterId)
                     throw new NotFoundException("Không tìm thấy thông tin đặt lịch.");
+
+                if (existing.PaymentStatus != PaymentStatus.NONE && existing.PaymentStatus != PaymentStatus.HELD)
+                    throw new BadRequestException("Chưa thể đánh dấu hoàn tất vì đơn chưa hoàn tất thanh toán (tiền chưa được giữ trong hệ thống).");
 
                 if (existing.TrangThai == BookingStatus.ACCEPTED && existing.NgayKetThuc >= vnToday)
                     throw new BadRequestException("Chưa thể hoàn thành booking do chưa qua ngày kết thúc.");
@@ -879,6 +1324,9 @@ namespace PetSitter.Services
 
                 throw new ConflictException("Không thể xác nhận hoàn tất. Trạng thái đơn không hợp lệ hoặc đã thay đổi.");
             }
+
+            // Giải ngân tiền cọc cho Sitter và Nền tảng
+            await ReleaseEscrowToSitterAndPlatformAsync(result, nowUtc, "OWNER_CONFIRMED");
 
             if (_notificationService != null)
             {
@@ -978,10 +1426,6 @@ namespace PetSitter.Services
                     }
 
                     // 2. Cho tất cả Admin (giới hạn tối đa 50 tài khoản để tránh tràn tải / write amplification)
-                    // Ghi chú kiến trúc & giới hạn tải: Giới hạn tối đa 50 tài khoản Admin được thông báo khi có khiếu nại
-                    // nhằm ngăn chặn bùng nổ fan-out tải ghi trong CSDL nếu số lượng Admin lớn.
-                    // Trong hệ thống mở rộng tương lai, nên sử dụng queue/message broker (RabbitMQ/Kafka) hoặc phân luồng
-                    // thông báo theo nhóm trực/ca trực thay vì fan-out trực tiếp trong luồng request HTTP.
                     var admins = await _context.Users.Find(u => u.Role == "ADMIN").Limit(50).ToListAsync();
                     foreach (var admin in admins)
                     {
@@ -1011,8 +1455,8 @@ namespace PetSitter.Services
             if (dto == null)
                 throw new BadRequestException("Dữ liệu không hợp lệ.");
 
-            if (dto.Resolution != BookingStatus.COMPLETED && dto.Resolution != BookingStatus.CANCELLED)
-                throw new BadRequestException("Resolution chỉ nhận COMPLETED hoặc CANCELLED.");
+            if (dto.Resolution != BookingStatus.COMPLETED && dto.Resolution != BookingStatus.CANCELLED && dto.Resolution != "SPLIT")
+                throw new BadRequestException("Resolution chỉ nhận COMPLETED, CANCELLED hoặc SPLIT.");
 
             if (string.IsNullOrWhiteSpace(dto.Note))
                 throw new BadRequestException("Ghi chú xử lý là bắt buộc.");
@@ -1033,15 +1477,27 @@ namespace PetSitter.Services
             if (sitterProfile != null && sitterProfile.UserId == adminUserId)
                 throw new BadRequestException("Admin không thể tự xử lý đơn khiếu nại của chính mình với tư cách là người chăm sóc.");
 
+            var totalAmount = booking.TotalAmount > 0 ? booking.TotalAmount : (long)booking.TongTien;
+            var sitterUserId = sitterProfile?.UserId ?? "unknown_sitter";
+            var holdHours = _configuration.GetValue<int>("Payments:EarningsHoldHours", 48);
+
+            if (dto.Resolution == "SPLIT")
+            {
+                if (!dto.RefundToOwnerAmount.HasValue || dto.RefundToOwnerAmount.Value <= 0 || dto.RefundToOwnerAmount.Value >= totalAmount)
+                {
+                    throw new BadRequestException($"Với phương án SPLIT, số tiền hoàn cho chủ nuôi phải lớn hơn 0 và nhỏ hơn tổng giá trị đơn ({totalAmount:N0} ₫).");
+                }
+            }
+
             var nowUtc = DateTime.UtcNow;
-            var isCompleted = dto.Resolution == BookingStatus.COMPLETED;
-            var actionName = isCompleted ? "ADMIN_RESOLVED_COMPLETED" : "ADMIN_RESOLVED_CANCELLED";
+            var targetStatus = dto.Resolution == BookingStatus.CANCELLED ? BookingStatus.CANCELLED : BookingStatus.COMPLETED;
+            var actionName = dto.Resolution == "SPLIT" ? "ADMIN_RESOLVED_SPLIT" : (dto.Resolution == BookingStatus.COMPLETED ? "ADMIN_RESOLVED_COMPLETED" : "ADMIN_RESOLVED_CANCELLED");
 
             var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, bookingId)
                        & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.DISPUTED);
 
             var update = Builders<Booking>.Update
-                .Set(b => b.TrangThai, dto.Resolution)
+                .Set(b => b.TrangThai, targetStatus)
                 .Set(b => b.IsActive, false)
                 .Set(b => b.AdminResolutionNote, trimmedNote)
                 .Set(b => b.ResolvedByAdmin, true)
@@ -1060,11 +1516,105 @@ namespace PetSitter.Services
             if (result == null)
                 throw new ConflictException("Không thể xử lý tranh chấp. Đơn không ở trạng thái DISPUTED hoặc đã được xử lý.");
 
+            // Xử lý tài chính theo từng Resolution
+            if (booking.PaymentStatus == PaymentStatus.HELD && totalAmount > 0)
+            {
+                if (dto.Resolution == BookingStatus.COMPLETED)
+                {
+                    // Giải ngân toàn bộ cho Sitter + hoa hồng nền tảng
+                    await ReleaseEscrowToSitterAndPlatformAsync(result, nowUtc, "ADMIN_RESOLVED_COMPLETED");
+                }
+                else if (dto.Resolution == BookingStatus.CANCELLED)
+                {
+                    // Hoàn tiền 100% cho chủ nuôi
+                    var refundEntry = new JournalEntry
+                    {
+                        EntryId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                        BookingId = booking.BookingId,
+                        TransactionId = "TX" + nowUtc.ToString("yyMMddHHmmss") + "ADMCAN",
+                        Type = JournalType.REFUND_PENDING,
+                        ActorUserId = adminUserId,
+                        CreatedAt = nowUtc,
+                        IdempotencyKey = $"{booking.BookingId}:REFUND_PENDING:ADMIN_CANCEL",
+                        Lines = new List<JournalLine>
+                        {
+                            new JournalLine { Account = LedgerAccount.ESCROW_HELD, Direction = LedgerDirection.DEBIT, Amount = totalAmount },
+                            new JournalLine { Account = LedgerAccount.REFUND_PENDING, Direction = LedgerDirection.CREDIT, Amount = totalAmount }
+                        }
+                    };
+                    if (_ledgerService != null) await _ledgerService.RecordEntryAsync(refundEntry);
+
+                    var refundReq = new RefundRequest
+                    {
+                        RefundId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                        BookingId = booking.BookingId,
+                        OwnerUserId = booking.OwnerId,
+                        Amount = totalAmount,
+                        Reason = "ADMIN_RESOLVED_CANCELLED",
+                        AdminNote = trimmedNote,
+                        Status = RefundStatus.REFUND_PENDING,
+                        CreatedAt = nowUtc
+                    };
+                    await _context.RefundRequests.InsertOneAsync(refundReq);
+
+                    await _context.Bookings.UpdateOneAsync(
+                        b => b.BookingId == booking.BookingId,
+                        Builders<Booking>.Update.Set(b => b.PaymentStatus, PaymentStatus.REFUND_PENDING)
+                    );
+                }
+                else if (dto.Resolution == "SPLIT")
+                {
+                    // Phân chia: Hoàn RefundToOwnerAmount cho Owner, phần còn lại giải ngân cho Sitter sau phí
+                    var refundAmount = dto.RefundToOwnerAmount!.Value;
+                    var remainderForSitter = totalAmount - refundAmount;
+                    var bps = booking.CommissionBps > 0 ? booking.CommissionBps : 1000;
+                    var commission = (remainderForSitter * bps) / 10000;
+                    var netSitter = remainderForSitter - commission;
+
+                    var splitEntry = new JournalEntry
+                    {
+                        EntryId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                        BookingId = booking.BookingId,
+                        TransactionId = "TX" + nowUtc.ToString("yyMMddHHmmss") + "ADMSPLIT",
+                        Type = JournalType.REFUND_PENDING,
+                        ActorUserId = adminUserId,
+                        CreatedAt = nowUtc,
+                        IdempotencyKey = $"{booking.BookingId}:SPLIT:ADMIN_RESOLVE",
+                        Lines = new List<JournalLine>
+                        {
+                            new JournalLine { Account = LedgerAccount.ESCROW_HELD, Direction = LedgerDirection.DEBIT, Amount = totalAmount },
+                            new JournalLine { Account = LedgerAccount.REFUND_PENDING, Direction = LedgerDirection.CREDIT, Amount = refundAmount },
+                            new JournalLine { Account = LedgerAccount.PLATFORM_REVENUE, Direction = LedgerDirection.CREDIT, Amount = commission },
+                            new JournalLine { Account = LedgerAccount.SitterEarnings(sitterUserId), Direction = LedgerDirection.CREDIT, Amount = netSitter, AvailableAt = nowUtc.AddHours(holdHours) }
+                        }
+                    };
+                    if (_ledgerService != null) await _ledgerService.RecordEntryAsync(splitEntry);
+
+                    var refundReq = new RefundRequest
+                    {
+                        RefundId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                        BookingId = booking.BookingId,
+                        OwnerUserId = booking.OwnerId,
+                        Amount = refundAmount,
+                        Reason = "ADMIN_RESOLVED_SPLIT",
+                        AdminNote = trimmedNote,
+                        Status = RefundStatus.REFUND_PENDING,
+                        CreatedAt = nowUtc
+                    };
+                    await _context.RefundRequests.InsertOneAsync(refundReq);
+
+                    await _context.Bookings.UpdateOneAsync(
+                        b => b.BookingId == booking.BookingId,
+                        Builders<Booking>.Update.Set(b => b.PaymentStatus, PaymentStatus.PARTIALLY_REFUNDED)
+                    );
+                }
+            }
+
             if (_notificationService != null)
             {
                 try
                 {
-                    var resolutionText = isCompleted ? "Hoàn tất dịch vụ" : "Hủy đơn";
+                    var resolutionText = dto.Resolution == "SPLIT" ? $"Phân chia tiền: hoàn {dto.RefundToOwnerAmount:N0} ₫ cho chủ nuôi" : (dto.Resolution == BookingStatus.COMPLETED ? "Hoàn tất dịch vụ" : "Hủy đơn và hoàn tiền");
 
                     // 1. Cho Chủ nuôi
                     if (!string.IsNullOrEmpty(result.OwnerId))
@@ -1171,6 +1721,12 @@ namespace PetSitter.Services
                 GiaSitter = booking.GiaSitter,
                 TongAddons = booking.TongAddons,
                 TongTien = booking.TongTien,
+                TotalAmount = booking.TotalAmount > 0 ? booking.TotalAmount : (long)booking.TongTien,
+                CommissionBps = booking.CommissionBps,
+                CommissionAmount = booking.CommissionAmount,
+                SitterAmount = booking.SitterAmount,
+                PaymentStatus = booking.PaymentStatus ?? PaymentStatus.NONE,
+                PaymentDeadline = booking.PaymentDeadline,
                 TrangThai = booking.TrangThai,
                 IsActive = booking.IsActive,
                 ExpiresAt = booking.ExpiresAt,
