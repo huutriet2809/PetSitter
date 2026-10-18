@@ -31,4 +31,15 @@ namespace PetSitter.Exceptions
     {
         public ConflictException(string message) : base(message, 409) { }
     }
+
+    public class PriceMismatchException : AppException
+    {
+        public long NewTotal { get; }
+        public PriceMismatchException(long expectedTotal, long newTotal) 
+            : base($"Giá dịch vụ đã thay đổi hoặc không khớp. Giá bạn gửi: {expectedTotal:N0} ₫, giá mới nhất: {newTotal:N0} ₫. Vui lòng cập nhật báo giá.", 409)
+        {
+            NewTotal = newTotal;
+        }
+    }
 }
+

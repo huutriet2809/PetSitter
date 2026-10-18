@@ -234,7 +234,8 @@ namespace TestPaymentFlow
                     SitterServiceId = ObjectId.GenerateNewId().ToString(),
                     SitterId = sitterProfile.SitterId,
                     ServiceId = ObjectId.GenerateNewId().ToString(),
-                    Price = 200000
+                    Price = 200000,
+                    IsPrimary = true
                 };
                 await context.SitterServices.InsertOneAsync(sitterService);
 
@@ -1792,6 +1793,10 @@ namespace TestPaymentFlow
 
                         // Ghi nhận bút toán ban đầu qua kế hoạch
                         await bookingService.ExecuteSettlementPlanAsync(b.Settlement, b.BookingId, nowUtc, "SYSTEM");
+                        if (b.Settlement.RefundAmount > 0)
+                        {
+                            await bookingService.CreateOrGetRefundRequestAsync(b, b.Settlement, nowUtc, "INITIAL_TEST20");
+                        }
 
                         // 1. Chạy đối soát lần 1 -> 0 bút toán mới
                         var rec1 = await bookingService.ReconcileMissingLedgerEntriesAsync(nowUtc, b.BookingId, force: true);
@@ -1821,8 +1826,31 @@ namespace TestPaymentFlow
                 {
                     var nowUtc = DateTime.UtcNow;
                     var vnToday = nowUtc.AddHours(7).Date;
-                    var bCancelT2 = CreateHeldBooking("EARN_CAN_T2", vnToday.AddDays(2), 600000, ownerUser.UserId, sitterProfile.SitterId, sitterUser.UserId);
-                    bCancelT2.SitterUserId = sitterUser.UserId;
+
+                    // Sử dụng Sitter riêng biệt cho ca này để kiểm tra chính xác số dư tuyệt đối 270.000 ₫ không bị cộng dồn
+                    var sitterUserW = new User
+                    {
+                        UserId = ObjectId.GenerateNewId().ToString(),
+                        Email = $"sitter_w_{Guid.NewGuid().ToString("N")[..6]}@test.com",
+                        FullName = "Sitter Dedicated W",
+                        Role = "SITTER"
+                    };
+                    await context.Users.InsertOneAsync(sitterUserW);
+                    createdUserIds.Add(sitterUserW.UserId);
+
+                    var sitterProfileW = new SitterProfile
+                    {
+                        SitterId = ObjectId.GenerateNewId().ToString(),
+                        UserId = sitterUserW.UserId,
+                        Status = "Approved",
+                        IsVerified = true,
+                        Bio = "Dedicated Sitter for Tier 2 Cancel Test"
+                    };
+                    await context.SitterProfiles.InsertOneAsync(sitterProfileW);
+                    createdSitterIds.Add(sitterProfileW.SitterId);
+
+                    var bCancelT2 = CreateHeldBooking("EARN_CAN_T2", vnToday.AddDays(2), 600000, ownerUser.UserId, sitterProfileW.SitterId, sitterUserW.UserId);
+                    bCancelT2.SitterUserId = sitterUserW.UserId;
                     await context.Bookings.InsertOneAsync(bCancelT2);
                     createdBookingIds.Add(bCancelT2.BookingId);
                     await ledgerService.RecordEntryAsync(new JournalEntry
@@ -1847,20 +1875,20 @@ namespace TestPaymentFlow
                     // Kiểm tra bút toán ghi nhận cho Sitter
                     var sitterT2Entry = await context.JournalEntries.Find(j => j.BookingId == bCancelT2.BookingId && j.Type == "CANCEL_OWNER_50").FirstOrDefaultAsync();
                     AssertTrue(sitterT2Entry != null, "(w) Bút toán hủy nấc 2 CANCEL_OWNER_50 được tạo thành công");
-                    var sitterLineT2 = sitterT2Entry?.Lines.FirstOrDefault(l => l.Account == LedgerAccounts.SitterEarnings(sitterUser.UserId));
+                    var sitterLineT2 = sitterT2Entry?.Lines.FirstOrDefault(l => l.Account == LedgerAccounts.SitterEarnings(sitterUserW.UserId));
                     AssertTrue(sitterLineT2 != null && sitterLineT2.Amount == 270000,
                         $"(w) Sitter nhận đền bù đúng số tiền sau hoa hồng: 270.000 ₫ (thực tế: {sitterLineT2?.Amount:N0} ₫)");
                     AssertTrue(sitterLineT2?.AvailableAt.HasValue == true && sitterLineT2.AvailableAt.Value > nowUtc,
                         $"(w) Dòng đền bù có AvailableAt hợp lệ tương lai = {sitterLineT2?.AvailableAt:O}");
 
-                    // Kiểm tra trên API GetSitterEarningsAsync
-                    var earningsBefore = await ledgerService.GetSitterEarningsAsync(sitterUser.UserId, nowUtc);
-                    AssertTrue(earningsBefore.PendingHoldBalance >= 270000,
-                        $"(w) Trước AvailableAt: Tiền đền bù nằm trong PendingHoldBalance ({earningsBefore.PendingHoldBalance:N0} ₫)");
+                    // Kiểm tra trên API GetSitterEarningsAsync với Sitter riêng (đảm bảo đúng chính xác 270.000 ₫)
+                    var earningsBefore = await ledgerService.GetSitterEarningsAsync(sitterUserW.UserId, nowUtc);
+                    AssertTrue(earningsBefore.PendingHoldBalance == 270000 && earningsBefore.AvailableBalance == 0,
+                        $"(w) Trước AvailableAt: PendingHoldBalance đúng chính xác 270.000 ₫ (thực tế: {earningsBefore.PendingHoldBalance:N0} ₫), AvailableBalance = 0 ₫");
 
-                    var earningsAfter = await ledgerService.GetSitterEarningsAsync(sitterUser.UserId, nowUtc.AddHours(50));
-                    AssertTrue(earningsAfter.AvailableBalance >= 270000,
-                        $"(w) Sau AvailableAt: Tiền đền bù chuyển sang AvailableBalance khả dụng ({earningsAfter.AvailableBalance:N0} ₫)");
+                    var earningsAfter = await ledgerService.GetSitterEarningsAsync(sitterUserW.UserId, nowUtc.AddHours(50));
+                    AssertTrue(earningsAfter.AvailableBalance == 270000 && earningsAfter.PendingHoldBalance == 0,
+                        $"(w) Sau AvailableAt: AvailableBalance đúng chính xác 270.000 ₫ (thực tế: {earningsAfter.AvailableBalance:N0} ₫), PendingHoldBalance = 0 ₫");
                 }
 
                 // =========================================================================
@@ -1971,6 +1999,201 @@ namespace TestPaymentFlow
                     // Kiểm tra lại bất biến toàn cục: ESCROW_HELD không bị lệch
                     var postGlobal = await ledgerService.VerifyGlobalEscrowInvariantAsync();
                     AssertTrue(postGlobal.IsValid, "(y) Bất biến ESCROW_HELD toàn hệ thống VẪN HỢP LỆ sau giao dịch bất thường");
+                }
+
+                // =========================================================================
+                // TEST 24: REFUNDREQUEST PAYMENTID=NULL (KHÔNG BỊ TRÙNG INDEX) VÀ ĐỐI SOÁT BÙ REFUNDREQUEST THIẾU
+                // =========================================================================
+                Console.WriteLine("\n--- TEST 24: RefundRequest PaymentId=null (nhiều đơn không payment) & Đối soát bù RefundRequest thiếu ---");
+                {
+                    var nowUtc = DateTime.UtcNow;
+                    var bNoPay1 = CreateHeldBooking("NO_PAY_1", nowUtc.AddDays(10), 300000, ownerUser.UserId, sitterProfile.SitterId, sitterUser.UserId);
+                    var bNoPay2 = CreateHeldBooking("NO_PAY_2", nowUtc.AddDays(12), 400000, ownerUser.UserId, sitterProfile.SitterId, sitterUser.UserId);
+                    await context.Bookings.InsertManyAsync(new[] { bNoPay1, bNoPay2 });
+                    createdBookingIds.Add(bNoPay1.BookingId);
+                    createdBookingIds.Add(bNoPay2.BookingId);
+
+                    var plan1 = new SettlementPlan
+                    {
+                        SettlementKey = LedgerIdempotencyKeys.CancelOwner100(bNoPay1.BookingId),
+                        SettlementType = "CANCEL_OWNER_100",
+                        TotalAmount = 300000,
+                        RefundAmount = 300000,
+                        ClaimedAt = nowUtc
+                    };
+                    var plan2 = new SettlementPlan
+                    {
+                        SettlementKey = LedgerIdempotencyKeys.CancelOwner100(bNoPay2.BookingId),
+                        SettlementType = "CANCEL_OWNER_100",
+                        TotalAmount = 400000,
+                        RefundAmount = 400000,
+                        ClaimedAt = nowUtc
+                    };
+
+                    // Cả 2 đơn đều không có bản ghi Payment nào -> PaymentId = null
+                    await bookingService.CreateOrGetRefundRequestAsync(bNoPay1, plan1, nowUtc, "CANCEL_TEST_1");
+                    await bookingService.CreateOrGetRefundRequestAsync(bNoPay2, plan2, nowUtc, "CANCEL_TEST_2");
+
+                    var ref1 = await context.RefundRequests.Find(r => r.BookingId == bNoPay1.BookingId).FirstOrDefaultAsync();
+                    var ref2 = await context.RefundRequests.Find(r => r.BookingId == bNoPay2.BookingId).FirstOrDefaultAsync();
+
+                    AssertTrue(ref1 != null && ref2 != null,
+                        "Cả hai đơn không có payment đều tạo thành công RefundRequest với PaymentId=null");
+                    AssertTrue(ref1?.PaymentId == null && ref2?.PaymentId == null,
+                        "Cả hai RefundRequest đều lưu PaymentId là null (không dùng string.Empty)");
+
+                    // Thử gọi lại CreateOrGetRefundRequestAsync để kiểm tra idempotent
+                    await bookingService.CreateOrGetRefundRequestAsync(bNoPay1, plan1, nowUtc, "CANCEL_TEST_1_DUPLICATE");
+                    var ref1Count = await context.RefundRequests.CountDocumentsAsync(r => r.BookingId == bNoPay1.BookingId);
+                    AssertTrue(ref1Count == 1, "Gọi lại CreateOrGetRefundRequestAsync hoàn toàn idempotent (chỉ 1 bản ghi)");
+
+                    // Kiểm tra xóa một RefundRequest rồi đối soát bù
+                    // Lưu settlement plan vào bNoPay1 và cập nhật PaymentStatus
+                    await context.Bookings.UpdateOneAsync(
+                        b => b.BookingId == bNoPay1.BookingId,
+                        Builders<Booking>.Update
+                            .Set(b => b.TrangThai, BookingStatus.CANCELLED)
+                            .Set(b => b.PaymentStatus, PaymentStatus.REFUND_PENDING)
+                            .Set(b => b.Settlement, plan1)
+                            .Set(b => b.ClaimedAt, nowUtc)
+                    );
+
+                    // Xóa RefundRequest của bNoPay1
+                    await context.RefundRequests.DeleteOneAsync(r => r.BookingId == bNoPay1.BookingId);
+                    var beforeReconCount = await context.RefundRequests.CountDocumentsAsync(r => r.BookingId == bNoPay1.BookingId);
+                    AssertTrue(beforeReconCount == 0, "Đã xóa RefundRequest của đơn 1 trước đối soát");
+
+                    // Chạy đối soát
+                    var reconRepaired = await bookingService.ReconcileMissingLedgerEntriesAsync(nowUtc, bNoPay1.BookingId, force: true);
+                    AssertTrue(reconRepaired > 0, "Đối soát phát hiện và sửa bù");
+
+                    var restoredRef1 = await context.RefundRequests.Find(r => r.BookingId == bNoPay1.BookingId).FirstOrDefaultAsync();
+                    AssertTrue(restoredRef1 != null && restoredRef1.Amount == 300000,
+                        $"Đối soát đã tự động bù thành công RefundRequest bị thiếu (số tiền: {restoredRef1?.Amount:N0} ₫)");
+                }
+
+                // =========================================================================
+                // TEST 25: EXPECTEDTOTAL LỆCH -> 409 CONFLICT KÈM GIÁ MỚI & KIỂM TRA ISPRIMARY
+                // =========================================================================
+                Console.WriteLine("\n--- TEST 25: ExpectedTotal lệch -> 409 Conflict kèm giá mới & Kiểm tra IsPrimary ---");
+                {
+                    var startDate = DateTime.UtcNow.Date.AddDays(20);
+                    var endDate = startDate.AddDays(1); // 2 ngày inclusive = 400.000 ₫
+
+                    // 1. Tạo đơn gửi expectedTotal sai (350.000 ₫ thay vì 400.000 ₫)
+                    var wrongDto = new CreateBookingDto
+                    {
+                        SitterId = sitterProfile.SitterId,
+                        ServiceId = sitterService.ServiceId,
+                        NgayBatDau = startDate.ToString("yyyy-MM-dd"),
+                        NgayKetThuc = endDate.ToString("yyyy-MM-dd"),
+                        TenPet = "Bé Cún Test 409",
+                        ExpectedTotal = 350000 // Sai lệch
+                    };
+
+                    bool caughtMismatch = false;
+                    long reportedNewTotal = 0;
+                    try
+                    {
+                        await bookingService.CreateBookingAsync(ownerUser.UserId, wrongDto);
+                    }
+                    catch (PriceMismatchException pex)
+                    {
+                        caughtMismatch = true;
+                        reportedNewTotal = pex.NewTotal;
+                    }
+                    AssertTrue(caughtMismatch && reportedNewTotal == 400000,
+                        $"Gửi ExpectedTotal sai bị từ chối với 409 Conflict và trả về giá mới chính xác: {reportedNewTotal:N0} ₫");
+
+                    // 2. Gửi expectedTotal đúng (400.000 ₫) -> thành công
+                    var correctDto = new CreateBookingDto
+                    {
+                        SitterId = sitterProfile.SitterId,
+                        ServiceId = sitterService.ServiceId,
+                        NgayBatDau = startDate.ToString("yyyy-MM-dd"),
+                        NgayKetThuc = endDate.ToString("yyyy-MM-dd"),
+                        TenPet = "Bé Cún Test OK",
+                        ExpectedTotal = 400000
+                    };
+                    var createdOk = await bookingService.CreateBookingAsync(ownerUser.UserId, correctDto);
+                    createdBookingIds.Add(createdOk.BookingId);
+                    AssertTrue(createdOk != null && createdOk.TotalAmount == 400000,
+                        "Tạo đơn thành công khi ExpectedTotal trùng khớp chính xác");
+
+                    // 3. Kiểm tra chọn dịch vụ không thuộc về Sitter -> 400
+                    var invalidServiceDto = new CreateBookingDto
+                    {
+                        SitterId = sitterProfile.SitterId,
+                        ServiceId = "invalid-service-id-999",
+                        NgayBatDau = startDate.AddDays(3).ToString("yyyy-MM-dd"),
+                        NgayKetThuc = startDate.AddDays(4).ToString("yyyy-MM-dd"),
+                        TenPet = "Bé Cún Test Service"
+                    };
+                    bool caughtInvalidService = false;
+                    try
+                    {
+                        await bookingService.CreateBookingAsync(ownerUser.UserId, invalidServiceDto);
+                    }
+                    catch (BadRequestException)
+                    {
+                        caughtInvalidService = true;
+                    }
+                    AssertTrue(caughtInvalidService, "Chọn ServiceId không thuộc Sitter bị chặn bằng BadRequestException");
+                }
+
+                // =========================================================================
+                // TEST 26: TEST NGẮT GIỮA CÁC BƯỚC HỦY RỒI GỌI LẠI (IDEMPOTENT RETRY SAU CLAIM)
+                // =========================================================================
+                Console.WriteLine("\n--- TEST 26: Ngắt giữa claim và ghi sổ/refund rồi gọi lại CancelBookingAsync ---");
+                {
+                    var nowUtc = DateTime.UtcNow;
+                    var bInterrupted = CreateHeldBooking("INTERRUPTED", nowUtc.AddDays(5), 500000, ownerUser.UserId, sitterProfile.SitterId, sitterUser.UserId);
+                    bInterrupted.SitterUserId = sitterUser.UserId;
+                    await context.Bookings.InsertOneAsync(bInterrupted);
+                    createdBookingIds.Add(bInterrupted.BookingId);
+
+                    // Giả lập hệ thống ngắt ngay sau khi Claim (FindOneAndUpdate) thành công,
+                    // nhưng chưa kịp ghi sổ JournalEntry hoặc tạo RefundRequest
+                    var plan = new SettlementPlan
+                    {
+                        SettlementKey = LedgerIdempotencyKeys.CancelOwner100(bInterrupted.BookingId),
+                        SettlementType = "CANCEL_OWNER_100",
+                        TotalAmount = 500000,
+                        RefundAmount = 500000,
+                        CommissionAmount = 0,
+                        SitterAmount = 0,
+                        SitterUserId = sitterUser.UserId,
+                        ClaimedAt = nowUtc
+                    };
+                    await context.Bookings.UpdateOneAsync(
+                        b => b.BookingId == bInterrupted.BookingId,
+                        Builders<Booking>.Update
+                            .Set(b => b.TrangThai, BookingStatus.CANCELLED)
+                            .Set(b => b.IsActive, false)
+                            .Set(b => b.PaymentStatus, PaymentStatus.REFUND_PENDING)
+                            .Set(b => b.Settlement, plan)
+                            .Set(b => b.ClaimedAt, nowUtc)
+                    );
+
+                    // Kiểm tra trước khi gọi lại: chưa có journal entry và chưa có refund request
+                    var entryBefore = await context.JournalEntries.Find(j => j.BookingId == bInterrupted.BookingId).FirstOrDefaultAsync();
+                    var refBefore = await context.RefundRequests.Find(r => r.BookingId == bInterrupted.BookingId).FirstOrDefaultAsync();
+                    AssertTrue(entryBefore == null && refBefore == null, "Trạng thái ngắt: Chưa có bút toán và chưa có RefundRequest");
+
+                    // Người dùng hoặc hệ thống gọi lại CancelBookingAsync
+                    await bookingService.CancelBookingAsync(ownerUser.UserId, bInterrupted.BookingId, "Gọi lại sau khi ngắt");
+
+                    // Kiểm tra sau khi gọi lại: đã ghi sổ và tạo RefundRequest thành công
+                    var entryAfter = await context.JournalEntries.Find(j => j.BookingId == bInterrupted.BookingId).FirstOrDefaultAsync();
+                    var refAfter = await context.RefundRequests.Find(r => r.BookingId == bInterrupted.BookingId).FirstOrDefaultAsync();
+                    AssertTrue(entryAfter != null, "Gọi lại sau khi ngắt: Bút toán sổ cái được ghi nhận thành công");
+                    AssertTrue(refAfter != null && refAfter.Amount == 500000, "Gọi lại sau khi ngắt: RefundRequest được tạo bù thành công");
+
+                    // Gọi lại thêm một lần nữa (lần 3): Đảm bảo hoàn toàn idempotent
+                    await bookingService.CancelBookingAsync(ownerUser.UserId, bInterrupted.BookingId, "Gọi lại lần 3");
+                    var entryCount3 = await context.JournalEntries.CountDocumentsAsync(j => j.BookingId == bInterrupted.BookingId);
+                    var refCount3 = await context.RefundRequests.CountDocumentsAsync(r => r.BookingId == bInterrupted.BookingId);
+                    AssertTrue(entryCount3 == 1 && refCount3 == 1, "Gọi lại lần 3 vẫn giữ nguyên tính bất biến idempotent (1 bút toán, 1 RefundRequest)");
                 }
             }
             finally

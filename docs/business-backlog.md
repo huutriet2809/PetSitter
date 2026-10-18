@@ -68,6 +68,9 @@ Tài liệu này ghi nhận các vấn đề nghiệp vụ và quy trình vận 
     3. Tạo thông báo in-app và gửi Email/Push notification chủ động tới cả hai bên ngay khi hết hạn mà không cần chờ người dùng tương tác.
     4. Quét nhắc nhở cho các đơn sắp hết hạn và đơn `ACCEPTED` quá ngày kết thúc.
   - Sử dụng hàng đợi phân tán hoặc distributed lock (nếu triển khai nhiều instance backend) để tránh xung đột giữa các background workers.
+  - **Chuyển toàn bộ nghiệp vụ đối soát tài chính (`ReconcileMissingLedgerEntriesAsync`) sang BackgroundService**:
+    - Hiện tại ở Bước 5A, cơ chế đối soát tự sửa bù bút toán thiếu và tự bù `RefundRequest` thiếu đang được gắn kèm cơ chế quét lười per-request (với throttle 30 giây).
+    - Ở Bước 5B, toàn bộ quy trình đối soát này sẽ được tách rời khỏi vòng đời HTTP request của người dùng và chuyển sang `BackgroundService` chạy định kỳ (ví dụ: mỗi 5-10 phút), đảm bảo hiệu năng tối ưu cho người dùng cuối và tính liên tục trong vận hành sổ cái.
 
 ---
 
@@ -97,4 +100,22 @@ Xây dựng giao diện và API dành riêng cho Quản trị viên (`/admin/sus
      - `Nợ (DEBIT) SUSPENSE: amount`
      - `Có (CREDIT) ESCROW_HELD: amount`
    - Cập nhật `Booking.PaymentStatus = HELD` và thông báo cho hai bên.
+
+---
+
+## 7. Kiểm tra đối soát số dư GATEWAY_CLEARING với số dư tài khoản thu hộ PayOS / Ngân hàng (Step 5B)
+
+### Hiện trạng kỹ thuật tại Bước 5A:
+- Khi nhận thanh toán thành công hoặc giao dịch bất thường từ Webhook PayOS, hệ thống ghi nhận dòng tiền vào hệ thống qua tài khoản `GATEWAY_CLEARING` (Nợ `GATEWAY_CLEARING`).
+- Việc đối soát tại Bước 5A tập trung vào đối soát nội bộ (Internal Reconciliation): đảm bảo tính toàn vẹn giữa `Booking`, `Payment`, `RefundRequest` và các bút toán kép `JournalEntry` (bất biến bảo chứng: Nợ `ESCROW_HELD` = Có `PLATFORM_REVENUE` + Có `SITTER_EARNINGS` + Có `REFUND_PENDING`).
+
+### Kế hoạch đối soát tại Bước 5B:
+Xây dựng module đối soát 3 bên (Three-way reconciliation worker):
+1. **Đối soát GATEWAY_CLEARING vs Cổng PayOS**:
+   - Đối chiếu tổng phát sinh Nợ trên tài khoản `GATEWAY_CLEARING` trong sổ cái MongoDB với danh sách giao dịch thực tế tải về từ API PayOS (hoặc sao kê PayOS).
+   - Kiểm tra và hạch toán phí giao dịch cổng (PayOS transaction fee) để ghi nhận chi phí tài chính chính xác.
+2. **Đối soát GATEWAY_CLEARING vs Tài khoản Ngân hàng thu hộ**:
+   - Định kỳ kiểm tra số dư thực tế tại tài khoản ngân hàng nhận tiền thu hộ (Bank Account) so với số dư cổng PayOS chưa quyết toán và tài khoản `GATEWAY_CLEARING`.
+   - Cảnh báo ngay cho Quản trị viên và Kế toán nếu phát hiện chênh lệch do giao dịch treo, lệnh rút tiền chậm hoặc biến động tài khoản bất thường.
+
 

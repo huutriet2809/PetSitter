@@ -24,6 +24,17 @@ namespace PetSitter.Middlewares
             {
                 await _next(context);
             }
+            catch (PriceMismatchException ex)
+            {
+                _logger.LogWarning(ex, "Handled price mismatch exception: {Message}", ex.Message);
+                if (!context.Response.HasStarted)
+                {
+                    context.Response.ContentType = "application/json; charset=utf-8";
+                    context.Response.StatusCode = ex.StatusCode;
+                    var json = JsonSerializer.Serialize(new { message = ex.Message, newTotal = ex.NewTotal, currentPrice = ex.NewTotal });
+                    await context.Response.WriteAsync(json);
+                }
+            }
             catch (AppException ex)
             {
                 _logger.LogWarning(ex, "Handled application exception: {Message}", ex.Message);

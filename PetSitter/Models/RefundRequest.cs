@@ -13,6 +13,7 @@ namespace PetSitter.Models
         public string BookingId { get; set; } = null!;
 
         public string? PaymentId { get; set; }
+        public string? SettlementKey { get; set; }
 
         public string OwnerUserId { get; set; } = null!;
 

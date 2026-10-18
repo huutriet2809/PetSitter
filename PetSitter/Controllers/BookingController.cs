@@ -34,6 +34,10 @@ namespace PetSitter.Controllers
                 var result = await _bookingService.CreateBookingAsync(userId, dto);
                 return Ok(result);
             }
+            catch (PriceMismatchException ex)
+            {
+                return StatusCode(ex.StatusCode, new { message = ex.Message, newTotal = ex.NewTotal, currentPrice = ex.NewTotal });
+            }
             catch (AppException ex)
             {
                 return StatusCode(ex.StatusCode, new { message = ex.Message });

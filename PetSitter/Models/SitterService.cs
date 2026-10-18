@@ -22,6 +22,9 @@ namespace PetSitter.Models
         [MaxLength(500)]
         public string? Description { get; set; }
 
+        // Cờ đánh dấu dịch vụ trông giữ chính của Sitter
+        public bool IsPrimary { get; set; }
+
         // Navigation properties
         [ForeignKey("SitterId")]
         public SitterProfile? Sitter { get; set; }

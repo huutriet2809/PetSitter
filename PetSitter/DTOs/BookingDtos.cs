@@ -12,6 +12,9 @@ namespace PetSitter.DTOs
         // Dịch vụ chính do Owner lựa chọn (Boarding, House Sitting, Day Care, etc.)
         public string? ServiceId { get; set; }
 
+        // Tổng số tiền client dự kiến trả (từ báo giá server) để phát hiện lệch giá đồng thời
+        public long? ExpectedTotal { get; set; }
+
         [Required]
         public string NgayBatDau { get; set; } = string.Empty;
         

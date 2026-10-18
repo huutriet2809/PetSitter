@@ -338,6 +338,23 @@ namespace PetSitter.Data
             try
             {
                 var refCol = context.RefundRequests;
+                try
+                {
+                    var existingIndexes = await refCol.Indexes.ListAsync();
+                    var indexList = await existingIndexes.ToListAsync();
+                    foreach (var idx in indexList)
+                    {
+                        var name = idx.GetValue("name", "").AsString;
+                        if (name == "PaymentId_1")
+                        {
+                            await refCol.Indexes.DropOneAsync("PaymentId_1");
+                            Console.WriteLine("[Seeder] Đã xóa index cũ PaymentId_1 trên RefundRequests.");
+                            break;
+                        }
+                    }
+                }
+                catch { }
+
                 var refStatusCreatedModel = new CreateIndexModel<RefundRequest>(
                     Builders<RefundRequest>.IndexKeys.Ascending(r => r.Status).Descending(r => r.CreatedAt)
                 );
@@ -352,11 +369,25 @@ namespace PetSitter.Data
                     new CreateIndexOptions<RefundRequest>
                     {
                         Unique = true,
-                        PartialFilterExpression = Builders<RefundRequest>.Filter.Type(r => r.PaymentId, MongoDB.Bson.BsonType.String)
+                        PartialFilterExpression = Builders<RefundRequest>.Filter.And(
+                            Builders<RefundRequest>.Filter.Type(r => r.PaymentId, MongoDB.Bson.BsonType.String),
+                            Builders<RefundRequest>.Filter.Gt(r => r.PaymentId, "")
+                        )
                     }
                 );
-                await refCol.Indexes.CreateManyAsync(new[] { refStatusCreatedModel, refOwnerModel, refBookingModel, refPaymentIdModel });
-                Console.WriteLine("[Seeder] Tạo thành công các index cho RefundRequests (bao gồm unique PaymentId).");
+                var refSettlementKeyModel = new CreateIndexModel<RefundRequest>(
+                    Builders<RefundRequest>.IndexKeys.Ascending(r => r.SettlementKey),
+                    new CreateIndexOptions<RefundRequest>
+                    {
+                        Unique = true,
+                        PartialFilterExpression = Builders<RefundRequest>.Filter.And(
+                            Builders<RefundRequest>.Filter.Type(r => r.SettlementKey, MongoDB.Bson.BsonType.String),
+                            Builders<RefundRequest>.Filter.Gt(r => r.SettlementKey, "")
+                        )
+                    }
+                );
+                await refCol.Indexes.CreateManyAsync(new[] { refStatusCreatedModel, refOwnerModel, refBookingModel, refPaymentIdModel, refSettlementKeyModel });
+                Console.WriteLine("[Seeder] Tạo thành công các index cho RefundRequests (bao gồm unique PaymentId và SettlementKey).");
             }
             catch (Exception ex)
             {

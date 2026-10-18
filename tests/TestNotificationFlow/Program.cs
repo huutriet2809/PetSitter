@@ -123,7 +123,8 @@ namespace TestNotificationFlow
                 {
                     SitterId = sitterProfile.SitterId,
                     ServiceId = serviceItem.ServiceId,
-                    Price = 150000m
+                    Price = 150000m,
+                    IsPrimary = true
                 };
                 await context.SitterServices.InsertOneAsync(sitterService);
 

@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
+using PetSitter.Helpers;
 using SitterServiceModel = PetSitter.Models.SitterService;
 
 namespace PetSitter.Services
@@ -145,6 +146,38 @@ namespace PetSitter.Services
 
             await _ledgerService.RecordEntryAsync(entry);
             return true;
+        }
+
+        public async Task CreateOrGetRefundRequestAsync(Booking booking, SettlementPlan plan, DateTime nowUtc, string reason, string? adminNote = null)
+        {
+            if (plan.RefundAmount <= 0) return;
+
+            var existing = await _context.RefundRequests.Find(r => r.BookingId == booking.BookingId && (r.SettlementKey == plan.SettlementKey || r.Amount == plan.RefundAmount)).FirstOrDefaultAsync();
+            if (existing != null) return;
+
+            var payment = await _context.Payments.Find(p => p.BookingId == booking.BookingId).FirstOrDefaultAsync();
+            var refundReq = new RefundRequest
+            {
+                RefundId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                BookingId = booking.BookingId,
+                PaymentId = !string.IsNullOrEmpty(payment?.PaymentId) ? payment.PaymentId : null,
+                SettlementKey = plan.SettlementKey,
+                OwnerUserId = booking.OwnerId,
+                Amount = plan.RefundAmount,
+                Reason = reason,
+                AdminNote = adminNote,
+                Status = RefundStatus.REFUND_PENDING,
+                CreatedAt = nowUtc
+            };
+
+            try
+            {
+                await _context.RefundRequests.InsertOneAsync(refundReq);
+            }
+            catch (MongoWriteException ex) when (ex.WriteError?.Category == ServerErrorCategory.DuplicateKey)
+            {
+                // Idempotent bỏ qua khi trùng khóa
+            }
         }
 
         public async Task ReleaseEscrowToSitterAndPlatformAsync(Booking booking, DateTime nowUtc, string actionSource)
@@ -649,6 +682,18 @@ namespace PetSitter.Services
                         _logger?.LogInformation("Đối soát tự sửa bù thành công bút toán theo SettlementPlan cho đơn {BookingId}", b.BookingId);
                         repairedCount++;
                     }
+
+                    // Tự động bù RefundRequest thiếu nếu kế hoạch có hoàn tiền
+                    if (b.Settlement.RefundAmount > 0)
+                    {
+                        var hasRefund = await _context.RefundRequests.Find(r => r.BookingId == b.BookingId && (r.SettlementKey == b.Settlement.SettlementKey || r.Amount == b.Settlement.RefundAmount)).AnyAsync();
+                        if (!hasRefund)
+                        {
+                            await CreateOrGetRefundRequestAsync(b, b.Settlement, nowUtc, $"Đối soát bù yêu cầu hoàn tiền ({b.Settlement.SettlementType})", "Tự động bù bởi đối soát");
+                            _logger?.LogInformation("Đối soát tự sửa bù thành công RefundRequest thiếu cho đơn {BookingId}", b.BookingId);
+                            repairedCount++;
+                        }
+                    }
                     continue;
                 }
 
@@ -833,8 +878,8 @@ namespace PetSitter.Services
                 throw new BadRequestException("Ngày kết thúc không được nhỏ hơn ngày bắt đầu.");
             }
 
-            // Quy ước tính số ngày: Bao gồm cả 2 đầu ngày (Khoảng ngày đóng [NgayBatDau, NgayKetThuc])
-            var soNgay = (ngayKetThuc - ngayBatDau).Days + 1;
+            // Quy ước tính số ngày: Bao gồm cả 2 đầu ngày qua hàm dùng chung BookingDateHelper
+            var soNgay = BookingDateHelper.CalculateInclusiveDays(ngayBatDau, ngayKetThuc);
             if (soNgay > 30)
             {
                 throw new BadRequestException("Khoảng thời gian đặt lịch tối đa là 30 ngày.");
@@ -852,26 +897,18 @@ namespace PetSitter.Services
                 primaryService = allSitterServices.FirstOrDefault(ss => ss.ServiceId == dto.ServiceId && ss.Price > 0);
                 if (primaryService == null)
                 {
-                    throw new BadRequestException("Dịch vụ chính đã chọn không hợp lệ hoặc Sitter chưa cấu hình giá.");
+                    throw new BadRequestException("Dịch vụ trông giữ chính đã chọn không thuộc về Sitter này hoặc chưa cấu hình giá > 0.");
                 }
             }
             else
             {
-                var allServices = await _context.Services.Find(_ => true).ToListAsync();
-                var boardingService = allServices.FirstOrDefault(s => s.ServiceName.Contains("Boarding") || s.ServiceName.Contains("Chăm sóc tại nhà") || s.ServiceName.Contains("trông giữ"));
-                if (boardingService != null)
-                {
-                    primaryService = allSitterServices.FirstOrDefault(ss => ss.ServiceId == boardingService.ServiceId && ss.Price > 0);
-                }
-                if (primaryService == null)
-                {
-                    primaryService = allSitterServices.FirstOrDefault(ss => ss.Price > 0);
-                }
+                // Có cờ đánh dấu dịch vụ trông giữ chính (IsPrimary); không còn "mặc định"
+                primaryService = allSitterServices.FirstOrDefault(ss => ss.IsPrimary && ss.Price > 0);
             }
 
             if (primaryService == null)
             {
-                throw new BadRequestException("Không tìm thấy dịch vụ chính hợp lệ cho người chăm sóc này.");
+                throw new BadRequestException("Sitter chưa cấu hình dịch vụ trông giữ chính (IsPrimary) hoặc giá không hợp lệ.");
             }
 
             var serviceInfo = await _context.Services.Find(s => s.ServiceId == primaryService.ServiceId).FirstOrDefaultAsync();
@@ -961,7 +998,7 @@ namespace PetSitter.Services
             if (ngayKetThuc < ngayBatDau)
                 throw new BadRequestException("Ngày kết thúc không được nhỏ hơn ngày bắt đầu.");
 
-            var soNgay = (ngayKetThuc - ngayBatDau).Days + 1;
+            var soNgay = BookingDateHelper.CalculateInclusiveDays(ngayBatDau, ngayKetThuc);
             if (soNgay > 30)
                 throw new BadRequestException("Khoảng thời gian đặt lịch tối đa là 30 ngày.");
 
@@ -1019,33 +1056,25 @@ namespace PetSitter.Services
                 throw new BadRequestException("Sitter chưa cấu hình giá dịch vụ hợp lệ.");
             }
 
-            // Xác định dịch vụ chính do Owner chọn hoặc dịch vụ Boarding ưu tiên (Item 5a)
+            // Xác định dịch vụ chính do Owner chọn hoặc dịch vụ IsPrimary (Item 5)
             SitterServiceModel? primaryService = null;
             if (!string.IsNullOrWhiteSpace(dto.ServiceId))
             {
                 primaryService = allSitterServices.FirstOrDefault(ss => ss.ServiceId == dto.ServiceId && ss.Price > 0);
                 if (primaryService == null)
                 {
-                    throw new BadRequestException("Dịch vụ chính đã chọn không hợp lệ hoặc Sitter chưa cấu hình giá.");
+                    throw new BadRequestException("Dịch vụ trông giữ chính đã chọn không thuộc về Sitter này hoặc chưa cấu hình giá > 0.");
                 }
             }
             else
             {
-                var allServices = await _context.Services.Find(_ => true).ToListAsync();
-                var boardingService = allServices.FirstOrDefault(s => s.ServiceName.Contains("Boarding") || s.ServiceName.Contains("Chăm sóc tại nhà") || s.ServiceName.Contains("trông giữ"));
-                if (boardingService != null)
-                {
-                    primaryService = allSitterServices.FirstOrDefault(ss => ss.ServiceId == boardingService.ServiceId && ss.Price > 0);
-                }
-                if (primaryService == null)
-                {
-                    primaryService = allSitterServices.FirstOrDefault(ss => ss.Price > 0);
-                }
+                // Có cờ đánh dấu dịch vụ trông giữ chính (IsPrimary); không còn "mặc định"
+                primaryService = allSitterServices.FirstOrDefault(ss => ss.IsPrimary && ss.Price > 0);
             }
 
             if (primaryService == null)
             {
-                throw new BadRequestException("Không tìm thấy dịch vụ chính hợp lệ cho người chăm sóc này.");
+                throw new BadRequestException("Sitter chưa cấu hình dịch vụ trông giữ chính (IsPrimary) hoặc giá không hợp lệ.");
             }
 
             var serviceInfo = await _context.Services.Find(s => s.ServiceId == primaryService.ServiceId).FirstOrDefaultAsync();
@@ -1083,6 +1112,12 @@ namespace PetSitter.Services
 
             // 6. Calculate Totals (Chi phí ước tính)
             var totalAmountLong = giaSitter + (long)tongAddons;
+
+            // Kiểm tra expectedTotal từ client; server tính lại, lệch -> 409 kèm giá mới
+            if (dto.ExpectedTotal.HasValue && dto.ExpectedTotal.Value != totalAmountLong)
+            {
+                throw new PriceMismatchException(dto.ExpectedTotal.Value, totalAmountLong);
+            }
 
             var minOrderAmount = _configuration.GetValue<long>("Payments:MinOrderAmount", 2000);
             if (totalAmountLong < minOrderAmount)
@@ -1256,191 +1291,29 @@ namespace PetSitter.Services
             return dtos;
         }
 
-        private async Task HandleCancellationPaymentAndRefundAsync(Booking booking, bool isSitter, DateTime nowUtc)
+        private async Task CancelPendingPaymentGatewayLinkAsync(string bookingId)
         {
-            if (booking.PaymentStatus == PaymentStatus.NONE)
-            {
-                return;
-            }
+            var pendingPayment = await _context.Payments
+                .Find(p => p.BookingId == bookingId && p.Status == PaymentLinkStatus.PENDING)
+                .FirstOrDefaultAsync();
 
-            if (booking.PaymentStatus == PaymentStatus.PENDING_PAYMENT)
+            if (pendingPayment != null)
             {
-                await _context.Bookings.UpdateOneAsync(
-                    b => b.BookingId == booking.BookingId,
-                    Builders<Booking>.Update.Set(b => b.PaymentStatus, PaymentStatus.CANCELLED)
+                await _context.Payments.UpdateOneAsync(
+                    p => p.PaymentId == pendingPayment.PaymentId,
+                    Builders<Payment>.Update.Set(p => p.Status, PaymentLinkStatus.CANCELLED)
                 );
 
-                var pendingPayment = await _context.Payments
-                    .Find(p => p.BookingId == booking.BookingId && p.Status == PaymentLinkStatus.PENDING)
-                    .FirstOrDefaultAsync();
-
-                if (pendingPayment != null)
+                if (_paymentGateway != null)
                 {
-                    await _context.Payments.UpdateOneAsync(
-                        p => p.PaymentId == pendingPayment.PaymentId,
-                        Builders<Payment>.Update.Set(p => p.Status, PaymentLinkStatus.CANCELLED)
-                    );
-
-                    if (_paymentGateway != null)
+                    try
                     {
-                        try
-                        {
-                            await _paymentGateway.CancelPaymentLinkAsync(pendingPayment.OrderCode, "Đơn đã bị hủy");
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger?.LogWarning(ex, "Lỗi khi hủy payment link PayOS cho orderCode {OrderCode}", pendingPayment.OrderCode);
-                        }
+                        await _paymentGateway.CancelPaymentLinkAsync(pendingPayment.OrderCode, "Đơn đã bị hủy");
                     }
-                }
-                return;
-            }
-
-            if (booking.PaymentStatus == PaymentStatus.HELD)
-            {
-                var totalAmount = booking.TotalAmount > 0 ? booking.TotalAmount : (long)booking.TongTien;
-                if (totalAmount <= 0) return;
-
-                var vnStartMidnightUtc = new DateTimeOffset(booking.NgayBatDau.Year, booking.NgayBatDau.Month, booking.NgayBatDau.Day, 0, 0, 0, TimeSpan.FromHours(7)).UtcDateTime;
-                var remaining = vnStartMidnightUtc - nowUtc;
-
-                var bps = booking.CommissionBps > 0 ? booking.CommissionBps : _configuration.GetValue<int>("Payments:CommissionBps", 1000);
-                var holdHours = _configuration.GetValue<int>("Payments:EarningsHoldHours", 48);
-
-                var sitterUserId = booking.SitterUserId;
-                if (string.IsNullOrWhiteSpace(sitterUserId))
-                {
-                    var sitterProfile = await _context.SitterProfiles.Find(s => s.SitterId == booking.SitterId).FirstOrDefaultAsync();
-                    sitterUserId = sitterProfile?.UserId;
-                }
-                if (string.IsNullOrWhiteSpace(sitterUserId))
-                {
-                    throw new InvalidOperationException($"Thiếu SitterUserId hợp lệ cho đơn {booking.BookingId}");
-                }
-
-                // Xác định trạng thái thanh toán đích dựa trên vai trò và nấc giờ (Item 2 & 3)
-                // Sitter hủy hoặc Owner hủy >= 48h: REFUND_PENDING (hoàn 100%)
-                // Owner hủy 24h - 48h: PARTIALLY_REFUNDED (hoàn 50%)
-                // Owner hủy < 24h: RELEASED (hoàn 0%, toàn bộ sang Sitter sau hoa hồng)
-                string targetPaymentStatus;
-                SettlementPlan plan;
-                string? refundReason = null;
-
-                if (isSitter)
-                {
-                    targetPaymentStatus = PaymentStatus.REFUND_PENDING;
-                    plan = new SettlementPlan
+                    catch (Exception ex)
                     {
-                        SettlementKey = LedgerIdempotencyKeys.CancelSitter(booking.BookingId),
-                        SettlementType = "CANCEL_SITTER",
-                        TotalAmount = totalAmount,
-                        RefundAmount = totalAmount,
-                        CommissionAmount = 0,
-                        SitterAmount = 0,
-                        SitterUserId = sitterUserId,
-                        ClaimedAt = nowUtc
-                    };
-                    refundReason = "SITTER_CANCELLED";
-                }
-                else if (remaining >= TimeSpan.FromHours(48))
-                {
-                    targetPaymentStatus = PaymentStatus.REFUND_PENDING;
-                    plan = new SettlementPlan
-                    {
-                        SettlementKey = LedgerIdempotencyKeys.CancelOwner100(booking.BookingId),
-                        SettlementType = "CANCEL_OWNER_100",
-                        TotalAmount = totalAmount,
-                        RefundAmount = totalAmount,
-                        CommissionAmount = 0,
-                        SitterAmount = 0,
-                        SitterUserId = sitterUserId,
-                        ClaimedAt = nowUtc
-                    };
-                    refundReason = "OWNER_CANCELLED_GE_48H";
-                }
-                else if (remaining >= TimeSpan.FromHours(24))
-                {
-                    targetPaymentStatus = PaymentStatus.PARTIALLY_REFUNDED;
-                    // Số nguyên: refund50 = total / 2; phần dư về Sitter
-                    var refund50 = totalAmount / 2;
-                    var remainingForSitter = totalAmount - refund50;
-                    var commission = (remainingForSitter * bps) / 10000;
-                    var sitterNet = remainingForSitter - commission;
-
-                    plan = new SettlementPlan
-                    {
-                        SettlementKey = LedgerIdempotencyKeys.CancelOwner50(booking.BookingId),
-                        SettlementType = "CANCEL_OWNER_50",
-                        TotalAmount = totalAmount,
-                        RefundAmount = refund50,
-                        CommissionAmount = commission,
-                        SitterAmount = sitterNet,
-                        SitterUserId = sitterUserId,
-                        ClaimedAt = nowUtc,
-                        AvailableAt = nowUtc.AddHours(holdHours)
-                    };
-                    refundReason = "OWNER_CANCELLED_24_TO_48H";
-                }
-                else
-                {
-                    targetPaymentStatus = PaymentStatus.RELEASED;
-                    var commission = (totalAmount * bps) / 10000;
-                    var sitterNet = totalAmount - commission;
-
-                    plan = new SettlementPlan
-                    {
-                        SettlementKey = LedgerIdempotencyKeys.CancelOwner0(booking.BookingId),
-                        SettlementType = "CANCEL_OWNER_0",
-                        TotalAmount = totalAmount,
-                        RefundAmount = 0,
-                        CommissionAmount = commission,
-                        SitterAmount = sitterNet,
-                        SitterUserId = sitterUserId,
-                        ClaimedAt = nowUtc,
-                        AvailableAt = nowUtc.AddHours(holdHours)
-                    };
-                }
-
-                // CLAIM NGUYÊN TỬ TRÊN BOOKING TRƯỚC KHI GHI SỔ (Requirement 2 & 4)
-                var claimRefundFilter = Builders<Booking>.Filter.And(
-                    Builders<Booking>.Filter.Eq(b => b.BookingId, booking.BookingId),
-                    Builders<Booking>.Filter.Eq(b => b.PaymentStatus, PaymentStatus.HELD)
-                );
-                var claimRefundUpdate = Builders<Booking>.Update
-                    .Set(b => b.PaymentStatus, targetPaymentStatus)
-                    .Set(b => b.Settlement, plan)
-                    .Set(b => b.ClaimedAt, nowUtc)
-                    .Set(b => b.UpdatedAt, nowUtc);
-
-                var claimedBooking = await _context.Bookings.FindOneAndUpdateAsync(
-                    claimRefundFilter,
-                    claimRefundUpdate,
-                    new FindOneAndUpdateOptions<Booking> { ReturnDocument = ReturnDocument.After }
-                );
-
-                // Nếu không claim được HELD (bên giải ngân đã thắng trước đó), bỏ qua không ghi sổ hoàn tiền!
-                if (claimedBooking == null)
-                {
-                    return;
-                }
-
-                // GHI SỔ KÉP THEO ĐÚNG KẾ HOẠCH TẤT TOÁN ĐÃ LƯU
-                await ExecuteSettlementPlanAsync(plan, claimedBooking.BookingId, nowUtc, isSitter ? claimedBooking.SitterId : claimedBooking.OwnerId);
-
-                // Tạo yêu cầu hoàn tiền nếu có phần hoàn
-                if (plan.RefundAmount > 0 && !string.IsNullOrEmpty(refundReason))
-                {
-                    var refundReq = new RefundRequest
-                    {
-                        RefundId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
-                        BookingId = claimedBooking.BookingId,
-                        OwnerUserId = claimedBooking.OwnerId,
-                        Amount = plan.RefundAmount,
-                        Reason = refundReason,
-                        Status = RefundStatus.REFUND_PENDING,
-                        CreatedAt = nowUtc
-                    };
-                    await _context.RefundRequests.InsertOneAsync(refundReq);
+                        _logger?.LogWarning(ex, "Lỗi khi hủy payment link PayOS cho orderCode {OrderCode}", pendingPayment.OrderCode);
+                    }
                 }
             }
         }
@@ -1468,13 +1341,35 @@ namespace PetSitter.Services
                 throw new NotFoundException("Không tìm thấy thông tin đặt lịch.");
             }
 
+            var vnToday = GetVnToday();
+            var nowUtc = DateTime.UtcNow;
+
+            // Nếu đơn đã ở trạng thái CANCELLED và có Settlement (bước claim đã hoàn tất trước đó):
+            // Thực hiện tiếp ghi sổ và RefundRequest một cách idempotent (cho phép gọi lại lặp lại khi bị ngắt)
+            if (booking.TrangThai == BookingStatus.CANCELLED)
+            {
+                if (booking.Settlement != null)
+                {
+                    await ExecuteSettlementPlanAsync(booking.Settlement, booking.BookingId, nowUtc, currentUserId);
+                    if (booking.Settlement.RefundAmount > 0)
+                    {
+                        var refundReason = booking.Settlement.SettlementType switch
+                        {
+                            "CANCEL_SITTER" => "SITTER_CANCELLED",
+                            "CANCEL_OWNER_100" => "OWNER_CANCELLED_OVER_48H",
+                            "CANCEL_OWNER_50" => "OWNER_CANCELLED_24_TO_48H",
+                            _ => "CANCELLED_RETRY"
+                        };
+                        await CreateOrGetRefundRequestAsync(booking, booking.Settlement, nowUtc, refundReason);
+                    }
+                }
+                return;
+            }
+
             if (!string.IsNullOrEmpty(expectedStatus) && booking.TrangThai != expectedStatus)
             {
                 throw new ConflictException($"Trạng thái đơn đã thay đổi (hiện tại: {booking.TrangThai}, mong đợi: {expectedStatus}).");
             }
-
-            var vnToday = GetVnToday();
-            var nowUtc = DateTime.UtcNow;
 
             if (isSitter)
             {
@@ -1490,29 +1385,104 @@ namespace PetSitter.Services
                 if (booking.NgayBatDau <= vnToday)
                     throw new BadRequestException("Không thể hủy đơn khi đã đến hoặc qua ngày bắt đầu.");
 
-                var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, bookingId)
-                           & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.ACCEPTED)
-                           & Builders<Booking>.Filter.Gt(b => b.NgayBatDau, vnToday);
+                var totalAmount = booking.TotalAmount > 0 ? booking.TotalAmount : (long)booking.TongTien;
+                var sitterUserId = currentUserId; // currentUserId là SitterUserId từ token của người chăm sóc
 
-                var update = Builders<Booking>.Update
-                    .Set(b => b.TrangThai, BookingStatus.CANCELLED)
-                    .Set(b => b.IsActive, false)
-                    .Push(b => b.History, new InquiryHistory
+                if (booking.PaymentStatus == PaymentStatus.HELD && totalAmount > 0)
+                {
+                    var plan = new SettlementPlan
                     {
-                        HanhDong = BookingStatus.CANCELLED,
-                        FromStatus = BookingStatus.ACCEPTED,
-                        NguoiThucHien = "SITTER",
-                        ActorUserId = currentUserId,
-                        LyDo = lyDo.Trim(),
-                        ThoiGian = nowUtc
-                    });
+                        SettlementKey = LedgerIdempotencyKeys.CancelSitter(booking.BookingId),
+                        SettlementType = "CANCEL_SITTER",
+                        TotalAmount = totalAmount,
+                        RefundAmount = totalAmount,
+                        CommissionAmount = 0,
+                        SitterAmount = 0,
+                        SitterUserId = sitterUserId,
+                        ClaimedAt = nowUtc
+                    };
 
-                var updated = await _context.Bookings.FindOneAndUpdateAsync(filter, update);
-                if (updated == null)
-                    throw new ConflictException("Không thể hủy đơn. Trạng thái hoặc điều kiện thời gian của đơn đã thay đổi.");
+                    // GỘP THÀNH MỘT FindOneAndUpdate DUY NHẤT:
+                    // filter: TrangThai == ACCEPTED && PaymentStatus == HELD
+                    // set cùng lúc: TrangThai, IsActive, PaymentStatus, Settlement, ClaimedAt, UpdatedAt và $push History
+                    var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, bookingId)
+                               & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.ACCEPTED)
+                               & Builders<Booking>.Filter.Eq(b => b.PaymentStatus, PaymentStatus.HELD)
+                               & Builders<Booking>.Filter.Gt(b => b.NgayBatDau, vnToday);
 
-                // Xử lý tài chính/hoàn tiền khi Sitter hủy
-                await HandleCancellationPaymentAndRefundAsync(booking, isSitter: true, nowUtc);
+                    var update = Builders<Booking>.Update
+                        .Set(b => b.TrangThai, BookingStatus.CANCELLED)
+                        .Set(b => b.IsActive, false)
+                        .Set(b => b.PaymentStatus, PaymentStatus.REFUND_PENDING)
+                        .Set(b => b.Settlement, plan)
+                        .Set(b => b.ClaimedAt, nowUtc)
+                        .Set(b => b.UpdatedAt, nowUtc)
+                        .Push(b => b.History, new InquiryHistory
+                        {
+                            HanhDong = BookingStatus.CANCELLED,
+                            FromStatus = BookingStatus.ACCEPTED,
+                            NguoiThucHien = "SITTER",
+                            ActorUserId = currentUserId,
+                            LyDo = lyDo.Trim(),
+                            ThoiGian = nowUtc
+                        });
+
+                    var claimedBooking = await _context.Bookings.FindOneAndUpdateAsync(
+                        filter, 
+                        update, 
+                        new FindOneAndUpdateOptions<Booking> { ReturnDocument = ReturnDocument.After }
+                    );
+
+                    if (claimedBooking == null)
+                    {
+                        var current = await _context.Bookings.Find(b => b.BookingId == bookingId).FirstOrDefaultAsync();
+                        if (current != null && current.TrangThai == BookingStatus.CANCELLED && current.Settlement != null)
+                        {
+                            // Cho phép gọi lại lặp lại (idempotent retry)
+                            await ExecuteSettlementPlanAsync(current.Settlement, current.BookingId, nowUtc, currentUserId);
+                            if (current.Settlement.RefundAmount > 0)
+                            {
+                                await CreateOrGetRefundRequestAsync(current, current.Settlement, nowUtc, "SITTER_CANCELLED");
+                            }
+                            return;
+                        }
+                        throw new ConflictException("Không thể hủy đơn. Trạng thái hoặc điều kiện thanh toán của đơn đã thay đổi.");
+                    }
+
+                    // Sau claim: ghi sổ + RefundRequest chạy lặp lại được
+                    await ExecuteSettlementPlanAsync(plan, claimedBooking.BookingId, nowUtc, currentUserId);
+                    await CreateOrGetRefundRequestAsync(claimedBooking, plan, nowUtc, "SITTER_CANCELLED");
+                }
+                else
+                {
+                    var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, bookingId)
+                               & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.ACCEPTED)
+                               & Builders<Booking>.Filter.Gt(b => b.NgayBatDau, vnToday);
+
+                    var update = Builders<Booking>.Update
+                        .Set(b => b.TrangThai, BookingStatus.CANCELLED)
+                        .Set(b => b.IsActive, false)
+                        .Set(b => b.PaymentStatus, booking.PaymentStatus == PaymentStatus.PENDING_PAYMENT ? PaymentStatus.CANCELLED : booking.PaymentStatus)
+                        .Set(b => b.UpdatedAt, nowUtc)
+                        .Push(b => b.History, new InquiryHistory
+                        {
+                            HanhDong = BookingStatus.CANCELLED,
+                            FromStatus = BookingStatus.ACCEPTED,
+                            NguoiThucHien = "SITTER",
+                            ActorUserId = currentUserId,
+                            LyDo = lyDo.Trim(),
+                            ThoiGian = nowUtc
+                        });
+
+                    var updated = await _context.Bookings.FindOneAndUpdateAsync(filter, update);
+                    if (updated == null)
+                        throw new ConflictException("Không thể hủy đơn. Trạng thái hoặc điều kiện thời gian của đơn đã thay đổi.");
+
+                    if (booking.PaymentStatus == PaymentStatus.PENDING_PAYMENT)
+                    {
+                        await CancelPendingPaymentGatewayLinkAsync(booking.BookingId);
+                    }
+                }
 
                 if (_notificationService != null && !string.IsNullOrEmpty(booking.OwnerId))
                 {
@@ -1550,6 +1520,8 @@ namespace PetSitter.Services
                     var update = Builders<Booking>.Update
                         .Set(b => b.TrangThai, BookingStatus.CANCELLED)
                         .Set(b => b.IsActive, false)
+                        .Set(b => b.PaymentStatus, booking.PaymentStatus == PaymentStatus.PENDING_PAYMENT ? PaymentStatus.CANCELLED : booking.PaymentStatus)
+                        .Set(b => b.UpdatedAt, nowUtc)
                         .Push(b => b.History, new InquiryHistory
                         {
                             HanhDong = BookingStatus.CANCELLED,
@@ -1564,35 +1536,181 @@ namespace PetSitter.Services
                     if (updated == null)
                         throw new ConflictException("Không thể hủy đơn. Trạng thái đơn đã thay đổi.");
 
-                    await HandleCancellationPaymentAndRefundAsync(booking, isSitter: false, nowUtc);
+                    if (booking.PaymentStatus == PaymentStatus.PENDING_PAYMENT)
+                    {
+                        await CancelPendingPaymentGatewayLinkAsync(booking.BookingId);
+                    }
                 }
                 else if (booking.TrangThai == BookingStatus.ACCEPTED)
                 {
                     if (booking.NgayBatDau <= vnToday)
                         throw new BadRequestException("Không thể hủy đơn đã xác nhận khi đã đến hoặc qua ngày bắt đầu.");
 
-                    var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, bookingId)
-                               & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.ACCEPTED)
-                               & Builders<Booking>.Filter.Gt(b => b.NgayBatDau, vnToday);
+                    var totalAmount = booking.TotalAmount > 0 ? booking.TotalAmount : (long)booking.TongTien;
+                    var sitterUserId = booking.SitterUserId;
+                    if (string.IsNullOrWhiteSpace(sitterUserId))
+                    {
+                        var sitterProfile = await _context.SitterProfiles.Find(s => s.SitterId == booking.SitterId).FirstOrDefaultAsync();
+                        sitterUserId = sitterProfile?.UserId;
+                    }
+                    if (string.IsNullOrWhiteSpace(sitterUserId))
+                    {
+                        throw new InvalidOperationException($"Thiếu SitterUserId hợp lệ cho đơn {booking.BookingId}");
+                    }
 
-                    var update = Builders<Booking>.Update
-                        .Set(b => b.TrangThai, BookingStatus.CANCELLED)
-                        .Set(b => b.IsActive, false)
-                        .Push(b => b.History, new InquiryHistory
+                    if (booking.PaymentStatus == PaymentStatus.HELD && totalAmount > 0)
+                    {
+                        var vnStartMidnightUtc = new DateTimeOffset(booking.NgayBatDau.Year, booking.NgayBatDau.Month, booking.NgayBatDau.Day, 0, 0, 0, TimeSpan.FromHours(7)).UtcDateTime;
+                        var remaining = vnStartMidnightUtc - nowUtc;
+                        var bps = booking.CommissionBps > 0 ? booking.CommissionBps : _configuration.GetValue<int>("Payments:CommissionBps", 1000);
+                        var holdHours = _configuration.GetValue<int>("Payments:EarningsHoldHours", 48);
+
+                        string targetPaymentStatus;
+                        SettlementPlan plan;
+                        string? refundReason = null;
+
+                        if (remaining >= TimeSpan.FromHours(48))
                         {
-                            HanhDong = BookingStatus.CANCELLED,
-                            FromStatus = BookingStatus.ACCEPTED,
-                            NguoiThucHien = "OWNER",
-                            ActorUserId = currentUserId,
-                            LyDo = trimmedReason,
-                            ThoiGian = nowUtc
-                        });
+                            targetPaymentStatus = PaymentStatus.REFUND_PENDING;
+                            plan = new SettlementPlan
+                            {
+                                SettlementKey = LedgerIdempotencyKeys.CancelOwner100(booking.BookingId),
+                                SettlementType = "CANCEL_OWNER_100",
+                                TotalAmount = totalAmount,
+                                RefundAmount = totalAmount,
+                                CommissionAmount = 0,
+                                SitterAmount = 0,
+                                SitterUserId = sitterUserId,
+                                ClaimedAt = nowUtc
+                            };
+                            refundReason = "OWNER_CANCELLED_GE_48H";
+                        }
+                        else if (remaining >= TimeSpan.FromHours(24))
+                        {
+                            targetPaymentStatus = PaymentStatus.PARTIALLY_REFUNDED;
+                            var refund50 = totalAmount / 2;
+                            var remainingForSitter = totalAmount - refund50;
+                            var commission = (remainingForSitter * bps) / 10000;
+                            var sitterNet = remainingForSitter - commission;
 
-                    var updated = await _context.Bookings.FindOneAndUpdateAsync(filter, update);
-                    if (updated == null)
-                        throw new ConflictException("Không thể hủy đơn. Trạng thái hoặc điều kiện thời gian của đơn đã thay đổi.");
+                            plan = new SettlementPlan
+                            {
+                                SettlementKey = LedgerIdempotencyKeys.CancelOwner50(booking.BookingId),
+                                SettlementType = "CANCEL_OWNER_50",
+                                TotalAmount = totalAmount,
+                                RefundAmount = refund50,
+                                CommissionAmount = commission,
+                                SitterAmount = sitterNet,
+                                SitterUserId = sitterUserId,
+                                ClaimedAt = nowUtc,
+                                AvailableAt = nowUtc.AddHours(holdHours)
+                            };
+                            refundReason = "OWNER_CANCELLED_24_TO_48H";
+                        }
+                        else
+                        {
+                            targetPaymentStatus = PaymentStatus.RELEASED;
+                            var commission = (totalAmount * bps) / 10000;
+                            var sitterNet = totalAmount - commission;
 
-                    await HandleCancellationPaymentAndRefundAsync(booking, isSitter: false, nowUtc);
+                            plan = new SettlementPlan
+                            {
+                                SettlementKey = LedgerIdempotencyKeys.CancelOwner0(booking.BookingId),
+                                SettlementType = "CANCEL_OWNER_0",
+                                TotalAmount = totalAmount,
+                                RefundAmount = 0,
+                                CommissionAmount = commission,
+                                SitterAmount = sitterNet,
+                                SitterUserId = sitterUserId,
+                                ClaimedAt = nowUtc,
+                                AvailableAt = nowUtc.AddHours(holdHours)
+                            };
+                        }
+
+                        // GỘP THÀNH MỘT FindOneAndUpdate DUY NHẤT:
+                        // filter: TrangThai == ACCEPTED && PaymentStatus == HELD
+                        // set cùng lúc: TrangThai, IsActive, PaymentStatus, Settlement, ClaimedAt, UpdatedAt và $push History
+                        var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, bookingId)
+                                   & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.ACCEPTED)
+                                   & Builders<Booking>.Filter.Eq(b => b.PaymentStatus, PaymentStatus.HELD)
+                                   & Builders<Booking>.Filter.Gt(b => b.NgayBatDau, vnToday);
+
+                        var update = Builders<Booking>.Update
+                            .Set(b => b.TrangThai, BookingStatus.CANCELLED)
+                            .Set(b => b.IsActive, false)
+                            .Set(b => b.PaymentStatus, targetPaymentStatus)
+                            .Set(b => b.Settlement, plan)
+                            .Set(b => b.ClaimedAt, nowUtc)
+                            .Set(b => b.UpdatedAt, nowUtc)
+                            .Push(b => b.History, new InquiryHistory
+                            {
+                                HanhDong = BookingStatus.CANCELLED,
+                                FromStatus = BookingStatus.ACCEPTED,
+                                NguoiThucHien = "OWNER",
+                                ActorUserId = currentUserId,
+                                LyDo = trimmedReason,
+                                ThoiGian = nowUtc
+                            });
+
+                        var claimedBooking = await _context.Bookings.FindOneAndUpdateAsync(
+                            filter, 
+                            update, 
+                            new FindOneAndUpdateOptions<Booking> { ReturnDocument = ReturnDocument.After }
+                        );
+
+                        if (claimedBooking == null)
+                        {
+                            var current = await _context.Bookings.Find(b => b.BookingId == bookingId).FirstOrDefaultAsync();
+                            if (current != null && current.TrangThai == BookingStatus.CANCELLED && current.Settlement != null)
+                            {
+                                // Cho phép gọi lại lặp lại (idempotent retry)
+                                await ExecuteSettlementPlanAsync(current.Settlement, current.BookingId, nowUtc, currentUserId);
+                                if (current.Settlement.RefundAmount > 0 && !string.IsNullOrEmpty(refundReason))
+                                {
+                                    await CreateOrGetRefundRequestAsync(current, current.Settlement, nowUtc, refundReason);
+                                }
+                                return;
+                            }
+                            throw new ConflictException("Không thể hủy đơn. Trạng thái hoặc điều kiện thanh toán của đơn đã thay đổi.");
+                        }
+
+                        // Sau claim: ghi sổ + RefundRequest chạy lặp lại được
+                        await ExecuteSettlementPlanAsync(plan, claimedBooking.BookingId, nowUtc, currentUserId);
+                        if (plan.RefundAmount > 0 && !string.IsNullOrEmpty(refundReason))
+                        {
+                            await CreateOrGetRefundRequestAsync(claimedBooking, plan, nowUtc, refundReason);
+                        }
+                    }
+                    else
+                    {
+                        var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, bookingId)
+                                   & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.ACCEPTED)
+                                   & Builders<Booking>.Filter.Gt(b => b.NgayBatDau, vnToday);
+
+                        var update = Builders<Booking>.Update
+                            .Set(b => b.TrangThai, BookingStatus.CANCELLED)
+                            .Set(b => b.IsActive, false)
+                            .Set(b => b.PaymentStatus, booking.PaymentStatus == PaymentStatus.PENDING_PAYMENT ? PaymentStatus.CANCELLED : booking.PaymentStatus)
+                            .Set(b => b.UpdatedAt, nowUtc)
+                            .Push(b => b.History, new InquiryHistory
+                            {
+                                HanhDong = BookingStatus.CANCELLED,
+                                FromStatus = BookingStatus.ACCEPTED,
+                                NguoiThucHien = "OWNER",
+                                ActorUserId = currentUserId,
+                                LyDo = trimmedReason,
+                                ThoiGian = nowUtc
+                            });
+
+                        var updated = await _context.Bookings.FindOneAndUpdateAsync(filter, update);
+                        if (updated == null)
+                            throw new ConflictException("Không thể hủy đơn. Trạng thái hoặc điều kiện thời gian của đơn đã thay đổi.");
+
+                        if (booking.PaymentStatus == PaymentStatus.PENDING_PAYMENT)
+                        {
+                            await CancelPendingPaymentGatewayLinkAsync(booking.BookingId);
+                        }
+                    }
                 }
                 else
                 {
@@ -1942,6 +2060,22 @@ namespace PetSitter.Services
             if (booking == null)
                 throw new NotFoundException("Không tìm thấy thông tin đặt lịch.");
 
+            var nowUtc = DateTime.UtcNow;
+
+            if (booking.TrangThai != BookingStatus.DISPUTED)
+            {
+                if (booking.ResolvedByAdmin == true && booking.Settlement != null)
+                {
+                    await ExecuteSettlementPlanAsync(booking.Settlement, booking.BookingId, nowUtc, adminUserId);
+                    if (booking.Settlement.RefundAmount > 0)
+                    {
+                        await CreateOrGetRefundRequestAsync(booking, booking.Settlement, nowUtc, $"ADMIN_RESOLVED_{dto.Resolution}", trimmedNote);
+                    }
+                    return await MapToDtoAsync(booking, adminUserId, role: "ADMIN");
+                }
+                throw new BadRequestException("Đơn không ở trạng thái tranh chấp (DISPUTED).");
+            }
+
             // Kiểm tra xung đột lợi ích: Admin không được xử lý đơn mà chính mình là Owner hoặc Sitter
             if (booking.OwnerId == adminUserId)
                 throw new BadRequestException("Admin không thể tự xử lý đơn khiếu nại của chính mình với tư cách là chủ thú cưng.");
@@ -1970,42 +2104,11 @@ namespace PetSitter.Services
                 }
             }
 
-            var nowUtc = DateTime.UtcNow;
-            var targetStatus = dto.Resolution == BookingStatus.CANCELLED ? BookingStatus.CANCELLED : BookingStatus.COMPLETED;
-            var actionName = dto.Resolution == "SPLIT" ? "ADMIN_RESOLVED_SPLIT" : (dto.Resolution == BookingStatus.COMPLETED ? "ADMIN_RESOLVED_COMPLETED" : "ADMIN_RESOLVED_CANCELLED");
+            Booking result;
 
-            var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, bookingId)
-                       & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.DISPUTED);
-
-            var update = Builders<Booking>.Update
-                .Set(b => b.TrangThai, targetStatus)
-                .Set(b => b.IsActive, false)
-                .Set(b => b.AdminResolutionNote, trimmedNote)
-                .Set(b => b.ResolvedByAdmin, true)
-                .Push(b => b.History, new InquiryHistory
-                {
-                    HanhDong = actionName,
-                    FromStatus = BookingStatus.DISPUTED,
-                    NguoiThucHien = "ADMIN",
-                    ActorUserId = adminUserId,
-                    LyDo = trimmedNote,
-                    ThoiGian = nowUtc
-                });
-
-            var result = await _context.Bookings.FindOneAndUpdateAsync(filter, update, new FindOneAndUpdateOptions<Booking> { ReturnDocument = ReturnDocument.After });
-
-            if (result == null)
-                throw new ConflictException("Không thể xử lý tranh chấp. Đơn không ở trạng thái DISPUTED hoặc đã được xử lý.");
-
-            // Xử lý tài chính theo từng Resolution
             if (booking.PaymentStatus == PaymentStatus.HELD && totalAmount > 0)
             {
-                if (dto.Resolution == BookingStatus.COMPLETED)
-                {
-                    // Giải ngân toàn bộ cho Sitter + hoa hồng nền tảng
-                    await ReleaseEscrowToSitterAndPlatformAsync(result, nowUtc, "ADMIN_RESOLVED_COMPLETED");
-                }
-                else if (dto.Resolution == BookingStatus.CANCELLED)
+                if (dto.Resolution == BookingStatus.CANCELLED)
                 {
                     var plan = new SettlementPlan
                     {
@@ -2020,40 +2123,38 @@ namespace PetSitter.Services
                         AvailableAt = null
                     };
 
-                    // Claim nguyên tử trên Booking trước khi ghi sổ (Requirement 2)
-                    var claimCancelFilter = Builders<Booking>.Filter.And(
-                        Builders<Booking>.Filter.Eq(b => b.BookingId, booking.BookingId),
-                        Builders<Booking>.Filter.Eq(b => b.PaymentStatus, PaymentStatus.HELD)
-                    );
-                    var claimCancelUpdate = Builders<Booking>.Update
+                    // GỘP THÀNH MỘT FindOneAndUpdate DUY NHẤT:
+                    // filter: TrangThai == DISPUTED && PaymentStatus == HELD
+                    var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, bookingId)
+                               & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.DISPUTED)
+                               & Builders<Booking>.Filter.Eq(b => b.PaymentStatus, PaymentStatus.HELD);
+
+                    var update = Builders<Booking>.Update
+                        .Set(b => b.TrangThai, BookingStatus.CANCELLED)
+                        .Set(b => b.IsActive, false)
                         .Set(b => b.PaymentStatus, PaymentStatus.REFUND_PENDING)
                         .Set(b => b.Settlement, plan)
                         .Set(b => b.ClaimedAt, nowUtc)
-                        .Set(b => b.UpdatedAt, nowUtc);
-
-                    var claimedCancel = await _context.Bookings.FindOneAndUpdateAsync(
-                        claimCancelFilter,
-                        claimCancelUpdate,
-                        new FindOneAndUpdateOptions<Booking> { ReturnDocument = ReturnDocument.After }
-                    );
-
-                    if (claimedCancel != null)
-                    {
-                        await ExecuteSettlementPlanAsync(plan, booking.BookingId, nowUtc, adminUserId);
-
-                        var refundReq = new RefundRequest
+                        .Set(b => b.UpdatedAt, nowUtc)
+                        .Set(b => b.AdminResolutionNote, trimmedNote)
+                        .Set(b => b.ResolvedByAdmin, true)
+                        .Push(b => b.History, new InquiryHistory
                         {
-                            RefundId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
-                            BookingId = booking.BookingId,
-                            OwnerUserId = booking.OwnerId,
-                            Amount = totalAmount,
-                            Reason = "ADMIN_RESOLVED_CANCELLED",
-                            AdminNote = trimmedNote,
-                            Status = RefundStatus.REFUND_PENDING,
-                            CreatedAt = nowUtc
-                        };
-                        await _context.RefundRequests.InsertOneAsync(refundReq);
-                    }
+                            HanhDong = "ADMIN_RESOLVED_CANCELLED",
+                            FromStatus = BookingStatus.DISPUTED,
+                            NguoiThucHien = "ADMIN",
+                            ActorUserId = adminUserId,
+                            LyDo = trimmedNote,
+                            ThoiGian = nowUtc
+                        });
+
+                    result = await _context.Bookings.FindOneAndUpdateAsync(filter, update, new FindOneAndUpdateOptions<Booking> { ReturnDocument = ReturnDocument.After });
+                    if (result == null)
+                        throw new ConflictException("Không thể xử lý tranh chấp. Đơn không ở trạng thái DISPUTED/HELD hoặc đã được xử lý.");
+
+                    // Sau claim: ghi sổ + RefundRequest chạy lặp lại được
+                    await ExecuteSettlementPlanAsync(plan, booking.BookingId, nowUtc, adminUserId);
+                    await CreateOrGetRefundRequestAsync(result, plan, nowUtc, "ADMIN_RESOLVED_CANCELLED", trimmedNote);
                 }
                 else if (dto.Resolution == "SPLIT")
                 {
@@ -2076,41 +2177,92 @@ namespace PetSitter.Services
                         AvailableAt = nowUtc.AddHours(holdHours)
                     };
 
-                    // Claim nguyên tử trên Booking trước khi ghi sổ (Requirement 2)
-                    var claimSplitFilter = Builders<Booking>.Filter.And(
-                        Builders<Booking>.Filter.Eq(b => b.BookingId, booking.BookingId),
-                        Builders<Booking>.Filter.Eq(b => b.PaymentStatus, PaymentStatus.HELD)
-                    );
-                    var claimSplitUpdate = Builders<Booking>.Update
+                    // GỘP THÀNH MỘT FindOneAndUpdate DUY NHẤT:
+                    var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, bookingId)
+                               & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.DISPUTED)
+                               & Builders<Booking>.Filter.Eq(b => b.PaymentStatus, PaymentStatus.HELD);
+
+                    var update = Builders<Booking>.Update
+                        .Set(b => b.TrangThai, BookingStatus.COMPLETED)
+                        .Set(b => b.IsActive, false)
                         .Set(b => b.PaymentStatus, PaymentStatus.PARTIALLY_REFUNDED)
                         .Set(b => b.Settlement, plan)
                         .Set(b => b.ClaimedAt, nowUtc)
-                        .Set(b => b.UpdatedAt, nowUtc);
-
-                    var claimedSplit = await _context.Bookings.FindOneAndUpdateAsync(
-                        claimSplitFilter,
-                        claimSplitUpdate,
-                        new FindOneAndUpdateOptions<Booking> { ReturnDocument = ReturnDocument.After }
-                    );
-
-                    if (claimedSplit != null)
-                    {
-                        await ExecuteSettlementPlanAsync(plan, booking.BookingId, nowUtc, adminUserId);
-
-                        var refundReq = new RefundRequest
+                        .Set(b => b.UpdatedAt, nowUtc)
+                        .Set(b => b.AdminResolutionNote, trimmedNote)
+                        .Set(b => b.ResolvedByAdmin, true)
+                        .Push(b => b.History, new InquiryHistory
                         {
-                            RefundId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
-                            BookingId = booking.BookingId,
-                            OwnerUserId = booking.OwnerId,
-                            Amount = refundAmount,
-                            Reason = "ADMIN_RESOLVED_SPLIT",
-                            AdminNote = trimmedNote,
-                            Status = RefundStatus.REFUND_PENDING,
-                            CreatedAt = nowUtc
-                        };
-                        await _context.RefundRequests.InsertOneAsync(refundReq);
-                    }
+                            HanhDong = "ADMIN_RESOLVED_SPLIT",
+                            FromStatus = BookingStatus.DISPUTED,
+                            NguoiThucHien = "ADMIN",
+                            ActorUserId = adminUserId,
+                            LyDo = trimmedNote,
+                            ThoiGian = nowUtc
+                        });
+
+                    result = await _context.Bookings.FindOneAndUpdateAsync(filter, update, new FindOneAndUpdateOptions<Booking> { ReturnDocument = ReturnDocument.After });
+                    if (result == null)
+                        throw new ConflictException("Không thể xử lý tranh chấp. Đơn không ở trạng thái DISPUTED/HELD hoặc đã được xử lý.");
+
+                    // Sau claim: ghi sổ + RefundRequest chạy lặp lại được
+                    await ExecuteSettlementPlanAsync(plan, booking.BookingId, nowUtc, adminUserId);
+                    await CreateOrGetRefundRequestAsync(result, plan, nowUtc, "ADMIN_RESOLVED_SPLIT", trimmedNote);
                 }
+                else // COMPLETED
+                {
+                    var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, bookingId)
+                               & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.DISPUTED);
+
+                    var update = Builders<Booking>.Update
+                        .Set(b => b.TrangThai, BookingStatus.COMPLETED)
+                        .Set(b => b.IsActive, false)
+                        .Set(b => b.AdminResolutionNote, trimmedNote)
+                        .Set(b => b.ResolvedByAdmin, true)
+                        .Push(b => b.History, new InquiryHistory
+                        {
+                            HanhDong = "ADMIN_RESOLVED_COMPLETED",
+                            FromStatus = BookingStatus.DISPUTED,
+                            NguoiThucHien = "ADMIN",
+                            ActorUserId = adminUserId,
+                            LyDo = trimmedNote,
+                            ThoiGian = nowUtc
+                        });
+
+                    result = await _context.Bookings.FindOneAndUpdateAsync(filter, update, new FindOneAndUpdateOptions<Booking> { ReturnDocument = ReturnDocument.After });
+                    if (result == null)
+                        throw new ConflictException("Không thể xử lý tranh chấp. Đơn không ở trạng thái DISPUTED hoặc đã được xử lý.");
+
+                    // Giải ngân toàn bộ cho Sitter + hoa hồng nền tảng
+                    await ReleaseEscrowToSitterAndPlatformAsync(result, nowUtc, "ADMIN_RESOLVED_COMPLETED");
+                }
+            }
+            else
+            {
+                var targetStatus = dto.Resolution == BookingStatus.CANCELLED ? BookingStatus.CANCELLED : BookingStatus.COMPLETED;
+                var actionName = dto.Resolution == "SPLIT" ? "ADMIN_RESOLVED_SPLIT" : (dto.Resolution == BookingStatus.COMPLETED ? "ADMIN_RESOLVED_COMPLETED" : "ADMIN_RESOLVED_CANCELLED");
+
+                var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, bookingId)
+                           & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.DISPUTED);
+
+                var update = Builders<Booking>.Update
+                    .Set(b => b.TrangThai, targetStatus)
+                    .Set(b => b.IsActive, false)
+                    .Set(b => b.AdminResolutionNote, trimmedNote)
+                    .Set(b => b.ResolvedByAdmin, true)
+                    .Push(b => b.History, new InquiryHistory
+                    {
+                        HanhDong = actionName,
+                        FromStatus = BookingStatus.DISPUTED,
+                        NguoiThucHien = "ADMIN",
+                        ActorUserId = adminUserId,
+                        LyDo = trimmedNote,
+                        ThoiGian = nowUtc
+                    });
+
+                result = await _context.Bookings.FindOneAndUpdateAsync(filter, update, new FindOneAndUpdateOptions<Booking> { ReturnDocument = ReturnDocument.After });
+                if (result == null)
+                    throw new ConflictException("Không thể xử lý tranh chấp. Đơn không ở trạng thái DISPUTED hoặc đã được xử lý.");
             }
 
             if (_notificationService != null)

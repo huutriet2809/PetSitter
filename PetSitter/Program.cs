@@ -92,12 +92,22 @@ builder.Services.AddDataProtection();
 builder.Services.AddHttpClient();
 
 // Cấu hình Cổng thanh toán (PayOS vs Fake Mock) & Sổ cái (Ledger)
+var isDevelopment = builder.Environment.IsDevelopment();
 var isLiveMode = builder.Configuration.GetValue<bool>("Payments:LiveMode", false);
+
+// Điều kiện an toàn khởi động hệ thống:
+// 1. Môi trường không phải Development mà không bật LiveMode -> cấm khởi động với FakeGateway
+// 2. FakePaymentGateway CHỈ được phép đăng ký trên môi trường Development
+if (!isDevelopment && !isLiveMode)
+{
+    throw new InvalidOperationException("Lỗi khởi động bảo mật: FakePaymentGateway bị cấm trên môi trường Production/Staging. Cần bật Payments:LiveMode = true và cấu hình khóa PayOS hợp lệ.");
+}
+
 if (isLiveMode)
 {
-    var clientId = builder.Configuration.GetValue<string>("PayOS:ClientId");
-    var apiKey = builder.Configuration.GetValue<string>("PayOS:ApiKey");
-    var checksumKey = builder.Configuration.GetValue<string>("PayOS:ChecksumKey");
+    var clientId = builder.Configuration.GetValue<string>("Payments:PayOs:ClientId") ?? builder.Configuration.GetValue<string>("PayOS:ClientId");
+    var apiKey = builder.Configuration.GetValue<string>("Payments:PayOs:ApiKey") ?? builder.Configuration.GetValue<string>("PayOS:ApiKey");
+    var checksumKey = builder.Configuration.GetValue<string>("Payments:PayOs:ChecksumKey") ?? builder.Configuration.GetValue<string>("PayOS:ChecksumKey");
     if (string.IsNullOrWhiteSpace(clientId) || clientId.StartsWith("YOUR_") ||
         string.IsNullOrWhiteSpace(apiKey) || apiKey.StartsWith("YOUR_") ||
         string.IsNullOrWhiteSpace(checksumKey) || checksumKey.StartsWith("YOUR_"))
@@ -108,6 +118,10 @@ if (isLiveMode)
 }
 else
 {
+    if (!isDevelopment)
+    {
+        throw new InvalidOperationException("Lỗi cấu hình: FakePaymentGateway chỉ được phép sử dụng trong môi trường Development.");
+    }
     builder.Services.AddSingleton<IPaymentGateway, FakePaymentGateway>();
 }
 

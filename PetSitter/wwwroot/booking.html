@@ -896,7 +896,8 @@
           kichCo: formData.get('kichCo'),
           ghiChu: formData.get('ghiChu'),
           addons: selectedAddons,
-          petId: (document.getElementById('saved-pets') && document.getElementById('saved-pets').value) ? document.getElementById('saved-pets').value : null
+          petId: (document.getElementById('saved-pets') && document.getElementById('saved-pets').value) ? document.getElementById('saved-pets').value : null,
+          expectedTotal: currentQuote ? currentQuote.totalAmount : null
         };
 
         try {
@@ -907,12 +908,19 @@
             // Success
             window.location.href = 'confirmation.html?id=' + res.bookingId;
         } catch(err) {
-            alert(err.message || 'Lỗi khi đặt lịch');
+            if (err.status === 409 || err.statusCode === 409 || err.newTotal) {
+                alert(err.message || 'Giá dịch vụ đã thay đổi hoặc không khớp. Hệ thống đang cập nhật báo giá mới.');
+                await capNhatGia();
+            } else {
+                alert(err.message || 'Lỗi khi đặt lịch');
+            }
             btn.innerHTML = '🔒 Xác nhận đặt lịch ngay';
             btn.disabled = false;
         }
       });
     }
+
+    let currentQuote = null;
 
     // Hàm tính tiền và hiển thị chi tiết phí lấy trực tiếp từ Server Quote (Item 5b)
     async function capNhatGia() {
@@ -962,6 +970,8 @@
             addons: selectedAddons
           })
         });
+
+        currentQuote = quote;
 
         // Cập nhật giá trên thẻ preview nếu có
         const previewPriceEl = document.querySelector('.preview-price-amount');
