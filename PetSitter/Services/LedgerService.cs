@@ -234,10 +234,7 @@ namespace PetSitter.Services
                     platformRevenueDebit += debit;
                     platformRevenueCredit += credit;
                 }
-                else if (account == LedgerAccount.GATEWAY_FEES)
-                {
-                    gatewayFeesDebit += debit;
-                }
+
                 else if (account.StartsWith("SITTER_EARNINGS:"))
                 {
                     sitterEarningsDebit += debit;
@@ -298,6 +295,73 @@ namespace PetSitter.Services
             var totalCredit = doc.GetValue("TotalCredit", 0).ToInt64();
 
             return (totalDebit, totalCredit, totalDebit == totalCredit);
+        }
+
+        public async Task<(bool IsValid, string Reason)> VerifyBookingSettlementInvariantAsync(string bookingId)
+        {
+            var booking = await _context.Bookings.Find(b => b.BookingId == bookingId).FirstOrDefaultAsync();
+            if (booking == null) return (false, $"Không tìm thấy đơn {bookingId}");
+
+            var entries = await _context.JournalEntries.Find(j => j.BookingId == bookingId).ToListAsync();
+            if (!entries.Any()) return (false, $"Chưa có bút toán nào cho đơn {bookingId}");
+
+            var totalAmount = booking.TotalAmount > 0 ? booking.TotalAmount : (long)booking.TongTien;
+
+            // 1. Số dư ESCROW_HELD của đơn = 0 (Total Credit ESCROW_HELD - Total Debit ESCROW_HELD == 0)
+            var escrowCredit = entries.SelectMany(e => e.Lines)
+                .Where(l => l.Account == LedgerAccounts.ESCROW_HELD && l.Direction == LedgerDirection.CREDIT)
+                .Sum(l => l.Amount);
+            var escrowDebit = entries.SelectMany(e => e.Lines)
+                .Where(l => l.Account == LedgerAccounts.ESCROW_HELD && l.Direction == LedgerDirection.DEBIT)
+                .Sum(l => l.Amount);
+            var netEscrow = escrowCredit - escrowDebit;
+            if (netEscrow != 0)
+            {
+                return (false, $"Số dư ESCROW_HELD của đơn chưa về 0: Nợ = {escrowDebit}, Có = {escrowCredit}, Số dư ròng = {netEscrow}");
+            }
+
+            // 2. Tổng ghi có (doanh thu + thu nhập Sitter + hoàn chủ nuôi) = TotalAmount
+            var revenueCredit = entries.SelectMany(e => e.Lines)
+                .Where(l => l.Account == LedgerAccounts.PLATFORM_REVENUE && l.Direction == LedgerDirection.CREDIT)
+                .Sum(l => l.Amount);
+            var sitterCredit = entries.SelectMany(e => e.Lines)
+                .Where(l => l.Account.StartsWith("SITTER_EARNINGS:") && l.Direction == LedgerDirection.CREDIT)
+                .Sum(l => l.Amount);
+            var refundCredit = entries.SelectMany(e => e.Lines)
+                .Where(l => l.Account == LedgerAccounts.REFUND_PENDING && l.Direction == LedgerDirection.CREDIT)
+                .Sum(l => l.Amount);
+
+            var totalSettledCredits = revenueCredit + sitterCredit + refundCredit;
+            if (totalSettledCredits != totalAmount)
+            {
+                return (false, $"Tổng ghi có tất toán ({totalSettledCredits}) không khớp TotalAmount của đơn ({totalAmount}). Revenue={revenueCredit}, Sitter={sitterCredit}, Refund={refundCredit}");
+            }
+
+            return (true, "Bất biến tất toán theo đơn thỏa mãn tuyệt đối (ESCROW_HELD = 0, Tổng Có = TotalAmount).");
+        }
+
+        public async Task<(bool IsValid, long SystemEscrowHeld, long ExpectedEscrowHeld, string Reason)> VerifyGlobalEscrowInvariantAsync()
+        {
+            // Số dư ESCROW_HELD toàn hệ thống (CREDIT - DEBIT)
+            var allEntries = await _context.JournalEntries.Find(_ => true).ToListAsync();
+            var allEscrowCredit = allEntries.SelectMany(e => e.Lines)
+                .Where(l => l.Account == LedgerAccounts.ESCROW_HELD && l.Direction == LedgerDirection.CREDIT)
+                .Sum(l => l.Amount);
+            var allEscrowDebit = allEntries.SelectMany(e => e.Lines)
+                .Where(l => l.Account == LedgerAccounts.ESCROW_HELD && l.Direction == LedgerDirection.DEBIT)
+                .Sum(l => l.Amount);
+            var netSystemEscrow = allEscrowCredit - allEscrowDebit;
+
+            // Tổng TotalAmount của các đơn đang ở trạng thái HELD
+            var heldBookings = await _context.Bookings.Find(b => b.PaymentStatus == PaymentStatus.HELD).ToListAsync();
+            var expectedEscrow = heldBookings.Sum(b => b.TotalAmount > 0 ? b.TotalAmount : (long)b.TongTien);
+
+            if (netSystemEscrow != expectedEscrow)
+            {
+                return (false, netSystemEscrow, expectedEscrow, $"Bất biến toàn cục bị vi phạm! Số dư ESCROW_HELD toàn hệ thống ({netSystemEscrow:N0} ₫) != Tổng tiền các đơn đang HELD ({expectedEscrow:N0} ₫). Chênh lệch: {netSystemEscrow - expectedEscrow:N0} ₫");
+            }
+
+            return (true, netSystemEscrow, expectedEscrow, "Bất biến ESCROW_HELD toàn hệ thống thỏa mãn tuyệt đối.");
         }
     }
 }

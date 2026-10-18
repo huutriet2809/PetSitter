@@ -61,6 +61,8 @@ namespace PetSitter.Models
         [BsonRepresentation(BsonType.ObjectId)]
         public string SitterId { get; set; } = string.Empty;
 
+        public string SitterUserId { get; set; } = string.Empty;
+
         [BsonRepresentation(BsonType.ObjectId)]
         public string? PetId { get; set; }
 
@@ -104,7 +106,25 @@ namespace PetSitter.Models
         public DateTime? UpdatedAt { get; set; }
         public DateTime? EscrowReleasedAt { get; set; }
 
+        // Kế hoạch tất toán sổ cái (Settlement Plan) cho luồng chính và đối soát
+        public SettlementPlan? Settlement { get; set; }
+        public DateTime? ClaimedAt { get; set; }
+
         public List<InquiryHistory> History { get; set; } = new List<InquiryHistory>();
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
+
+    public class SettlementPlan
+    {
+        public string SettlementKey { get; set; } = string.Empty;
+        public string SettlementType { get; set; } = string.Empty; // ESCROW_RELEASE, CANCEL_OWNER_100, CANCEL_OWNER_50, CANCEL_OWNER_0, CANCEL_SITTER, ADMIN_CANCEL, DISPUTE_SPLIT, LATE_PAYMENT_REFUND
+        public long TotalAmount { get; set; }
+        public long RefundAmount { get; set; }
+        public long CommissionAmount { get; set; }
+        public long SitterAmount { get; set; }
+        public string SitterUserId { get; set; } = string.Empty;
+        public DateTime ClaimedAt { get; set; } = DateTime.UtcNow;
+        public DateTime? AvailableAt { get; set; }
+    }
 }
+

@@ -68,3 +68,33 @@ Tài liệu này ghi nhận các vấn đề nghiệp vụ và quy trình vận 
     3. Tạo thông báo in-app và gửi Email/Push notification chủ động tới cả hai bên ngay khi hết hạn mà không cần chờ người dùng tương tác.
     4. Quét nhắc nhở cho các đơn sắp hết hạn và đơn `ACCEPTED` quá ngày kết thúc.
   - Sử dụng hàng đợi phân tán hoặc distributed lock (nếu triển khai nhiều instance backend) để tránh xung đột giữa các background workers.
+
+---
+
+## 6. Quy trình xử lý giao dịch bất thường trong tài khoản SUSPENSE (Admin Suspense Resolution - Step 5B)
+
+### Hiện trạng kỹ thuật tại Bước 5A:
+- Khi nhận được webhook thanh toán có chữ ký PayOS hợp lệ nhưng số tiền thực trả không khớp với số tiền của link thanh toán (`webhookData.amount != payment.Amount`):
+  1. Bản ghi thanh toán `Payment` được đánh dấu trạng thái `PaymentLinkStatus.ABNORMAL`.
+  2. Bút toán sổ cái ghi nhận dòng tiền thực tế vào hệ thống:
+     - `Nợ (DEBIT) GATEWAY_CLEARING: webhookData.amount`
+     - `Có (CREDIT) SUSPENSE: webhookData.amount`
+     - `IdempotencyKey: PAYOS_ABNORMAL_{orderCode}`
+  3. Đơn đặt lịch `Booking` KHÔNG bị thay đổi trạng thái sang `HELD` để bảo vệ an toàn cho chủ nuôi và sitter.
+  4. Số tiền trong tài khoản `SUSPENSE` hoàn toàn độc lập với `ESCROW_HELD`, không làm lệch đối soát đơn hay bất biến bảo chứng tiền cọc.
+
+### Quy trình nghiệp vụ Admin trong Bước 5B:
+Xây dựng giao diện và API dành riêng cho Quản trị viên (`/admin/suspense-payments`):
+1. **Lộ trình 1: Hoàn tiền về cho Chủ nuôi (Refund to Owner)**
+   - Trường hợp: Khách hàng chuyển nhầm số tiền (ví dụ thừa/thiếu quá mức) và không muốn tiếp tục dịch vụ.
+   - Hành động Admin: Nhập thông tin tài khoản ngân hàng của Chủ nuôi, hệ thống ghi bút toán:
+     - `Nợ (DEBIT) SUSPENSE: amount`
+     - `Có (CREDIT) REFUND_PENDING: amount`
+   - Kích hoạt lệnh hoàn tiền tự động qua PayOS Payout hoặc đối soát chuyển khoản ngân hàng thủ công.
+2. **Lộ trình 2: Gán vào đơn và điều chỉnh giá trị (Reconcile & Assign to Booking)**
+   - Trường hợp: Khách hàng chuyển chênh lệch nhỏ hoặc chuyển gộp đơn, sau khi xác minh với Chủ nuôi và Sitter.
+   - Hành động Admin: Chọn gán giao dịch vào `BookingId` đích, hệ thống chuyển số tiền từ `SUSPENSE` sang `ESCROW_HELD`:
+     - `Nợ (DEBIT) SUSPENSE: amount`
+     - `Có (CREDIT) ESCROW_HELD: amount`
+   - Cập nhật `Booking.PaymentStatus = HELD` và thông báo cho hai bên.
+

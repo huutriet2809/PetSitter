@@ -9,6 +9,9 @@ namespace PetSitter.DTOs
         [Required]
         public string SitterId { get; set; } = string.Empty;
 
+        // Dịch vụ chính do Owner lựa chọn (Boarding, House Sitting, Day Care, etc.)
+        public string? ServiceId { get; set; }
+
         [Required]
         public string NgayBatDau { get; set; } = string.Empty;
         
@@ -29,6 +32,31 @@ namespace PetSitter.DTOs
 
         public List<string> Addons { get; set; } = new List<string>();
     }
+
+    public class BookingQuoteRequestDto
+    {
+        [Required]
+        public string SitterId { get; set; } = string.Empty;
+        public string? ServiceId { get; set; }
+        [Required]
+        public string NgayBatDau { get; set; } = string.Empty;
+        [Required]
+        public string NgayKetThuc { get; set; } = string.Empty;
+        public List<string> Addons { get; set; } = new List<string>();
+    }
+
+    public class BookingQuoteResponseDto
+    {
+        public int SoNgay { get; set; }
+        public string PrimaryServiceId { get; set; } = string.Empty;
+        public string PrimaryServiceName { get; set; } = string.Empty;
+        public long PrimaryServiceUnitPrice { get; set; }
+        public long GiaSitter { get; set; }
+        public long TongAddons { get; set; }
+        public long TotalAmount { get; set; }
+        public List<PetSitter.Models.PricingItemSnapshot> Breakdown { get; set; } = new List<PetSitter.Models.PricingItemSnapshot>();
+    }
+
 
     public class InquiryHistoryDto
     {

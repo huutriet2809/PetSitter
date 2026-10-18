@@ -218,6 +218,34 @@ namespace PetSitter.Services
                         .Set(p => p.RawWebhook, $"{{\"orderCode\":{orderCode},\"receivedAmount\":{amount},\"expectedAmount\":{expectedBookingAmount}}}")
                 );
 
+                // Ghi sổ kép vào tài khoản SUSPENSE để đối chiếu tiền thực tế từ ngân hàng mà không ghi nhận doanh thu
+                var suspenseEntry = new JournalEntry
+                {
+                    EntryId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                    BookingId = payment.BookingId,
+                    TransactionId = "TX" + nowUtc.ToString("yyMMddHHmmss") + "SUSP",
+                    Type = JournalType.PAYMENT_ABNORMAL_SUSPENSE,
+                    ActorUserId = "GATEWAY_WEBHOOK",
+                    CreatedAt = nowUtc,
+                    IdempotencyKey = LedgerIdempotencyKeys.AbnormalSuspense(orderCode),
+                    Lines = new List<JournalLine>
+                    {
+                        new JournalLine
+                        {
+                            Account = LedgerAccounts.GATEWAY_CLEARING,
+                            Direction = LedgerDirection.DEBIT,
+                            Amount = amount
+                        },
+                        new JournalLine
+                        {
+                            Account = LedgerAccounts.SUSPENSE,
+                            Direction = LedgerDirection.CREDIT,
+                            Amount = amount
+                        }
+                    }
+                };
+                await _ledgerService.RecordEntryAsync(suspenseEntry);
+
                 // Báo Admin
                 try
                 {
@@ -229,7 +257,7 @@ namespace PetSitter.Services
                             NotificationType.PAYMENT_ABNORMAL,
                             payment.BookingId,
                             "Cảnh báo giao dịch bất thường",
-                            $"Đơn {payment.BookingId} (OrderCode: {orderCode}) nhận thanh toán sai số tiền: nhận {amount:N0} ₫, mong đợi {expectedBookingAmount:N0} ₫. Không ghi nhận doanh thu.",
+                            $"Đơn {payment.BookingId} (OrderCode: {orderCode}) nhận thanh toán sai số tiền: nhận {amount:N0} ₫, mong đợi {expectedBookingAmount:N0} ₫. Tiền đã được chuyển vào tài khoản SUSPENSE.",
                             $"{orderCode}:ABNORMAL_PAYMENT:{admin.UserId}",
                             targetRole: "ADMIN"
                         );
@@ -243,6 +271,7 @@ namespace PetSitter.Services
                 // Trả về không ném lỗi (Controller trả 200 OK), KHÔNG ghi sổ doanh thu!
                 return;
             }
+
 
             // BƯỚC 4: TRÍCH XUẤT VÀ MÃ HÓA THÔNG TIN NGƯỜI TRẢ (PayerInfo)
             var payerInfo = new PayerInfo
@@ -295,9 +324,23 @@ namespace PetSitter.Services
                 // KỊCH BẢN B: ĐƠN ĐÃ ĐÓNG THẬT (Lazy EXPIRED hoặc CANCELLED đã thắng trước đó) -> THANH TOÁN ĐẾN MUỘN
                 _logger.LogWarning("Late payment received for truly closed booking {BookingId} (OrderCode {OrderCode}). Moving to REFUND_PENDING.", payment.BookingId, orderCode);
 
+                var latePlan = new SettlementPlan
+                {
+                    SettlementKey = LedgerIdempotencyKeys.LatePaymentRefund(booking.BookingId),
+                    SettlementType = "LATE_PAYMENT_REFUND",
+                    TotalAmount = amount,
+                    RefundAmount = amount,
+                    CommissionAmount = 0,
+                    SitterAmount = 0,
+                    ClaimedAt = nowUtc
+                };
+
                 await _context.Bookings.UpdateOneAsync(
                     b => b.BookingId == booking.BookingId,
-                    Builders<Booking>.Update.Set(b => b.PaymentStatus, PaymentStatus.REFUND_PENDING)
+                    Builders<Booking>.Update
+                        .Set(b => b.PaymentStatus, PaymentStatus.REFUND_PENDING)
+                        .Set(b => b.Settlement, latePlan)
+                        .Set(b => b.ClaimedAt, nowUtc)
                 );
 
                 // Ghi sổ kép: DEBIT GATEWAY_CLEARING, CREDIT REFUND_PENDING (Idempotent theo key)
@@ -314,13 +357,13 @@ namespace PetSitter.Services
                     {
                         new JournalLine
                         {
-                            Account = LedgerAccount.GATEWAY_CLEARING,
+                            Account = LedgerAccounts.GATEWAY_CLEARING,
                             Direction = LedgerDirection.DEBIT,
                             Amount = amount
                         },
                         new JournalLine
                         {
-                            Account = LedgerAccount.REFUND_PENDING,
+                            Account = LedgerAccounts.REFUND_PENDING,
                             Direction = LedgerDirection.CREDIT,
                             Amount = amount
                         }

@@ -83,10 +83,13 @@ function getInitials(ten) {
   return (last + first).toUpperCase();
 }
 
-// Hàm tính ngày giữa 2 mốc
+// Hàm tính ngày giữa 2 mốc (quy ước bao gồm cả 2 đầu ngày [Start, End])
 function tinhSoNgay(batDau, ketThuc) {
-  const ms = new Date(ketThuc) - new Date(batDau);
-  return Math.ceil(ms / (1000 * 60 * 60 * 24));
+  if (!batDau || !ketThuc) return 0;
+  const dStart = new Date(batDau);
+  const dEnd = new Date(ketThuc);
+  const diffDays = Math.round((dEnd - dStart) / (1000 * 60 * 60 * 24));
+  return diffDays >= 0 ? diffDays + 1 : 0;
 }
 
 // Hàm hiển thị toast notification

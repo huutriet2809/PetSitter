@@ -637,6 +637,20 @@
         `;
       }).join('');
 
+      // Render danh sách dịch vụ chính của Sitter (Item 5a)
+      const availableServices = (sitter.dichVu || []).filter(s => (s.gia || s.price) > 0);
+      let primaryServicesOptionsHtml = '';
+      if (availableServices.length > 0) {
+        primaryServicesOptionsHtml = availableServices.map(s => {
+          const sId = s.serviceId || s.id || '';
+          const sName = s.ten || s.serviceName || s.name || 'Dịch vụ';
+          const sPrice = s.gia || s.price || 0;
+          return `<option value="${escapeHtml(sId)}">${escapeHtml(sName)} — ${formatTien(sPrice)} / ngày</option>`;
+        }).join('');
+      } else {
+        primaryServicesOptionsHtml = `<option value="">Dịch vụ trông giữ chính — ${formatTien(sitter.giaTu || 0)} / ngày</option>`;
+      }
+
       container.innerHTML = `
         <div class="booking-header">
           <p class="section-label">Hoàn tất đặt lịch</p>
@@ -648,9 +662,16 @@
           <!-- Cột bên trái: FORM nhập liệu -->
           <div class="booking-form-card">
             
-            <!-- PHẦN 1: Thời gian -->
+            <!-- PHẦN 1: Thời gian & Dịch vụ chính -->
             <div class="form-section-title">
-              <span>📅</span> Thời gian chăm sóc
+              <span>📅</span> Thời gian chăm sóc & Gói dịch vụ chính
+            </div>
+
+            <div class="form-group" style="margin-bottom: 20px;">
+              <label for="primary-service-select">Gói dịch vụ chính <span class="required">*</span></label>
+              <select id="primary-service-select" name="serviceId" style="width:100%; padding:12px; border-radius:var(--radius-md); border:1.5px solid var(--border); background:var(--bg-secondary); color:var(--text-primary); font-family:var(--font-main);">
+                ${/* safe */ primaryServicesOptionsHtml}
+              </select>
             </div>
             
                             <div class="form-row">
@@ -821,6 +842,10 @@
       });
 
       inputKetThuc.addEventListener('change', capNhatGia);
+      const primarySelect = document.getElementById('primary-service-select');
+      if (primarySelect) {
+        primarySelect.addEventListener('change', capNhatGia);
+      }
 
       // Event toggle chọn dịch vụ bổ sung
       document.querySelectorAll('.addon-card').forEach(card => {
@@ -838,63 +863,67 @@
         });
       });
 
-              // Submit form
-        form.addEventListener('submit', async function(e) {
-          e.preventDefault();
-          
-          const batDau = inputBatDau.value;
-          const ketThuc = inputKetThuc.value;
-          const tenPet = inputTenPet.value.trim();
-          
-          let valid = true;
-          document.querySelectorAll('.field-error').forEach(el => el.classList.remove('show'));
-  
-          if (!batDau) { document.getElementById('error-bat-dau').classList.add('show'); valid = false; }
-          if (!ketThuc || tinhSoNgay(batDau, ketThuc) <= 0) { document.getElementById('error-ket-thuc').classList.add('show'); valid = false; }
-          if (!tenPet) { document.getElementById('error-ten-pet').classList.add('show'); valid = false; }
+      // Submit form
+      form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const batDau = inputBatDau.value;
+        const ketThuc = inputKetThuc.value;
+        const tenPet = inputTenPet.value.trim();
+        
+        let valid = true;
+        document.querySelectorAll('.field-error').forEach(el => el.classList.remove('show'));
 
-          if (!valid) return;
+        if (!batDau) { document.getElementById('error-bat-dau').classList.add('show'); valid = false; }
+        if (!ketThuc || tinhSoNgay(batDau, ketThuc) <= 0) { document.getElementById('error-ket-thuc').classList.add('show'); valid = false; }
+        if (!tenPet) { document.getElementById('error-ten-pet').classList.add('show'); valid = false; }
 
-          const btn = document.getElementById('btn-submit-booking');
-          btn.innerHTML = '⏳ Đang xử lý...';
-          btn.disabled = true;
+        if (!valid) return;
 
-                const formData = new FormData(form);
-          const payload = {
-            sitterId: selectedSitter.sitterId || selectedSitter.id,
-            ngayBatDau: batDau,
-            ngayKetThuc: ketThuc,
-            tenPet: tenPet,
-            loaiPet: formData.get('loaiPet'),
-            kichCo: formData.get('kichCo'),
-            ghiChu: formData.get('ghiChu'),
-            addons: selectedAddons,
-            petId: (document.getElementById('saved-pets') && document.getElementById('saved-pets').value) ? document.getElementById('saved-pets').value : null
-          };
+        const btn = document.getElementById('btn-submit-booking');
+        btn.innerHTML = '⏳ Đang xử lý...';
+        btn.disabled = true;
 
-          try {
-              const res = await apiFetch('/bookings', {
-                  method: 'POST',
-                  body: JSON.stringify(payload)
-              });
-              // Success
-              window.location.href = 'confirmation.html?id=' + res.bookingId;
-          } catch(err) {
-              alert(err.message || 'Lỗi khi đặt lịch');
-              btn.innerHTML = '🔒 Xác nhận đặt lịch ngay';
-              btn.disabled = false;
-          }
-        });
+        const formData = new FormData(form);
+        const primaryServiceEl = document.getElementById('primary-service-select');
+        const payload = {
+          sitterId: selectedSitter.sitterId || selectedSitter.id,
+          serviceId: primaryServiceEl ? primaryServiceEl.value : null,
+          ngayBatDau: batDau,
+          ngayKetThuc: ketThuc,
+          tenPet: tenPet,
+          loaiPet: formData.get('loaiPet'),
+          kichCo: formData.get('kichCo'),
+          ghiChu: formData.get('ghiChu'),
+          addons: selectedAddons,
+          petId: (document.getElementById('saved-pets') && document.getElementById('saved-pets').value) ? document.getElementById('saved-pets').value : null
+        };
+
+        try {
+            const res = await apiFetch('/bookings', {
+                method: 'POST',
+                body: JSON.stringify(payload)
+            });
+            // Success
+            window.location.href = 'confirmation.html?id=' + res.bookingId;
+        } catch(err) {
+            alert(err.message || 'Lỗi khi đặt lịch');
+            btn.innerHTML = '🔒 Xác nhận đặt lịch ngay';
+            btn.disabled = false;
+        }
+      });
     }
 
-    // Hàm tính tiền và hiển thị chi tiết phí
-    function capNhatGia() {
+    // Hàm tính tiền và hiển thị chi tiết phí lấy trực tiếp từ Server Quote (Item 5b)
+    async function capNhatGia() {
       const inputBatDau = document.getElementById('ngay-bat-dau');
       const inputKetThuc = document.getElementById('ngay-ket-thuc');
+      const primaryServiceSelect = document.getElementById('primary-service-select');
       const priceContent = document.getElementById('price-content');
 
-      const batDau = inputBatDau.value;
-      const ketThuc = inputKetThuc.value;
+      const batDau = inputBatDau ? inputBatDau.value : '';
+      const ketThuc = inputKetThuc ? inputKetThuc.value : '';
+      const serviceId = (primaryServiceSelect && primaryServiceSelect.value) ? primaryServiceSelect.value : null;
 
       if (!batDau || !ketThuc || !selectedSitter) {
         priceContent.innerHTML = `
@@ -910,73 +939,78 @@
       if (soNgay <= 0) {
         priceContent.innerHTML = `
           <p class="price-placeholder" style="color: #e07b7b; font-weight: 500;">
-          showSummaryError("⚠️ Ngày kết thúc phải sau ngày bắt đầu gửi. Vui lòng kiểm tra lại.");
+            ⚠️ Ngày kết thúc phải sau hoặc cùng ngày bắt đầu gửi. Vui lòng kiểm tra lại.
           </p>
         `;
         return;
       }
 
-      const baseDailyPrice = (selectedSitter.dichVu && selectedSitter.dichVu.length > 0)
-        ? (selectedSitter.dichVu.find(s => (s.gia || s.price) > 0)?.gia || selectedSitter.dichVu.find(s => (s.gia || s.price) > 0)?.price || selectedSitter.giaTu || 0)
-        : (selectedSitter.giaTu || 0);
+      priceContent.innerHTML = `
+        <p class="price-placeholder" style="color: var(--text-muted);">
+          ⏳ Đang tính toán chi phí từ máy chủ...
+        </p>
+      `;
 
-      const giaSitter = baseDailyPrice * soNgay;
+      try {
+        const quote = await apiFetch('/bookings/quote', {
+          method: 'POST',
+          body: JSON.stringify({
+            sitterId: selectedSitter.sitterId || selectedSitter.id,
+            serviceId: serviceId,
+            ngayBatDau: batDau,
+            ngayKetThuc: ketThuc,
+            addons: selectedAddons
+          })
+        });
 
-      // Tính tổng dịch vụ bổ sung
-      let tongAddons = 0;
-      let addonsRowsHtml = '';
+        // Cập nhật giá trên thẻ preview nếu có
+        const previewPriceEl = document.querySelector('.preview-price-amount');
+        if (previewPriceEl && quote.primaryServiceUnitPrice) {
+          previewPriceEl.textContent = formatTien(quote.primaryServiceUnitPrice);
+        }
 
-      selectedAddons.forEach(id => {
-        const add = ADDONS.find(a => a.id === id);
-        const isDaily = (id === 'anh-ngay' || id === 'giu-thuoc');
-        const giaAddon = isDaily ? (add.gia * soNgay) : add.gia;
-        tongAddons += giaAddon;
-
-        addonsRowsHtml += `
-          <div class="price-row addon-item">
-            <div>
-              <span>${/* safe */ add.icon} ${escapeHtml(add.ten)}</span>
-              ${/* safe */ isDaily ? `<span class="price-row-label-sub">${formatTien(add.gia)} × ${/* safe */ soNgay} ngày</span>` : ''}
+        let rowsHtml = '';
+        if (quote.breakdown && quote.breakdown.length > 0) {
+          rowsHtml = quote.breakdown.map(item => `
+            <div class="price-row ${/* safe */ item.type && item.type.includes('ADDON') ? 'addon-item' : ''}">
+              <div>
+                <span>${escapeHtml(item.name)}</span>
+                <span class="price-row-label-sub">${formatTien(item.unitPrice)} × ${/* safe */ item.quantity}</span>
+              </div>
+              <span>${/* safe */ item.type && item.type.includes('ADDON') ? '+' : ''}${formatTien(item.total)}</span>
             </div>
-            <span>+${formatTien(giaAddon)}</span>
+          `).join('');
+        }
+
+        const formatNgayDoc = (str) => {
+          const d = new Date(str);
+          return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
+        };
+
+        priceContent.innerHTML = `
+          ${/* safe */ rowsHtml}
+
+          <!-- Mốc thời gian -->
+          <div style="font-size: 0.78rem; color: var(--text-muted); margin: 16px 0 8px; text-align: right;">
+            📅 Lịch: ${formatNgayDoc(batDau)} – ${formatNgayDoc(ketThuc)} (${/* safe */ quote.soNgay} ngày)
+          </div>
+
+          <!-- Chi phí ước tính -->
+          <div class="price-row total">
+            <span>Chi phí ước tính</span>
+            <span class="amount">${formatTien(quote.totalAmount)}</span>
+          </div>
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 6px; text-align: right;">
+            💡 Thanh toán an toàn qua VietQR (PayOS) sau khi Sitter chấp nhận đơn. Tiền được tạm giữ an toàn đến khi hoàn tất dịch vụ.
           </div>
         `;
-      });
-
-      const tongCuoi = giaSitter + tongAddons;
-
-      const formatNgayDoc = (str) => {
-        const d = new Date(str);
-        return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
-      };
-
-      priceContent.innerHTML = `
-        <!-- Tiền Sitter -->
-        <div class="price-row">
-          <div>
-            <span>Chi phí trông giữ</span>
-            <span class="price-row-label-sub">${formatTien(baseDailyPrice)} × ${/* safe */ soNgay} ngày</span>
-          </div>
-          <span>${formatTien(giaSitter)}</span>
-        </div>
-
-        <!-- Tiền Addons (nếu có) -->
-        ${/* safe */ selectedAddons.length > 0 ? addonsRowsHtml : ''}
-
-        <!-- Mốc thời gian -->
-        <div style="font-size: 0.78rem; color: var(--text-muted); margin: 16px 0 8px; text-align: right;">
-📅 Lịch: ${formatNgayDoc(batDau)} – ${formatNgayDoc(ketThuc)} (${/* safe */ soNgay} ngày)
-        </div>
-
-        <!-- Chi phí ước tính -->
-        <div class="price-row total">
-          <span>Chi phí ước tính</span>
-          <span class="amount">${formatTien(tongCuoi)}</span>
-        </div>
-        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 6px; text-align: right;">
-          💡 Thanh toán an toàn qua VietQR (PayOS) sau khi Sitter chấp nhận đơn. Tiền được tạm giữ an toàn đến khi hoàn tất dịch vụ.
-        </div>
-      `;
+      } catch (err) {
+        priceContent.innerHTML = `
+          <p class="price-placeholder" style="color: #e07b7b; font-weight: 500;">
+            ⚠️ Không thể tính giá: ${escapeHtml(err.message || 'Lỗi kết nối')}
+          </p>
+        `;
+      }
     }
 
     let mySavedPets = [];

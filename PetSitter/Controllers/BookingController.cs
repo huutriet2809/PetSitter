@@ -40,6 +40,21 @@ namespace PetSitter.Controllers
             }
         }
 
+        [HttpPost("quote")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetBookingQuote([FromBody] BookingQuoteRequestDto dto)
+        {
+            try
+            {
+                var result = await _bookingService.GetBookingQuoteAsync(dto);
+                return Ok(result);
+            }
+            catch (AppException ex)
+            {
+                return StatusCode(ex.StatusCode, new { message = ex.Message });
+            }
+        }
+
         [HttpGet("my")]
         public async Task<IActionResult> GetMyBookings()
         {
