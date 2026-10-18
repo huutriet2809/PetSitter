@@ -63,4 +63,18 @@ namespace PetSitter.Models
         public const string DISPUTE_SPLIT = "DISPUTE_SPLIT";
         public const string LATE_PAYMENT_REFUND = "LATE_PAYMENT_REFUND";
     }
+
+    public static class LedgerIdempotencyKeys
+    {
+        public static string PaymentHeld(string bookingId) => $"{bookingId}:PAYMENT_HELD";
+        public static string EscrowRelease(string bookingId) => $"{bookingId}:ESCROW_RELEASE";
+        public static string CancelSitter(string bookingId) => $"{bookingId}:CANCEL_SITTER";
+        public static string CancelOwner100(string bookingId) => $"{bookingId}:CANCEL_OWNER_100";
+        public static string CancelOwner50(string bookingId) => $"{bookingId}:CANCEL_OWNER_50";
+        public static string CancelOwner0(string bookingId) => $"{bookingId}:CANCEL_OWNER_0";
+        public static string DisputeSplit(string bookingId) => $"{bookingId}:DISPUTE_SPLIT";
+        public static string DisputeForfeit(string bookingId) => $"{bookingId}:DISPUTE_FORFEIT";
+        public static string RefundCompleted(string refundId) => $"{refundId}:REFUND_COMPLETED";
+        public static string LatePaymentRefund(string bookingId) => $"{bookingId}:LATE_PAYMENT_REFUND";
+    }
 }

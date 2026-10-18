@@ -17,6 +17,6 @@ namespace PetSitter.Services
         Task<BookingDetailDto> OwnerDisputeBookingAsync(string currentUserId, string bookingId, string lyDo);
         Task<BookingDetailDto> AdminResolveDisputeAsync(string adminUserId, string bookingId, ResolveDisputeDto dto);
         Task<List<BookingDetailDto>> GetDisputedBookingsForAdminAsync();
-        Task<int> ReconcileMissingLedgerEntriesAsync(DateTime nowUtc, string? specificBookingId = null);
+        Task<int> ReconcileMissingLedgerEntriesAsync(DateTime nowUtc, string? specificBookingId = null, int lookbackDays = 7, int limit = 100, bool force = false);
     }
 }

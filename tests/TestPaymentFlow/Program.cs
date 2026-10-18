@@ -548,7 +548,10 @@ namespace TestPaymentFlow
                     var cancelTime47_59 = vnMidnight2.AddHours(-48).AddSeconds(1); // 47h59m59s
                     await CancelWithMockTimeAsync(bookingService, context, ledgerService, b47_59, cancelTime47_59);
                     var r47_59 = await context.RefundRequests.Find(r => r.BookingId == b47_59.BookingId).FirstOrDefaultAsync();
+                    var b47_59_After = await context.Bookings.Find(b => b.BookingId == b47_59.BookingId).FirstOrDefaultAsync();
                     AssertTrue(r47_59 != null && r47_59.Amount == 250000, "(r) Biên đúng 47:59:59: Hoàn 50% (250.000 ₫)");
+                    AssertTrue(b47_59_After != null && b47_59_After.PaymentStatus == PaymentStatus.PARTIALLY_REFUNDED,
+                        "(r) Nấc 24-48h (47:59:59): PaymentStatus chuyển sang PARTIALLY_REFUNDED (không REFUND_PENDING)");
 
                     // Biên (3): Đúng 24:00:00 trước giờ VN -> Hoàn 50%
                     var start3 = DateTime.SpecifyKind(new DateTime(2026, 11, 20, 0, 0, 0), DateTimeKind.Utc);
@@ -559,7 +562,10 @@ namespace TestPaymentFlow
                     var cancelTime24_00 = vnMidnight3.AddHours(-24);
                     await CancelWithMockTimeAsync(bookingService, context, ledgerService, b24_00, cancelTime24_00);
                     var r24_00 = await context.RefundRequests.Find(r => r.BookingId == b24_00.BookingId).FirstOrDefaultAsync();
+                    var b24_00_After = await context.Bookings.Find(b => b.BookingId == b24_00.BookingId).FirstOrDefaultAsync();
                     AssertTrue(r24_00 != null && r24_00.Amount == 250000, "(r) Biên đúng 24:00:00: Hoàn 50% (250.000 ₫)");
+                    AssertTrue(b24_00_After != null && b24_00_After.PaymentStatus == PaymentStatus.PARTIALLY_REFUNDED,
+                        "(r) Nấc 24-48h (24:00:00): PaymentStatus chuyển sang PARTIALLY_REFUNDED (không REFUND_PENDING)");
 
                     // Biên (4): Đúng 23:59:59 trước giờ VN -> Hoàn 0%
                     var start4 = DateTime.SpecifyKind(new DateTime(2026, 11, 25, 0, 0, 0), DateTimeKind.Utc);
@@ -951,17 +957,36 @@ namespace TestPaymentFlow
                     await context.Bookings.InsertOneAsync(reconBooking);
                     createdBookingIds.Add(reconBooking.BookingId);
 
-                    // Chưa có bút toán ESCROW_RELEASE trong sổ cái (giả lập crash trước khi ghi sổ)
+                    // 1. Chưa có bút toán ESCROW_RELEASE trong sổ cái (giả lập crash trước khi ghi sổ)
                     var beforeEntries = await context.JournalEntries.Find(j => j.BookingId == reconBooking.BookingId).ToListAsync();
                     AssertTrue(beforeEntries.Count == 0, "Ban đầu sổ cái chưa có bút toán do crash");
 
-                    // Chạy đối soát tự sửa bù
-                    var repaired = await bookingService.ReconcileMissingLedgerEntriesAsync(DateTime.UtcNow, reconBooking.BookingId);
+                    // 2. Chạy đối soát tự sửa bù lần đầu -> tạo đúng 1 bút toán
+                    var repaired = await bookingService.ReconcileMissingLedgerEntriesAsync(DateTime.UtcNow, reconBooking.BookingId, force: true);
                     AssertTrue(repaired == 1, "Hàm đối soát phát hiện đơn thiếu sổ và tự sửa bù thành công 1 bút toán");
 
                     var afterEntries = await context.JournalEntries.Find(j => j.BookingId == reconBooking.BookingId).ToListAsync();
-                    AssertTrue(afterEntries.Count == 1 && afterEntries[0].Type == JournalType.ESCROW_RELEASE,
-                        "Bút toán ESCROW_RELEASE tự sửa bù hợp lệ và cân Nợ/Có");
+                    AssertTrue(afterEntries.Count == 1 && afterEntries[0].Type == JournalType.ESCROW_RELEASE && afterEntries[0].IdempotencyKey == LedgerIdempotencyKeys.EscrowRelease(reconBooking.BookingId),
+                        "Bút toán ESCROW_RELEASE tự sửa bù hợp lệ, đúng loại và đúng IdempotencyKey chuẩn");
+
+                    // 3. Chạy đối soát lần 1 trên dữ liệu đã đủ sổ -> 0 bút toán mới
+                    var runAgain1 = await bookingService.ReconcileMissingLedgerEntriesAsync(DateTime.UtcNow, reconBooking.BookingId, force: true);
+                    AssertTrue(runAgain1 == 0, "Chạy đối soát lần 1 trên dữ liệu đã đủ sổ -> 0 bút toán mới (Idempotent)");
+
+                    // 4. Chạy đối soát lần 2 trên dữ liệu đã đủ sổ -> 0 bút toán mới
+                    var runAgain2 = await bookingService.ReconcileMissingLedgerEntriesAsync(DateTime.UtcNow, reconBooking.BookingId, force: true);
+                    AssertTrue(runAgain2 == 0, "Chạy đối soát lần 2 trên dữ liệu đã đủ sổ -> 0 bút toán mới (Idempotent)");
+
+                    // 5. Cố ý xóa một bút toán trong sổ cái
+                    await context.JournalEntries.DeleteOneAsync(j => j.IdempotencyKey == LedgerIdempotencyKeys.EscrowRelease(reconBooking.BookingId));
+                    var hasEntryAfterDelete = await ledgerService.HasEntryAsync(LedgerIdempotencyKeys.EscrowRelease(reconBooking.BookingId));
+                    AssertTrue(!hasEntryAfterDelete, "Cố ý xóa bút toán giải ngân trong JournalEntries thành công");
+
+                    // 6. Chạy đối soát lại -> bù đúng 1 bút toán, đúng loại ESCROW_RELEASE
+                    var repairedAfterDelete = await bookingService.ReconcileMissingLedgerEntriesAsync(DateTime.UtcNow, reconBooking.BookingId, force: true);
+                    AssertTrue(repairedAfterDelete == 1, "Đối soát bù đúng một bút toán bị thiếu");
+                    var restored = await context.JournalEntries.Find(j => j.IdempotencyKey == LedgerIdempotencyKeys.EscrowRelease(reconBooking.BookingId)).FirstOrDefaultAsync();
+                    AssertTrue(restored != null && restored.Type == JournalType.ESCROW_RELEASE, "Bút toán phục hồi đúng loại ESCROW_RELEASE và đúng tài khoản Nợ/Có");
                 }
 
                 // =========================================================================
@@ -1084,22 +1109,36 @@ namespace TestPaymentFlow
                         CreatedAt = DateTime.UtcNow
                     });
 
-                    bool caughtMismatch = false;
+                    // 3. Amount mismatch: Webhook data.Amount != Payment.Amount -> Không trả 400; lưu bản ghi bất thường, báo Admin, trả 200, không ghi sổ doanh thu (Requirement 4)
+                    var mismatchJson = JsonSerializer.Serialize(new
+                    {
+                        code = "00",
+                        data = new { orderCode = mismatchOrderCode, amount = 200000 }, // Nhận 200k trong khi đơn 400k
+                        signature = "MOCK_VALID_SIGNATURE"
+                    });
+                    
+                    bool completedWithoutThrowing = false;
                     try
                     {
-                        var mismatchJson = JsonSerializer.Serialize(new
-                        {
-                            code = "00",
-                            data = new { orderCode = mismatchOrderCode, amount = 200000 }, // Khác 400.000
-                            signature = "MOCK_VALID_SIGNATURE"
-                        });
                         await paymentService.ProcessWebhookAsync(mismatchJson, "MOCK_VALID_SIGNATURE", DateTime.UtcNow);
+                        completedWithoutThrowing = true;
                     }
-                    catch (BadRequestException)
+                    catch (Exception ex)
                     {
-                        caughtMismatch = true;
+                        Console.WriteLine($"Lỗi không mong muốn: {ex.Message}");
                     }
-                    AssertTrue(caughtMismatch, "Số tiền webhook không khớp với Payment.Amount ném ngoại lệ BadRequestException (HTTP 400)");
+
+                    AssertTrue(completedWithoutThrowing, "Webhook sai số tiền không ném BadRequestException (trả về 200 OK)");
+
+                    var abnormalPay = await context.Payments.Find(p => p.OrderCode == mismatchOrderCode).FirstOrDefaultAsync();
+                    AssertTrue(abnormalPay != null && abnormalPay.IsAbnormal && abnormalPay.Status == PaymentLinkStatus.ABNORMAL && abnormalPay.ReceivedAmount == 200000,
+                        "Lưu bản ghi giao dịch bất thường (IsAbnormal=true, Status=ABNORMAL, ReceivedAmount=200.000 ₫)");
+
+                    var abnormalEntries = await context.JournalEntries.Find(j => j.BookingId == mismatchBooking.BookingId).ToListAsync();
+                    AssertTrue(abnormalEntries.Count == 0, "Tuyệt đối không ghi sổ doanh thu hay tạm giữ cho giao dịch bất thường");
+
+                    var adminNotif = await context.Notifications.Find(n => n.Type == NotificationType.PAYMENT_ABNORMAL && n.BookingId == mismatchBooking.BookingId).FirstOrDefaultAsync();
+                    AssertTrue(adminNotif != null && adminNotif.TargetRole == "ADMIN", "Gửi thông báo cảnh báo giao dịch bất thường cho Admin (TargetRole=ADMIN)");
                 }
 
                 // =========================================================================
@@ -1125,6 +1164,216 @@ namespace TestPaymentFlow
                         "TotalAmount == (long)TongTien không có phần lẻ (600.000 ₫)");
                     AssertTrue(priceDetail.CommissionBps == 1000 && priceDetail.CommissionAmount == 60000,
                         "CommissionBps = 1000 (10%), CommissionAmount = 60.000 ₫");
+                }
+
+                // =========================================================================
+                // TEST 17 (Requirement 3): Hoàn tiền complete & Chặn Admin hoàn đơn chính mình
+                // =========================================================================
+                Console.WriteLine("\n--- TEST 17: Hoàn tiền Complete, Chặn Admin hoàn đơn mình, Ngắt giữa chừng và chạy lại ---");
+                {
+                    // 1. Tạo đơn mà Admin chính là Owner
+                    var adminOwnerBooking = new Booking
+                    {
+                        BookingId = ObjectId.GenerateNewId().ToString(),
+                        MaDatLich = $"PS_ADMBK_{testPrefix}",
+                        OwnerId = adminUser.UserId, // Admin là chủ đơn
+                        SitterId = sitterProfile.SitterId,
+                        PetId = pet.PetId,
+                        NgayBatDau = baseDate.AddDays(10),
+                        NgayKetThuc = baseDate.AddDays(12),
+                        SoNgay = 3,
+                        TongTien = 300000,
+                        TotalAmount = 300000,
+                        TrangThai = BookingStatus.CANCELLED,
+                        PaymentStatus = PaymentStatus.REFUND_PENDING,
+                        IsActive = false,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    await context.Bookings.InsertOneAsync(adminOwnerBooking);
+                    createdBookingIds.Add(adminOwnerBooking.BookingId);
+
+                    var selfRefundReq = new RefundRequest
+                    {
+                        RefundId = ObjectId.GenerateNewId().ToString(),
+                        BookingId = adminOwnerBooking.BookingId,
+                        OwnerUserId = adminUser.UserId,
+                        Amount = 300000,
+                        Reason = "OWNER_CANCELLED_GE_48H",
+                        Status = RefundStatus.REFUND_PENDING,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    await context.RefundRequests.InsertOneAsync(selfRefundReq);
+
+                    // Admin cố gắng tự duyệt hoàn tiền cho chính mình -> bị chặn 403 Forbidden
+                    bool blockedSelfRefund = false;
+                    try
+                    {
+                        await paymentService.CompleteRefundAsync(adminUser.UserId, selfRefundReq.RefundId, new CompleteRefundDto { BankTransactionRef = "TX_SELF_REFUND" }, DateTime.UtcNow);
+                    }
+                    catch (ForbiddenException)
+                    {
+                        blockedSelfRefund = true;
+                    }
+                    AssertTrue(blockedSelfRefund, "Chặn Admin duyệt/hoàn tiền đơn của chính mình (ném ForbiddenException - HTTP 403)");
+
+                    // 2. Tạo một Admin khác độc lập để thực hiện hoàn tiền
+                    var otherAdmin = new User
+                    {
+                        UserId = ObjectId.GenerateNewId().ToString(),
+                        Email = $"other_admin_{testPrefix}@pawstay.vn",
+                        FullName = "Admin Độc Lập",
+                        PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin@123"),
+                        Role = "Admin",
+                        Phone = "0900000999",
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    await context.Users.InsertOneAsync(otherAdmin);
+                    createdUserIds.Add(otherAdmin.UserId);
+
+                    // Tạo đơn của ownerUser bình thường có yêu cầu hoàn tiền
+                    var normalRefundBooking = new Booking
+                    {
+                        BookingId = ObjectId.GenerateNewId().ToString(),
+                        MaDatLich = $"PS_NORMREF_{testPrefix}",
+                        OwnerId = ownerUser.UserId,
+                        SitterId = sitterProfile.SitterId,
+                        PetId = pet.PetId,
+                        NgayBatDau = baseDate.AddDays(15),
+                        NgayKetThuc = baseDate.AddDays(17),
+                        SoNgay = 3,
+                        TongTien = 300000,
+                        TotalAmount = 300000,
+                        TrangThai = BookingStatus.CANCELLED,
+                        PaymentStatus = PaymentStatus.REFUND_PENDING,
+                        IsActive = false,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    await context.Bookings.InsertOneAsync(normalRefundBooking);
+                    createdBookingIds.Add(normalRefundBooking.BookingId);
+
+                    var normalRefundReq = new RefundRequest
+                    {
+                        RefundId = ObjectId.GenerateNewId().ToString(),
+                        BookingId = normalRefundBooking.BookingId,
+                        OwnerUserId = ownerUser.UserId,
+                        Amount = 300000,
+                        Reason = "OWNER_CANCELLED_GE_48H",
+                        Status = RefundStatus.REFUND_PENDING,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    await context.RefundRequests.InsertOneAsync(normalRefundReq);
+
+                    // 3. Giả lập ngắt giữa các bước: Đã cập nhật RefundRequest = COMPLETED nhưng server sập trước khi ghi sổ và cập nhật Booking
+                    await context.RefundRequests.UpdateOneAsync(
+                        r => r.RefundId == normalRefundReq.RefundId,
+                        Builders<RefundRequest>.Update
+                            .Set(r => r.Status, RefundStatus.COMPLETED)
+                            .Set(r => r.BankTransactionRef, "FT261018MOCKINTERRUPT")
+                            .Set(r => r.AdminUserId, otherAdmin.UserId)
+                            .Set(r => r.CompletedAt, DateTime.UtcNow)
+                    );
+
+                    // Xác nhận sổ cái chưa có bút toán REFUND_COMPLETED
+                    var hasEntryBeforeRetry = await ledgerService.HasEntryAsync(LedgerIdempotencyKeys.RefundCompleted(normalRefundReq.RefundId));
+                    AssertTrue(!hasEntryBeforeRetry, "Giả lập sập server trước khi ghi sổ REFUND_PENDING -> GATEWAY_CLEARING");
+
+                    // 4. Gọi lại CompleteRefundAsync sau khi ngắt giữa chừng
+                    var completeDto = new CompleteRefundDto { BankTransactionRef = "FT261018MOCKINTERRUPT" };
+                    await paymentService.CompleteRefundAsync(otherAdmin.UserId, normalRefundReq.RefundId, completeDto, DateTime.UtcNow);
+
+                    // Kiểm tra sổ cái đã được bù đúng bút toán
+                    var hasEntryAfterRetry = await ledgerService.HasEntryAsync(LedgerIdempotencyKeys.RefundCompleted(normalRefundReq.RefundId));
+                    AssertTrue(hasEntryAfterRetry, "Gọi lại sau khi ngắt giữa chừng: Tự động hoàn tất ghi sổ REFUND_PENDING -> GATEWAY_CLEARING");
+
+                    var refundBookingAfter = await context.Bookings.Find(b => b.BookingId == normalRefundBooking.BookingId).FirstOrDefaultAsync();
+                    AssertTrue(refundBookingAfter != null && refundBookingAfter.PaymentStatus == PaymentStatus.REFUNDED,
+                        "Cập nhật Booking.PaymentStatus sang REFUNDED thành công");
+
+                    // 5. Gọi lại lần 3 để kiểm tra hoàn toàn Idempotent
+                    await paymentService.CompleteRefundAsync(otherAdmin.UserId, normalRefundReq.RefundId, completeDto, DateTime.UtcNow);
+                    var allRefundEntries = await context.JournalEntries.Find(j => j.IdempotencyKey == LedgerIdempotencyKeys.RefundCompleted(normalRefundReq.RefundId)).ToListAsync();
+                    AssertTrue(allRefundEntries.Count == 1, "Gọi lại lần 3: Tuyệt đối Idempotent, không nhân đôi bút toán sổ cái");
+                }
+
+                // =========================================================================
+                // TEST 18 (Requirement 5): 50 lần gọi Webhook song song -> Duy nhất 1 RefundRequest
+                // =========================================================================
+                Console.WriteLine("\n--- TEST 18: Webhook gọi lặp 50 lần song song trên đơn đã đóng -> Duy nhất 1 RefundRequest ---");
+                {
+                    var closedBooking = new Booking
+                    {
+                        BookingId = ObjectId.GenerateNewId().ToString(),
+                        MaDatLich = $"PS_CLOSED_{testPrefix}",
+                        OwnerId = ownerUser.UserId,
+                        SitterId = sitterProfile.SitterId,
+                        PetId = pet.PetId,
+                        NgayBatDau = baseDate.AddDays(5),
+                        NgayKetThuc = baseDate.AddDays(7),
+                        SoNgay = 3,
+                        TongTien = 400000,
+                        TotalAmount = 400000,
+                        TrangThai = BookingStatus.EXPIRED, // Đơn đã hết hạn đóng thật
+                        PaymentStatus = PaymentStatus.EXPIRED,
+                        IsActive = false,
+                        CreatedAt = DateTime.UtcNow.AddDays(-3)
+                    };
+                    await context.Bookings.InsertOneAsync(closedBooking);
+                    createdBookingIds.Add(closedBooking.BookingId);
+
+                    var closedOrderCode = Random.Shared.Next(800000000, 899999999);
+                    var closedPayment = new Payment
+                    {
+                        PaymentId = ObjectId.GenerateNewId().ToString(),
+                        BookingId = closedBooking.BookingId,
+                        OrderCode = closedOrderCode,
+                        Amount = 400000,
+                        Status = PaymentLinkStatus.EXPIRED,
+                        CreatedAt = DateTime.UtcNow.AddDays(-3)
+                    };
+                    await context.Payments.InsertOneAsync(closedPayment);
+
+                    var webhookJson50 = JsonSerializer.Serialize(new
+                    {
+                        code = "00",
+                        data = new
+                        {
+                            orderCode = closedOrderCode,
+                            amount = 400000,
+                            code = "00",
+                            counterAccountBankId = "VCB",
+                            counterAccountName = "NGUYEN TEST CONCURRENT",
+                            counterAccountNumber = "9988776655"
+                        },
+                        signature = "MOCK_VALID_SIGNATURE"
+                    });
+
+                    // 50 luồng webhook gọi song song đồng thời
+                    var tasks50 = new List<Task>();
+                    for (int i = 0; i < 50; i++)
+                    {
+                        tasks50.Add(Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await paymentService.ProcessWebhookAsync(webhookJson50, "MOCK_VALID_SIGNATURE", DateTime.UtcNow);
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"Task error: {ex.Message}");
+                            }
+                        }));
+                    }
+
+                    await Task.WhenAll(tasks50);
+
+                    // Kiểm tra số lượng RefundRequest được tạo
+                    var refundRequestsCreated = await context.RefundRequests.Find(r => r.PaymentId == closedPayment.PaymentId).ToListAsync();
+                    AssertTrue(refundRequestsCreated.Count == 1,
+                        $"Webhook 50 lần gọi song song: Duy nhất 1 RefundRequest được tạo (Số lượng thực tế: {refundRequestsCreated.Count})");
+
+                    var lateEntries = await context.JournalEntries.Find(j => j.BookingId == closedBooking.BookingId).ToListAsync();
+                    AssertTrue(lateEntries.Count == 1 && lateEntries[0].Type == JournalType.LATE_PAYMENT_REFUND,
+                        "Ghi nhận đúng duy nhất một bút toán sổ cái LATE_PAYMENT_REFUND");
                 }
             }
             finally
@@ -1221,7 +1470,7 @@ namespace TestPaymentFlow
                     CreatedAt = mockNowUtc
                 };
                 await context.RefundRequests.InsertOneAsync(refundReq);
-                await context.Bookings.UpdateOneAsync(b => b.BookingId == booking.BookingId, Builders<Booking>.Update.Set(b => b.PaymentStatus, PaymentStatus.REFUND_PENDING).Set(b => b.TrangThai, BookingStatus.CANCELLED).Set(b => b.IsActive, false));
+                await context.Bookings.UpdateOneAsync(b => b.BookingId == booking.BookingId, Builders<Booking>.Update.Set(b => b.PaymentStatus, PaymentStatus.PARTIALLY_REFUNDED).Set(b => b.TrangThai, BookingStatus.CANCELLED).Set(b => b.IsActive, false));
             }
             else
             {

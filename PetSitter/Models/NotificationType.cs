@@ -23,5 +23,6 @@ namespace PetSitter.Models
         public const string EARNINGS_CREDITED = "EARNINGS_CREDITED";
         public const string REFUND_PENDING = "REFUND_PENDING";
         public const string REFUND_COMPLETED = "REFUND_COMPLETED";
+        public const string PAYMENT_ABNORMAL = "PAYMENT_ABNORMAL";
     }
 }

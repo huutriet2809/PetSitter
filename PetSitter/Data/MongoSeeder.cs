@@ -347,8 +347,16 @@ namespace PetSitter.Data
                 var refBookingModel = new CreateIndexModel<RefundRequest>(
                     Builders<RefundRequest>.IndexKeys.Ascending(r => r.BookingId)
                 );
-                await refCol.Indexes.CreateManyAsync(new[] { refStatusCreatedModel, refOwnerModel, refBookingModel });
-                Console.WriteLine("[Seeder] Tạo thành công các index cho RefundRequests.");
+                var refPaymentIdModel = new CreateIndexModel<RefundRequest>(
+                    Builders<RefundRequest>.IndexKeys.Ascending(r => r.PaymentId),
+                    new CreateIndexOptions<RefundRequest>
+                    {
+                        Unique = true,
+                        PartialFilterExpression = Builders<RefundRequest>.Filter.Type(r => r.PaymentId, MongoDB.Bson.BsonType.String)
+                    }
+                );
+                await refCol.Indexes.CreateManyAsync(new[] { refStatusCreatedModel, refOwnerModel, refBookingModel, refPaymentIdModel });
+                Console.WriteLine("[Seeder] Tạo thành công các index cho RefundRequests (bao gồm unique PaymentId).");
             }
             catch (Exception ex)
             {

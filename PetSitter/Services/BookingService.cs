@@ -116,7 +116,7 @@ namespace PetSitter.Services
                 Type = JournalType.ESCROW_RELEASE,
                 ActorUserId = "SYSTEM",
                 CreatedAt = nowUtc,
-                IdempotencyKey = $"{claimedBooking.BookingId}:ESCROW_RELEASE:1",
+                IdempotencyKey = LedgerIdempotencyKeys.EscrowRelease(claimedBooking.BookingId),
                 Lines = new List<JournalLine>
                 {
                     new JournalLine
@@ -516,9 +516,31 @@ namespace PetSitter.Services
             }
         }
 
-        public async Task<int> ReconcileMissingLedgerEntriesAsync(DateTime nowUtc, string? specificBookingId = null)
+        private static DateTime _lastReconcileUtc = DateTime.MinValue;
+        private static readonly object _reconcileLock = new object();
+
+        public async Task<int> ReconcileMissingLedgerEntriesAsync(
+            DateTime nowUtc, 
+            string? specificBookingId = null, 
+            int lookbackDays = 7, 
+            int limit = 100, 
+            bool force = false)
         {
             if (_ledgerService == null) return 0;
+
+            // Throttle: chỉ quét nền tối đa mỗi 30 giây (trừ khi chỉ định đơn cụ thể hoặc force = true)
+            if (!force && string.IsNullOrEmpty(specificBookingId))
+            {
+                lock (_reconcileLock)
+                {
+                    if ((nowUtc - _lastReconcileUtc).TotalSeconds < 30)
+                    {
+                        return 0; // Đã chạy gần đây, bỏ qua để tránh nghẽn I/O
+                    }
+                    _lastReconcileUtc = nowUtc;
+                }
+            }
+
             int repairedCount = 0;
 
             var filterBuilder = Builders<Booking>.Filter;
@@ -529,10 +551,10 @@ namespace PetSitter.Services
             }
             else
             {
-                filter &= filterBuilder.Gte(b => b.UpdatedAt, nowUtc.AddDays(-7));
+                filter &= filterBuilder.Gte(b => b.UpdatedAt, nowUtc.AddDays(-lookbackDays));
             }
 
-            var candidateBookings = await _context.Bookings.Find(filter).ToListAsync();
+            var candidateBookings = await _context.Bookings.Find(filter).Limit(limit).ToListAsync();
 
             foreach (var b in candidateBookings)
             {
@@ -542,30 +564,38 @@ namespace PetSitter.Services
                 var sitterProfile = await _context.SitterProfiles.Find(s => s.SitterId == b.SitterId).FirstOrDefaultAsync();
                 var sitterUserId = sitterProfile?.UserId ?? "unknown_sitter";
                 var holdHours = _configuration.GetValue<int>("Payments:EarningsHoldHours", 48);
+                var bps = b.CommissionBps > 0 ? b.CommissionBps : _configuration.GetValue<int>("Payments:CommissionBps", 1000);
 
                 if (b.PaymentStatus == PaymentStatus.RELEASED)
                 {
-                    var releaseKey1 = $"{b.BookingId}:ESCROW_RELEASE:1";
-                    var releaseKey0 = $"{b.BookingId}:ESCROW_RELEASE:OWNER_CANCEL_0";
-                    var hasRelease1 = await _ledgerService.HasEntryAsync(releaseKey1);
-                    var hasRelease0 = await _ledgerService.HasEntryAsync(releaseKey0);
+                    var releaseKeyUnified = LedgerIdempotencyKeys.EscrowRelease(b.BookingId);
+                    var releaseKeyLegacy1 = $"{b.BookingId}:ESCROW_RELEASE:1";
+                    var releaseKeyLegacy0 = $"{b.BookingId}:ESCROW_RELEASE:OWNER_CANCEL_0";
+                    var cancelKey0 = LedgerIdempotencyKeys.CancelOwner0(b.BookingId);
 
-                    if (!hasRelease1 && !hasRelease0)
+                    var hasRelease = await _ledgerService.HasEntryAsync(releaseKeyUnified)
+                                  || await _ledgerService.HasEntryAsync(releaseKeyLegacy1)
+                                  || await _ledgerService.HasEntryAsync(releaseKeyLegacy0)
+                                  || await _ledgerService.HasEntryAsync(cancelKey0);
+
+                    if (!hasRelease)
                     {
-                        var bps = b.CommissionBps > 0 ? b.CommissionBps : 1000;
+                        bool isOwnerCancel0 = (b.TrangThai == BookingStatus.CANCELLED);
+                        var targetKey = isOwnerCancel0 ? LedgerIdempotencyKeys.CancelOwner0(b.BookingId) : LedgerIdempotencyKeys.EscrowRelease(b.BookingId);
+                        
                         var commission = (totalAmount * bps) / 10000;
                         var sitterNet = totalAmount - commission;
-                        var availableAt = (b.EscrowReleasedAt ?? nowUtc).AddHours(holdHours);
+                        var availableAt = (b.EscrowReleasedAt ?? b.UpdatedAt ?? nowUtc).AddHours(holdHours);
 
                         var entry = new JournalEntry
                         {
                             EntryId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
                             BookingId = b.BookingId,
-                            TransactionId = "TX" + nowUtc.ToString("yyMMddHHmmss") + "RECON",
+                            TransactionId = "TX" + nowUtc.ToString("yyMMddHHmmss") + "RECONREL",
                             Type = JournalType.ESCROW_RELEASE,
                             ActorUserId = "SYSTEM_RECONCILE",
                             CreatedAt = nowUtc,
-                            IdempotencyKey = releaseKey1,
+                            IdempotencyKey = targetKey,
                             Lines = new List<JournalLine>
                             {
                                 new JournalLine { Account = LedgerAccount.ESCROW_HELD, Direction = LedgerDirection.DEBIT, Amount = totalAmount },
@@ -581,22 +611,32 @@ namespace PetSitter.Services
                 }
                 else if (b.PaymentStatus == PaymentStatus.REFUND_PENDING)
                 {
-                    var kSitCan = $"{b.BookingId}:REFUND_PENDING:SITTER_CANCEL";
-                    var kOwn100 = $"{b.BookingId}:REFUND_PENDING:OWNER_CANCEL_100";
-                    var kOwn50  = $"{b.BookingId}:REFUND_PENDING:OWNER_CANCEL_50";
-                    var kLate   = $"{b.BookingId}:LATE_PAYMENT_REFUND:1";
-                    var kAdmin  = $"{b.BookingId}:ADMIN_REFUND:1";
+                    var kSitCan     = LedgerIdempotencyKeys.CancelSitter(b.BookingId);
+                    var kOwn100     = LedgerIdempotencyKeys.CancelOwner100(b.BookingId);
+                    var kLate       = LedgerIdempotencyKeys.LatePaymentRefund(b.BookingId);
+                    var kLegacySit  = $"{b.BookingId}:REFUND_PENDING:SITTER_CANCEL";
+                    var kLegacyOwn  = $"{b.BookingId}:REFUND_PENDING:OWNER_CANCEL_100";
+                    var kLegacyLate = $"{b.BookingId}:LATE_PAYMENT_REFUND:1";
+                    var kLegacyAdm  = $"{b.BookingId}:REFUND_PENDING:ADMIN_CANCEL";
 
                     var hasEntry = await _ledgerService.HasEntryAsync(kSitCan)
                                 || await _ledgerService.HasEntryAsync(kOwn100)
-                                || await _ledgerService.HasEntryAsync(kOwn50)
                                 || await _ledgerService.HasEntryAsync(kLate)
-                                || await _ledgerService.HasEntryAsync(kAdmin);
+                                || await _ledgerService.HasEntryAsync(kLegacySit)
+                                || await _ledgerService.HasEntryAsync(kLegacyOwn)
+                                || await _ledgerService.HasEntryAsync(kLegacyLate)
+                                || await _ledgerService.HasEntryAsync(kLegacyAdm);
 
                     if (!hasEntry)
                     {
                         var refundReq = await _context.RefundRequests.Find(r => r.BookingId == b.BookingId).FirstOrDefaultAsync();
                         var refundAmount = refundReq?.Amount ?? totalAmount;
+
+                        var targetKey = (refundReq?.Reason == "SITTER_CANCELLED") 
+                            ? LedgerIdempotencyKeys.CancelSitter(b.BookingId) 
+                            : (refundReq?.Reason == "LATE_PAYMENT_ON_CLOSED_BOOKING")
+                                ? LedgerIdempotencyKeys.LatePaymentRefund(b.BookingId)
+                                : LedgerIdempotencyKeys.CancelOwner100(b.BookingId);
 
                         var entry = new JournalEntry
                         {
@@ -606,25 +646,62 @@ namespace PetSitter.Services
                             Type = JournalType.REFUND_PENDING,
                             ActorUserId = "SYSTEM_RECONCILE",
                             CreatedAt = nowUtc,
-                            IdempotencyKey = $"{b.BookingId}:REFUND_PENDING:RECONCILE",
+                            IdempotencyKey = targetKey,
                             Lines = new List<JournalLine>
                             {
                                 new JournalLine { Account = LedgerAccount.ESCROW_HELD, Direction = LedgerDirection.DEBIT, Amount = totalAmount },
                                 new JournalLine { Account = LedgerAccount.REFUND_PENDING, Direction = LedgerDirection.CREDIT, Amount = refundAmount }
                             }
                         };
-                        if (totalAmount > refundAmount)
-                        {
-                            var compensation = totalAmount - refundAmount;
-                            var bps = b.CommissionBps > 0 ? b.CommissionBps : 1000;
-                            var commission = (compensation * bps) / 10000;
-                            var sitterNet = compensation - commission;
-                            entry.Lines.Add(new JournalLine { Account = LedgerAccount.PLATFORM_REVENUE, Direction = LedgerDirection.CREDIT, Amount = commission });
-                            entry.Lines.Add(new JournalLine { Account = LedgerAccount.SitterEarnings(sitterUserId), Direction = LedgerDirection.CREDIT, Amount = sitterNet, AvailableAt = nowUtc.AddHours(holdHours) });
-                        }
 
                         await _ledgerService.RecordEntryAsync(entry);
-                        _logger?.LogInformation("Đối soát tự sửa bù thành công bút toán hoàn tiền cho đơn {BookingId}", b.BookingId);
+                        _logger?.LogInformation("Đối soát tự sửa bù thành công bút toán hoàn tiền 100% cho đơn {BookingId}", b.BookingId);
+                        repairedCount++;
+                    }
+                }
+                else if (b.PaymentStatus == PaymentStatus.PARTIALLY_REFUNDED)
+                {
+                    var kOwn50     = LedgerIdempotencyKeys.CancelOwner50(b.BookingId);
+                    var kSplit     = LedgerIdempotencyKeys.DisputeSplit(b.BookingId);
+                    var kLegacy50  = $"{b.BookingId}:REFUND_PENDING:OWNER_CANCEL_50";
+                    var kLegacySpl = $"{b.BookingId}:SPLIT:ADMIN_RESOLVE";
+
+                    var hasEntry = await _ledgerService.HasEntryAsync(kOwn50)
+                                || await _ledgerService.HasEntryAsync(kSplit)
+                                || await _ledgerService.HasEntryAsync(kLegacy50)
+                                || await _ledgerService.HasEntryAsync(kLegacySpl);
+
+                    if (!hasEntry)
+                    {
+                        var refundReq = await _context.RefundRequests.Find(r => r.BookingId == b.BookingId).FirstOrDefaultAsync();
+                        var refundAmount = refundReq?.Amount ?? ((totalAmount * 50) / 100);
+                        var compensation = totalAmount - refundAmount;
+                        var commission = (compensation * bps) / 10000;
+                        var sitterNet = compensation - commission;
+                        var targetKey = (b.TrangThai == BookingStatus.COMPLETED && !string.IsNullOrEmpty(b.DisputeReason)) 
+                            ? LedgerIdempotencyKeys.DisputeSplit(b.BookingId)
+                            : LedgerIdempotencyKeys.CancelOwner50(b.BookingId);
+
+                        var entry = new JournalEntry
+                        {
+                            EntryId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                            BookingId = b.BookingId,
+                            TransactionId = "TX" + nowUtc.ToString("yyMMddHHmmss") + "RECONPART",
+                            Type = JournalType.REFUND_PENDING,
+                            ActorUserId = "SYSTEM_RECONCILE",
+                            CreatedAt = nowUtc,
+                            IdempotencyKey = targetKey,
+                            Lines = new List<JournalLine>
+                            {
+                                new JournalLine { Account = LedgerAccount.ESCROW_HELD, Direction = LedgerDirection.DEBIT, Amount = totalAmount },
+                                new JournalLine { Account = LedgerAccount.REFUND_PENDING, Direction = LedgerDirection.CREDIT, Amount = refundAmount },
+                                new JournalLine { Account = LedgerAccount.PLATFORM_REVENUE, Direction = LedgerDirection.CREDIT, Amount = commission },
+                                new JournalLine { Account = LedgerAccount.SitterEarnings(sitterUserId), Direction = LedgerDirection.CREDIT, Amount = sitterNet, AvailableAt = (b.UpdatedAt ?? nowUtc).AddHours(holdHours) }
+                            }
+                        };
+
+                        await _ledgerService.RecordEntryAsync(entry);
+                        _logger?.LogInformation("Đối soát tự sửa bù thành công bút toán hoàn tiền một phần cho đơn {BookingId}", b.BookingId);
                         repairedCount++;
                     }
                 }
@@ -976,8 +1053,22 @@ namespace PetSitter.Services
                 var remaining = vnStartMidnightUtc - nowUtc;
 
                 // Xác định trạng thái thanh toán đích dựa trên vai trò và nấc giờ (Requirement 7 & 14)
-                // Sitter hủy hoặc Owner hủy >= 24h: REFUND_PENDING; Owner hủy < 24h (hoàn 0%): RELEASED
-                var targetPaymentStatus = (isSitter || remaining >= TimeSpan.FromHours(24)) ? PaymentStatus.REFUND_PENDING : PaymentStatus.RELEASED;
+                // Sitter hủy hoặc Owner hủy >= 48h: REFUND_PENDING (hoàn 100%)
+                // Owner hủy 24h - 48h: PARTIALLY_REFUNDED (hoàn 50%)
+                // Owner hủy < 24h: RELEASED (hoàn 0%, toàn bộ sang Sitter)
+                string targetPaymentStatus;
+                if (isSitter || remaining >= TimeSpan.FromHours(48))
+                {
+                    targetPaymentStatus = PaymentStatus.REFUND_PENDING;
+                }
+                else if (remaining >= TimeSpan.FromHours(24))
+                {
+                    targetPaymentStatus = PaymentStatus.PARTIALLY_REFUNDED;
+                }
+                else
+                {
+                    targetPaymentStatus = PaymentStatus.RELEASED;
+                }
 
                 // CLAIM NGUYÊN TỬ TRÊN BOOKING TRƯỚC KHI GHI SỔ (Requirement 2)
                 var claimRefundFilter = Builders<Booking>.Filter.And(
@@ -1015,7 +1106,7 @@ namespace PetSitter.Services
                         Type = JournalType.REFUND_PENDING,
                         ActorUserId = claimedBooking.SitterId,
                         CreatedAt = nowUtc,
-                        IdempotencyKey = $"{claimedBooking.BookingId}:REFUND_PENDING:SITTER_CANCEL",
+                        IdempotencyKey = LedgerIdempotencyKeys.CancelSitter(claimedBooking.BookingId),
                         Lines = new List<JournalLine>
                         {
                             new JournalLine
@@ -1061,7 +1152,7 @@ namespace PetSitter.Services
                             Type = JournalType.REFUND_PENDING,
                             ActorUserId = claimedBooking.OwnerId,
                             CreatedAt = nowUtc,
-                            IdempotencyKey = $"{claimedBooking.BookingId}:REFUND_PENDING:OWNER_CANCEL_100",
+                            IdempotencyKey = LedgerIdempotencyKeys.CancelOwner100(claimedBooking.BookingId),
                             Lines = new List<JournalLine>
                             {
                                 new JournalLine { Account = LedgerAccount.ESCROW_HELD, Direction = LedgerDirection.DEBIT, Amount = totalAmount },
@@ -1099,7 +1190,7 @@ namespace PetSitter.Services
                             Type = JournalType.REFUND_PENDING,
                             ActorUserId = claimedBooking.OwnerId,
                             CreatedAt = nowUtc,
-                            IdempotencyKey = $"{claimedBooking.BookingId}:REFUND_PENDING:OWNER_CANCEL_50",
+                            IdempotencyKey = LedgerIdempotencyKeys.CancelOwner50(claimedBooking.BookingId),
                             Lines = new List<JournalLine>
                             {
                                 new JournalLine { Account = LedgerAccount.ESCROW_HELD, Direction = LedgerDirection.DEBIT, Amount = totalAmount },
@@ -1137,7 +1228,7 @@ namespace PetSitter.Services
                             Type = JournalType.ESCROW_RELEASE,
                             ActorUserId = claimedBooking.OwnerId,
                             CreatedAt = nowUtc,
-                            IdempotencyKey = $"{claimedBooking.BookingId}:ESCROW_RELEASE:OWNER_CANCEL_0",
+                            IdempotencyKey = LedgerIdempotencyKeys.CancelOwner0(claimedBooking.BookingId),
                             Lines = new List<JournalLine>
                             {
                                 new JournalLine { Account = LedgerAccount.ESCROW_HELD, Direction = LedgerDirection.DEBIT, Amount = totalAmount },
@@ -1787,7 +1878,7 @@ namespace PetSitter.Services
                             Type = JournalType.REFUND_PENDING,
                             ActorUserId = adminUserId,
                             CreatedAt = nowUtc,
-                            IdempotencyKey = $"{booking.BookingId}:SPLIT:ADMIN_RESOLVE",
+                            IdempotencyKey = LedgerIdempotencyKeys.DisputeSplit(booking.BookingId),
                             Lines = new List<JournalLine>
                             {
                                 new JournalLine { Account = LedgerAccount.ESCROW_HELD, Direction = LedgerDirection.DEBIT, Amount = totalAmount },

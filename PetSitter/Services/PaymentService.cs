@@ -204,9 +204,44 @@ namespace PetSitter.Services
             var expectedBookingAmount = booking.TotalAmount > 0 ? booking.TotalAmount : (long)booking.TongTien;
             if (payment.Amount != amount || expectedBookingAmount != amount)
             {
-                _logger.LogError("Webhook amount mismatch for OrderCode {OrderCode}: data.Amount={Amount}, Payment.Amount={PayAmount}, Booking.TotalAmount={BookAmount}",
+                _logger.LogWarning("Phát hiện giao dịch bất thường (sai lệch số tiền) cho OrderCode {OrderCode}: data.Amount={Amount}, Payment.Amount={PayAmount}, Booking.TotalAmount={BookAmount}",
                     orderCode, amount, payment.Amount, expectedBookingAmount);
-                throw new BadRequestException("Số tiền thanh toán không khớp với hóa đơn hoặc đơn hàng.");
+
+                // Lưu bản ghi giao dịch bất thường trên Payment
+                await _context.Payments.UpdateOneAsync(
+                    p => p.OrderCode == orderCode,
+                    Builders<Payment>.Update
+                        .Set(p => p.IsAbnormal, true)
+                        .Set(p => p.Status, PaymentLinkStatus.ABNORMAL)
+                        .Set(p => p.ReceivedAmount, amount)
+                        .Set(p => p.AbnormalReason, $"Số tiền thanh toán ({amount:N0} ₫) không khớp với số tiền đơn ({expectedBookingAmount:N0} ₫ / {payment.Amount:N0} ₫).")
+                        .Set(p => p.RawWebhook, $"{{\"orderCode\":{orderCode},\"receivedAmount\":{amount},\"expectedAmount\":{expectedBookingAmount}}}")
+                );
+
+                // Báo Admin
+                try
+                {
+                    var admins = await _context.Users.Find(u => u.Role == "ADMIN" || u.Role == "Admin").ToListAsync();
+                    foreach (var admin in admins)
+                    {
+                        await _notificationService.CreateNotificationAsync(
+                            admin.UserId,
+                            NotificationType.PAYMENT_ABNORMAL,
+                            payment.BookingId,
+                            "Cảnh báo giao dịch bất thường",
+                            $"Đơn {payment.BookingId} (OrderCode: {orderCode}) nhận thanh toán sai số tiền: nhận {amount:N0} ₫, mong đợi {expectedBookingAmount:N0} ₫. Không ghi nhận doanh thu.",
+                            $"{orderCode}:ABNORMAL_PAYMENT:{admin.UserId}",
+                            targetRole: "ADMIN"
+                        );
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Lỗi gửi thông báo giao dịch bất thường tới Admin.");
+                }
+
+                // Trả về không ném lỗi (Controller trả 200 OK), KHÔNG ghi sổ doanh thu!
+                return;
             }
 
             // BƯỚC 4: TRÍCH XUẤT VÀ MÃ HÓA THÔNG TIN NGƯỜI TRẢ (PayerInfo)
@@ -274,7 +309,7 @@ namespace PetSitter.Services
                     Type = JournalType.LATE_PAYMENT_REFUND,
                     ActorUserId = "SYSTEM",
                     CreatedAt = nowUtc,
-                    IdempotencyKey = $"{payment.BookingId}:LATE_PAYMENT_REFUND:1",
+                    IdempotencyKey = LedgerIdempotencyKeys.LatePaymentRefund(booking.BookingId),
                     Lines = new List<JournalLine>
                     {
                         new JournalLine
@@ -293,8 +328,8 @@ namespace PetSitter.Services
                 };
                 await _ledgerService.RecordEntryAsync(lateRefundEntry);
 
-                // Tạo yêu cầu hoàn tiền nếu chưa tồn tại
-                var existingRefund = await _context.RefundRequests.Find(r => r.BookingId == booking.BookingId).FirstOrDefaultAsync();
+                // Tạo yêu cầu hoàn tiền nếu chưa tồn tại (idempotent, an toàn đua luồng nhờ unique PaymentId index)
+                var existingRefund = await _context.RefundRequests.Find(r => r.PaymentId == payment.PaymentId || r.BookingId == booking.BookingId).FirstOrDefaultAsync();
                 if (existingRefund == null)
                 {
                     var refundReq = new RefundRequest
@@ -309,7 +344,14 @@ namespace PetSitter.Services
                         EncryptedRefundAccount = encryptedPayerInfo,
                         CreatedAt = nowUtc
                     };
-                    await _context.RefundRequests.InsertOneAsync(refundReq);
+                    try
+                    {
+                        await _context.RefundRequests.InsertOneAsync(refundReq);
+                    }
+                    catch (MongoWriteException mwe) when (mwe.WriteError?.Category == ServerErrorCategory.DuplicateKey)
+                    {
+                        _logger.LogInformation("RefundRequest cho PaymentId {PaymentId} đã được tạo bởi luồng khác.", payment.PaymentId);
+                    }
                 }
 
                 // Gửi thông báo cho Owner và Admin
@@ -325,7 +367,7 @@ namespace PetSitter.Services
                         targetRole: "OWNER"
                     );
 
-                    var admins = await _context.Users.Find(u => u.Role == "Admin").ToListAsync();
+                    var admins = await _context.Users.Find(u => u.Role == "ADMIN" || u.Role == "Admin").ToListAsync();
                     foreach (var admin in admins)
                     {
                         await _notificationService.CreateNotificationAsync(
@@ -376,7 +418,7 @@ namespace PetSitter.Services
                 Type = JournalType.PAYMENT_HELD,
                 ActorUserId = "SYSTEM",
                 CreatedAt = nowUtc,
-                IdempotencyKey = $"{payment.BookingId}:PAYMENT_HELD:1",
+                IdempotencyKey = LedgerIdempotencyKeys.PaymentHeld(payment.BookingId),
                 Lines = new List<JournalLine>
                 {
                     new JournalLine
@@ -543,17 +585,51 @@ namespace PetSitter.Services
                 throw new NotFoundException("Yêu cầu hoàn tiền không tồn tại.");
             }
 
-            if (refund.Status == RefundStatus.COMPLETED)
+            // Kiểm tra và chặn Admin hoàn tiền đơn của chính mình (Requirement 3)
+            var booking = await _context.Bookings.Find(b => b.BookingId == refund.BookingId).FirstOrDefaultAsync();
+            if (booking != null)
             {
-                return; // Idempotent
+                var sitterProfile = await _context.SitterProfiles.Find(s => s.SitterId == booking.SitterId).FirstOrDefaultAsync();
+                if (booking.OwnerId == adminUserId || sitterProfile?.UserId == adminUserId)
+                {
+                    throw new ForbiddenException("Quản trị viên không được phép hoàn tiền cho đơn đặt lịch của chính mình.");
+                }
             }
 
-            // Ghi sổ kép: DEBIT REFUND_PENDING, CREDIT GATEWAY_CLEARING
-            var idempotencyKey = $"{refund.BookingId}:REFUND_COMPLETED:{refund.RefundId}";
+            // BƯỚC 1: Claim nguyên tử RefundRequest PENDING/REFUND_PENDING -> COMPLETED
+            var refundClaimFilter = Builders<RefundRequest>.Filter.And(
+                Builders<RefundRequest>.Filter.Eq(r => r.RefundId, refundId),
+                Builders<RefundRequest>.Filter.In(r => r.Status, new[] { RefundStatus.REFUND_PENDING, "PENDING" })
+            );
+            var refundClaimUpdate = Builders<RefundRequest>.Update
+                .Set(r => r.Status, RefundStatus.COMPLETED)
+                .Set(r => r.BankTransactionRef, dto.BankTransactionRef.Trim())
+                .Set(r => r.AdminUserId, adminUserId)
+                .Set(r => r.CompletedAt, nowUtc);
+
+            var claimedRefund = await _context.RefundRequests.FindOneAndUpdateAsync(
+                refundClaimFilter,
+                refundClaimUpdate,
+                new FindOneAndUpdateOptions<RefundRequest> { ReturnDocument = ReturnDocument.After }
+            );
+
+            // Nếu không claim được (do đã COMPLETED từ lần gọi trước bị ngắt giữa các bước), tiếp tục thực hiện các bước còn lại
+            if (claimedRefund == null)
+            {
+                var existingRefund = await _context.RefundRequests.Find(r => r.RefundId == refundId).FirstOrDefaultAsync();
+                if (existingRefund == null || existingRefund.Status != RefundStatus.COMPLETED)
+                {
+                    throw new BadRequestException("Yêu cầu hoàn tiền không ở trạng thái hợp lệ để hoàn tất.");
+                }
+                claimedRefund = existingRefund;
+            }
+
+            // BƯỚC 2: Ghi sổ kép: DEBIT REFUND_PENDING, CREDIT GATEWAY_CLEARING (Idempotent theo RefundId)
+            var idempotencyKey = LedgerIdempotencyKeys.RefundCompleted(claimedRefund.RefundId);
             var entry = new JournalEntry
             {
                 EntryId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
-                BookingId = refund.BookingId,
+                BookingId = claimedRefund.BookingId,
                 TransactionId = "TX" + nowUtc.ToString("yyMMddHHmmss") + "REFUND",
                 Type = JournalType.REFUND_COMPLETED,
                 ActorUserId = adminUserId,
@@ -565,64 +641,59 @@ namespace PetSitter.Services
                     {
                         Account = LedgerAccount.REFUND_PENDING,
                         Direction = LedgerDirection.DEBIT,
-                        Amount = refund.Amount
+                        Amount = claimedRefund.Amount
                     },
                     new JournalLine
                     {
                         Account = LedgerAccount.GATEWAY_CLEARING,
                         Direction = LedgerDirection.CREDIT,
-                        Amount = refund.Amount
+                        Amount = claimedRefund.Amount
                     }
                 }
             };
             await _ledgerService.RecordEntryAsync(entry);
 
-            // Cập nhật trạng thái hoàn tiền
-            await _context.RefundRequests.UpdateOneAsync(
-                r => r.RefundId == refundId,
-                Builders<RefundRequest>.Update
-                    .Set(r => r.Status, RefundStatus.COMPLETED)
-                    .Set(r => r.BankTransactionRef, dto.BankTransactionRef)
-                    .Set(r => r.AdminUserId, adminUserId)
-                    .Set(r => r.CompletedAt, nowUtc)
-            );
-
-            // Cập nhật Booking PaymentStatus
-            var booking = await _context.Bookings.Find(b => b.BookingId == refund.BookingId).FirstOrDefaultAsync();
+            // BƯỚC 3: Cập nhật Booking PaymentStatus sang REFUNDED hoặc PARTIALLY_REFUNDED
             if (booking != null)
             {
-                var newStatus = (booking.TotalAmount > 0 && refund.Amount < booking.TotalAmount) ? PaymentStatus.PARTIALLY_REFUNDED : PaymentStatus.REFUNDED;
+                var totalAmount = booking.TotalAmount > 0 ? booking.TotalAmount : (long)booking.TongTien;
+                var newStatus = (totalAmount > 0 && claimedRefund.Amount < totalAmount) ? PaymentStatus.PARTIALLY_REFUNDED : PaymentStatus.REFUNDED;
                 await _context.Bookings.UpdateOneAsync(
                     b => b.BookingId == booking.BookingId,
                     Builders<Booking>.Update
                         .Set(b => b.PaymentStatus, newStatus)
+                        .Set(b => b.UpdatedAt, nowUtc)
                         .Push(b => b.History, new InquiryHistory
                         {
                             HanhDong = newStatus,
                             FromStatus = booking.TrangThai,
                             NguoiThucHien = "ADMIN",
                             ActorUserId = adminUserId,
-                            LyDo = $"Hoàn tiền thành công (GD: {dto.BankTransactionRef})",
+                            LyDo = $"Hoàn tiền thành công (Mã GD: {dto.BankTransactionRef.Trim()})",
                             ThoiGian = nowUtc
                         })
                 );
+
+                // Log kiểm toán (Audit log)
+                _logger.LogInformation("[AUDIT] Admin {AdminUserId} hoàn tất hoàn tiền {RefundId} cho đơn {BookingId}, số tiền {Amount} ₫, Mã GD NH {BankRef} tại {NowUtc}",
+                    adminUserId, refundId, claimedRefund.BookingId, claimedRefund.Amount, dto.BankTransactionRef.Trim(), nowUtc);
 
                 // Gửi thông báo cho Owner
                 try
                 {
                     await _notificationService.CreateNotificationAsync(
-                        refund.OwnerUserId,
+                        claimedRefund.OwnerUserId,
                         NotificationType.REFUND_COMPLETED,
                         booking.BookingId,
                         "Hoàn tiền thành công",
-                        $"Hệ thống đã hoàn tất chuyển khoản hoàn tiền {refund.Amount:N0} ₫ cho đơn {booking.MaDatLich} (Mã GD: {dto.BankTransactionRef}).",
-                        $"{booking.BookingId}:{NotificationType.REFUND_COMPLETED}:{refund.RefundId}",
+                        $"Hệ thống đã hoàn tất chuyển khoản hoàn tiền {claimedRefund.Amount:N0} ₫ cho đơn {booking.MaDatLich} (Mã GD: {dto.BankTransactionRef.Trim()}).",
+                        $"{booking.BookingId}:{NotificationType.REFUND_COMPLETED}:{claimedRefund.RefundId}",
                         targetRole: "OWNER"
                     );
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Lỗi gửi thông báo hoàn tiền thành công cho đơn {BookingId}", refund.BookingId);
+                    _logger.LogError(ex, "Lỗi gửi thông báo hoàn tiền thành công cho đơn {BookingId}", claimedRefund.BookingId);
                 }
             }
         }

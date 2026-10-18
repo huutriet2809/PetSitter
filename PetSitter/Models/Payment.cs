@@ -28,6 +28,12 @@ namespace PetSitter.Models
 
         public DateTime? PaidAt { get; set; }
 
+        public bool IsAbnormal { get; set; }
+
+        public long? ReceivedAmount { get; set; }
+
+        public string? AbnormalReason { get; set; }
+
         public string? RawWebhook { get; set; } // JSON sanitized (bỏ các secret/khóa nhạy cảm)
 
         // Mã hóa thông tin người trả (PayerInfo) bằng ASP.NET Core Data Protection
@@ -51,5 +57,6 @@ namespace PetSitter.Models
         public const string PAID = "PAID";
         public const string CANCELLED = "CANCELLED";
         public const string EXPIRED = "EXPIRED";
+        public const string ABNORMAL = "ABNORMAL";
     }
 }
