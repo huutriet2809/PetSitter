@@ -496,7 +496,7 @@ namespace PetSitter.Data
                     {
                         var sitterServices = new List<SitterService>
                         {
-                            new SitterService { SitterId = profile.SitterId, ServiceId = services[0].ServiceId, Price = 150000 },
+                            new SitterService { SitterId = profile.SitterId, ServiceId = services[0].ServiceId, Price = 150000, IsPrimary = true },
                             new SitterService { SitterId = profile.SitterId, ServiceId = services[2].ServiceId, Price = 100000 },
                             new SitterService { SitterId = profile.SitterId, ServiceId = services[3].ServiceId, Price = 50000 }
                         };
@@ -551,6 +551,62 @@ namespace PetSitter.Data
                     };
                     await petsCollection.InsertManyAsync(pets);
                 }
+            }
+
+            // --- IDEMPOTENT MIGRATION CHO SITTER SERVICE ISPRIMARY (Yêu cầu 2) ---
+            try
+            {
+                var sitters = await context.SitterProfiles.Find(_ => true).ToListAsync();
+                var catalogServices = await context.Services.Find(_ => true).ToListAsync();
+                int assignedCount = 0;
+                var sittersWithoutServices = new List<string>();
+
+                foreach (var sProfile in sitters)
+                {
+                    var sServices = await context.SitterServices.Find(s => s.SitterId == sProfile.SitterId).ToListAsync();
+                    var validServices = sServices.Where(s => s.Price > 0).ToList();
+
+                    if (validServices.Count == 0)
+                    {
+                        sittersWithoutServices.Add(sProfile.SitterId);
+                        continue;
+                    }
+
+                    // Nếu đã có dịch vụ IsPrimary == true thì bỏ qua
+                    if (validServices.Any(s => s.IsPrimary))
+                    {
+                        continue;
+                    }
+
+                    // Ưu tiên chọn dịch vụ trông giữ (Boarding / Trông giữ / tại nhà)
+                    var primaryCandidate = validServices.FirstOrDefault(s => {
+                        var cat = catalogServices.FirstOrDefault(c => c.ServiceId == s.ServiceId);
+                        var name = cat?.ServiceName ?? "";
+                        return name.Contains("Boarding", StringComparison.OrdinalIgnoreCase)
+                            || name.Contains("Trông giữ", StringComparison.OrdinalIgnoreCase)
+                            || name.Contains("tại nhà", StringComparison.OrdinalIgnoreCase);
+                    }) ?? validServices.First();
+
+                    await context.SitterServices.UpdateOneAsync(
+                        s => s.SitterServiceId == primaryCandidate.SitterServiceId,
+                        Builders<SitterService>.Update.Set(s => s.IsPrimary, true)
+                    );
+                    assignedCount++;
+                }
+
+                if (assignedCount > 0)
+                {
+                    Console.WriteLine($"[Seeder Migration] Đã gán dịch vụ trông giữ chính (IsPrimary) cho {assignedCount} hồ sơ Sitter.");
+                }
+
+                if (sittersWithoutServices.Count > 0)
+                {
+                    Console.WriteLine($"[Seeder Migration Cảnh báo] Danh sách {sittersWithoutServices.Count} Sitter chưa có dịch vụ nào với giá hợp lệ (Price > 0): {string.Join(", ", sittersWithoutServices)}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[Seeder Migration Lỗi] Không thể hoàn thành migration SitterService IsPrimary: " + ex.Message);
             }
         }
     }

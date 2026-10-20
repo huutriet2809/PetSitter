@@ -59,6 +59,15 @@
           <input type="text" id="tags" placeholder="Nhà có sân vườn, Yêu mèo..." />
         </div>
         <div class="form-group">
+          <label>Dịch vụ trông giữ chính (bắt buộc nhận đặt lịch) *</label>
+          <select id="primary-service-select" required>
+            <option value="">-- Chọn dịch vụ chính --</option>
+          </select>
+          <small style="color:var(--text-muted); display:block; margin-top:4px;">
+            Giá của dịch vụ chính sẽ áp dụng theo "Giá một ngày" ở trên.
+          </small>
+        </div>
+        <div class="form-group">
           <label>Dịch vụ bổ sung</label>
           <div id="services-container" class="checkbox-group">
             <!-- Render từ API -->
@@ -88,13 +97,19 @@
           `<label class="checkbox-item"><input type="checkbox" name="dichvu" value="${/* safe */ s.id}"> ${escapeHtml(s.ten)}</label>`
         ).join('');
 
+        const primarySelect = document.getElementById('primary-service-select');
+        primarySelect.innerHTML = '<option value="">-- Chọn dịch vụ chính --</option>' + services.map(s =>
+          `<option value="${/* safe */ s.id}">${escapeHtml(s.ten)}</option>`
+        ).join('');
+
         const profile = await apiFetch('/sitter/profile');
         if (profile) {
           document.getElementById('bio').value = profile.bio || '';
           
           let basePrice = 100000;
           if (profile.dichVu && profile.dichVu.length > 0) {
-              basePrice = profile.dichVu[0].gia;
+              const primaryDichVu = profile.dichVu.find(d => d.isPrimary) || profile.dichVu[0];
+              basePrice = primaryDichVu.gia;
           }
           document.getElementById('gia').value = basePrice;
           
@@ -106,7 +121,15 @@
             if (pets.includes(cb.value)) cb.checked = true;
           });
 
-          const selectedSrvIds = (profile.dichVu || []).map(d => d.id);
+          // Đánh dấu các dịch vụ đã chọn và chọn dịch vụ chính
+          const primarySrv = (profile.dichVu || []).find(d => d.isPrimary);
+          if (primarySrv && primarySrv.serviceId) {
+            primarySelect.value = primarySrv.serviceId;
+          } else if (profile.dichVu && profile.dichVu.length > 0) {
+            const matched = services.find(s => s.ten === profile.dichVu[0].ten);
+            if (matched) primarySelect.value = matched.id;
+          }
+
           document.querySelectorAll('input[name="dichvu"]').forEach(cb => {
              const srv = profile.dichVu.find(d => d.ten === cb.parentElement.textContent.trim());
              if (srv) cb.checked = true;
@@ -127,8 +150,20 @@
       btn.textContent = 'Đang lưu...';
       btn.disabled = true;
 
+      const primarySrvId = document.getElementById('primary-service-select').value;
+      if (!primarySrvId) {
+        showToast('Vui lòng chọn dịch vụ trông giữ chính!', 3000, '⚠️');
+        btn.textContent = 'Lưu thay đổi';
+        btn.disabled = false;
+        return;
+      }
+
       const petChecked = Array.from(document.querySelectorAll('input[name="pet"]:checked')).map(cb => cb.value);
       const srvChecked = Array.from(document.querySelectorAll('input[name="dichvu"]:checked')).map(cb => cb.value);
+      if (!srvChecked.includes(primarySrvId)) {
+        srvChecked.push(primarySrvId);
+      }
+
       const tagsInput = document.getElementById('tags').value.split(',').map(t => t.trim()).filter(t => t);
       const allTags = [...new Set([...petChecked, ...tagsInput])];
 
@@ -138,7 +173,8 @@
         khuVuc: document.getElementById('khuvuc').value,
         loaiPetNhan: petChecked,
         tags: allTags,
-        dichVuBoSung: srvChecked
+        dichVuBoSung: srvChecked,
+        primaryServiceId: primarySrvId
       };
 
       try {

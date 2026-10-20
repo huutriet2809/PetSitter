@@ -153,7 +153,8 @@ namespace TestNotificationFlow
                     TenPet = "Miu Miu",
                     LoaiPet = "Cat",
                     KichCo = "Small",
-                    Addons = new List<string>()
+                    Addons = new List<string>(),
+                    ExpectedTotal = 300000
                 };
                 var createdBooking = await bookingService.CreateBookingAsync(ownerUser.UserId, createDto);
                 createdBookingIds.Add(createdBooking.BookingId);
@@ -189,7 +190,8 @@ namespace TestNotificationFlow
                     TenPet = "Gau Gau",
                     LoaiPet = "Dog",
                     KichCo = "Medium",
-                    Addons = new List<string>()
+                    Addons = new List<string>(),
+                    ExpectedTotal = 300000
                 };
                 var createdBooking2 = await bookingService.CreateBookingAsync(ownerUser.UserId, createDto2);
                 createdBookingIds.Add(createdBooking2.BookingId);

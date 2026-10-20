@@ -55,9 +55,11 @@ namespace PetSitter.DTOs
     public class ServiceDto
     {
         public string Id { get; set; } = string.Empty;
+        public string ServiceId { get; set; } = string.Empty;
         public string Ten { get; set; } = string.Empty;
         public string MoTa { get; set; } = string.Empty;
         public decimal Gia { get; set; }
+        public bool IsPrimary { get; set; }
     }
 
     public class StatsDto
@@ -74,6 +76,7 @@ namespace PetSitter.DTOs
         public List<string> LoaiPetNhan { get; set; } = new List<string>();
         public List<string> Tags { get; set; } = new List<string>();
         public List<string> DichVuBoSung { get; set; } = new List<string>(); // ServiceIds
+        public string? PrimaryServiceId { get; set; }
     }
 
     public class SitterDayAvailabilityDto

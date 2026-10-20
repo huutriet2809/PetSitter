@@ -1002,6 +1002,11 @@ namespace PetSitter.Services
             if (soNgay > 30)
                 throw new BadRequestException("Khoảng thời gian đặt lịch tối đa là 30 ngày.");
 
+            if (!dto.ExpectedTotal.HasValue || dto.ExpectedTotal.Value <= 0)
+            {
+                throw new BadRequestException("Giá dự kiến (expectedTotal) là bắt buộc và phải lớn hơn 0.");
+            }
+
             if (!string.IsNullOrEmpty(dto.PetId))
             {
                 var pet = await _context.Pets.Find(p => p.PetId == dto.PetId).FirstOrDefaultAsync();
@@ -1113,8 +1118,13 @@ namespace PetSitter.Services
             // 6. Calculate Totals (Chi phí ước tính)
             var totalAmountLong = giaSitter + (long)tongAddons;
 
-            // Kiểm tra expectedTotal từ client; server tính lại, lệch -> 409 kèm giá mới
-            if (dto.ExpectedTotal.HasValue && dto.ExpectedTotal.Value != totalAmountLong)
+            // Kiểm tra expectedTotal từ client; bắt buộc phải có (thiếu -> 400), server tính lại lệch -> 409 kèm giá mới
+            if (!dto.ExpectedTotal.HasValue || dto.ExpectedTotal.Value <= 0)
+            {
+                throw new BadRequestException("Giá dự kiến (expectedTotal) là bắt buộc và phải lớn hơn 0.");
+            }
+
+            if (dto.ExpectedTotal.Value != totalAmountLong)
             {
                 throw new PriceMismatchException(dto.ExpectedTotal.Value, totalAmountLong);
             }
@@ -1326,6 +1336,7 @@ namespace PetSitter.Services
 
             bool isOwner = booking.OwnerId == currentUserId;
             bool isSitter = false;
+            bool isAdmin = false;
 
             if (!isOwner)
             {
@@ -1334,9 +1345,17 @@ namespace PetSitter.Services
                 {
                     isSitter = true;
                 }
+                else
+                {
+                    var user = await _context.Users.Find(u => u.UserId == currentUserId).FirstOrDefaultAsync();
+                    if (user != null && user.Role == "ADMIN")
+                    {
+                        isAdmin = true;
+                    }
+                }
             }
 
-            if (!isOwner && !isSitter)
+            if (!isOwner && !isSitter && !isAdmin)
             {
                 throw new NotFoundException("Không tìm thấy thông tin đặt lịch.");
             }
@@ -1383,7 +1402,7 @@ namespace PetSitter.Services
                     throw new BadRequestException("Lý do hủy đơn tối đa 500 ký tự.");
 
                 if (booking.NgayBatDau <= vnToday)
-                    throw new BadRequestException("Không thể hủy đơn khi đã đến hoặc qua ngày bắt đầu.");
+                    throw new BadRequestException($"Không thể hủy đơn đặt lịch khi đã đến hoặc qua ngày bắt đầu dịch vụ (từ 00:00 ngày {booking.NgayBatDau:dd/MM/yyyy}). Vui lòng liên hệ bộ phận hỗ trợ hoặc gửi khiếu nại nếu có sự cố phát sinh.");
 
                 var totalAmount = booking.TotalAmount > 0 ? booking.TotalAmount : (long)booking.TongTien;
                 var sitterUserId = currentUserId; // currentUserId là SitterUserId từ token của người chăm sóc
@@ -1544,7 +1563,7 @@ namespace PetSitter.Services
                 else if (booking.TrangThai == BookingStatus.ACCEPTED)
                 {
                     if (booking.NgayBatDau <= vnToday)
-                        throw new BadRequestException("Không thể hủy đơn đã xác nhận khi đã đến hoặc qua ngày bắt đầu.");
+                        throw new BadRequestException($"Không thể hủy đơn đặt lịch khi đã đến hoặc qua ngày bắt đầu dịch vụ (từ 00:00 ngày {booking.NgayBatDau:dd/MM/yyyy}). Vui lòng liên hệ bộ phận hỗ trợ hoặc gửi khiếu nại nếu có sự cố phát sinh.");
 
                     var totalAmount = booking.TotalAmount > 0 ? booking.TotalAmount : (long)booking.TongTien;
                     var sitterUserId = booking.SitterUserId;

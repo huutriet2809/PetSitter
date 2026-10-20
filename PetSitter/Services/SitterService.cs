@@ -146,9 +146,11 @@ namespace PetSitter.Services
                 var srv = services.FirstOrDefault(s => s.ServiceId == ss.ServiceId);
                 return new ServiceDto {
                     Id = ss.SitterServiceId,
+                    ServiceId = ss.ServiceId,
                     Ten = srv?.ServiceName ?? "",
                     MoTa = srv?.Description ?? "",
-                    Gia = ss.Price
+                    Gia = ss.Price,
+                    IsPrimary = ss.IsPrimary
                 };
             }).ToList();
 
@@ -310,19 +312,50 @@ namespace PetSitter.Services
 
             await _context.SitterServices.DeleteManyAsync(ss => ss.SitterId == sitter.SitterId);
             
+            var serviceIdsToSave = new List<string>(dto.DichVuBoSung ?? new List<string>());
+            if (!string.IsNullOrEmpty(dto.PrimaryServiceId) && !serviceIdsToSave.Contains(dto.PrimaryServiceId))
+            {
+                serviceIdsToSave.Insert(0, dto.PrimaryServiceId);
+            }
+
+            string? primaryId = dto.PrimaryServiceId;
+            if (string.IsNullOrEmpty(primaryId))
+            {
+                var prevPrimary = existingSitterServices.FirstOrDefault(x => x.IsPrimary);
+                primaryId = prevPrimary?.ServiceId ?? serviceIdsToSave.FirstOrDefault();
+            }
+
             var newSitterServices = new List<PetSitter.Models.SitterService>();
-            foreach (var srvId in dto.DichVuBoSung)
+            foreach (var srvId in serviceIdsToSave)
             {
                 var existing = existingSitterServices.FirstOrDefault(x => x.ServiceId == srvId);
                 var catalogService = allCatalogServices.FirstOrDefault(x => x.ServiceId == srvId);
-                decimal servicePrice = existing != null ? existing.Price : (catalogService?.Gia ?? 50000);
+                
+                bool isPrimary = (srvId == primaryId);
+                decimal servicePrice;
+                if (isPrimary && dto.GiaMoiNgay > 0)
+                {
+                    servicePrice = dto.GiaMoiNgay;
+                }
+                else
+                {
+                    servicePrice = existing != null ? existing.Price : (catalogService?.Gia ?? 50000);
+                }
 
                 newSitterServices.Add(new PetSitter.Models.SitterService {
                     SitterServiceId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
                     SitterId = sitter.SitterId,
                     ServiceId = srvId,
-                    Price = servicePrice
+                    Price = servicePrice,
+                    IsPrimary = isPrimary
                 });
+            }
+
+            // Đảm bảo luôn có ít nhất 1 dịch vụ là IsPrimary nếu có dịch vụ
+            if (newSitterServices.Any() && !newSitterServices.Any(s => s.IsPrimary))
+            {
+                newSitterServices[0].IsPrimary = true;
+                if (dto.GiaMoiNgay > 0) newSitterServices[0].Price = dto.GiaMoiNgay;
             }
             
             if (newSitterServices.Any())

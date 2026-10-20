@@ -880,6 +880,11 @@
 
         if (!valid) return;
 
+        if (!currentQuote || !currentQuote.totalAmount) {
+          alert('Vui lòng chờ hệ thống tính toán chi phí trước khi đặt lịch.');
+          return;
+        }
+
         const btn = document.getElementById('btn-submit-booking');
         btn.innerHTML = '⏳ Đang xử lý...';
         btn.disabled = true;
@@ -897,7 +902,7 @@
           ghiChu: formData.get('ghiChu'),
           addons: selectedAddons,
           petId: (document.getElementById('saved-pets') && document.getElementById('saved-pets').value) ? document.getElementById('saved-pets').value : null,
-          expectedTotal: currentQuote ? currentQuote.totalAmount : null
+          expectedTotal: currentQuote.totalAmount
         };
 
         try {

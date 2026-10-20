@@ -386,7 +386,8 @@ namespace TestPaymentFlow
                         NgayKetThuc = baseDate.AddDays(2).ToString("yyyy-MM-dd"),
                         TenPet = "Miu Miu",
                         LoaiPet = "Mèo",
-                        KichCo = "Nhỏ"
+                        KichCo = "Nhỏ",
+                        ExpectedTotal = 400000
                     };
                     var created = await bookingService.CreateBookingAsync(ownerUser.UserId, bookReq);
                     createdBookingIds.Add(created.BookingId);
@@ -433,7 +434,8 @@ namespace TestPaymentFlow
                         NgayKetThuc = baseDate.AddDays(4).ToString("yyyy-MM-dd"),
                         TenPet = "Miu Miu",
                         LoaiPet = "Mèo",
-                        KichCo = "Nhỏ"
+                        KichCo = "Nhỏ",
+                        ExpectedTotal = 400000
                     };
                     var bDetail = await bookingService.CreateBookingAsync(ownerUser.UserId, bookReq);
                     createdBookingIds.Add(bDetail.BookingId);
@@ -1193,7 +1195,8 @@ namespace TestPaymentFlow
                         NgayKetThuc = baseDate.AddDays(27).ToString("yyyy-MM-dd"), // 3 ngày
                         TenPet = "Milu",
                         LoaiPet = "Chó",
-                        KichCo = "Vừa (5–15kg)"
+                        KichCo = "Vừa (5–15kg)",
+                        ExpectedTotal = 600000
                     };
                     var priceDetail = await bookingService.CreateBookingAsync(ownerUser.UserId, priceReq);
                     createdBookingIds.Add(priceDetail.BookingId);
@@ -1920,7 +1923,8 @@ namespace TestPaymentFlow
                         NgayKetThuc = endDate.ToString("yyyy-MM-dd"),
                         TenPet = "Bé Miu Test Quote",
                         LoaiPet = "Mèo",
-                        KichCo = "Nhỏ"
+                        KichCo = "Nhỏ",
+                        ExpectedTotal = quote.TotalAmount
                     };
 
                     var createdBooking = await bookingService.CreateBookingAsync(ownerUser.UserId, createBookingDto);
@@ -2127,7 +2131,8 @@ namespace TestPaymentFlow
                         ServiceId = "invalid-service-id-999",
                         NgayBatDau = startDate.AddDays(3).ToString("yyyy-MM-dd"),
                         NgayKetThuc = startDate.AddDays(4).ToString("yyyy-MM-dd"),
-                        TenPet = "Bé Cún Test Service"
+                        TenPet = "Bé Cún Test Service",
+                        ExpectedTotal = 400000
                     };
                     bool caughtInvalidService = false;
                     try
@@ -2139,6 +2144,27 @@ namespace TestPaymentFlow
                         caughtInvalidService = true;
                     }
                     AssertTrue(caughtInvalidService, "Chọn ServiceId không thuộc Sitter bị chặn bằng BadRequestException");
+
+                    // 4. Kiểm tra thiếu expectedTotal (null hoặc <= 0) -> 400 BadRequestException
+                    var missingExpectedDto = new CreateBookingDto
+                    {
+                        SitterId = sitterProfile.SitterId,
+                        ServiceId = sitterService.ServiceId,
+                        NgayBatDau = startDate.AddDays(7).ToString("yyyy-MM-dd"),
+                        NgayKetThuc = endDate.AddDays(7).ToString("yyyy-MM-dd"),
+                        TenPet = "Bé Cún Test Missing",
+                        ExpectedTotal = null
+                    };
+                    bool caughtMissingExpected = false;
+                    try
+                    {
+                        await bookingService.CreateBookingAsync(ownerUser.UserId, missingExpectedDto);
+                    }
+                    catch (BadRequestException)
+                    {
+                        caughtMissingExpected = true;
+                    }
+                    AssertTrue(caughtMissingExpected, "Tạo đơn thiếu expectedTotal bị từ chối với 400 BadRequestException");
                 }
 
                 // =========================================================================
@@ -2194,6 +2220,134 @@ namespace TestPaymentFlow
                     var entryCount3 = await context.JournalEntries.CountDocumentsAsync(j => j.BookingId == bInterrupted.BookingId);
                     var refCount3 = await context.RefundRequests.CountDocumentsAsync(r => r.BookingId == bInterrupted.BookingId);
                     AssertTrue(entryCount3 == 1 && refCount3 == 1, "Gọi lại lần 3 vẫn giữ nguyên tính bất biến idempotent (1 bút toán, 1 RefundRequest)");
+                }
+
+                // =========================================================================
+                // TEST 27: SITTER GỌI HỦY LÊN ĐƠN OWNER ĐÃ HỦY -> GIỮ NGUYÊN PLAN CỦA OWNER & QUYỀN
+                // =========================================================================
+                Console.WriteLine("\n--- TEST 27: Sitter gọi hủy lên đơn Owner đã hủy -> Giữ nguyên plan của Owner & Kiểm tra quyền ---");
+                {
+                    var nowUtc = DateTime.UtcNow;
+                    var bOwnerCancel = CreateHeldBooking("OWNER_CAN_HOLD", nowUtc.AddDays(10), 500000, ownerUser.UserId, sitterProfile.SitterId, sitterUser.UserId);
+                    bOwnerCancel.SitterUserId = sitterUser.UserId;
+                    await context.Bookings.InsertOneAsync(bOwnerCancel);
+                    createdBookingIds.Add(bOwnerCancel.BookingId);
+
+                    await ledgerService.RecordEntryAsync(new JournalEntry
+                    {
+                        EntryId = ObjectId.GenerateNewId().ToString(),
+                        BookingId = bOwnerCancel.BookingId,
+                        TransactionId = "TX_OWNER_CAN_HOLD",
+                        Type = JournalType.PAYMENT_HELD,
+                        ActorUserId = "OWNER",
+                        CreatedAt = nowUtc,
+                        IdempotencyKey = $"{bOwnerCancel.BookingId}:PAYMENT_HELD:1",
+                        Lines = new List<JournalLine>
+                        {
+                            new JournalLine { Account = LedgerAccounts.GATEWAY_CLEARING, Direction = LedgerDirection.DEBIT, Amount = 500000 },
+                            new JournalLine { Account = LedgerAccounts.ESCROW_HELD, Direction = LedgerDirection.CREDIT, Amount = 500000 }
+                        }
+                    });
+
+                    // 1. Owner hủy trước (nấc 1 >= 48h, hoàn 100%)
+                    await bookingService.CancelBookingAsync(ownerUser.UserId, bOwnerCancel.BookingId, "Owner hủy nấc 1");
+                    var bAfterOwner = await context.Bookings.Find(b => b.BookingId == bOwnerCancel.BookingId).FirstOrDefaultAsync();
+                    AssertTrue(bAfterOwner != null && bAfterOwner.Settlement != null && bAfterOwner.Settlement.SettlementType == "CANCEL_OWNER_100",
+                        "Đơn đã được Owner hủy với plan CANCEL_OWNER_100");
+
+                    // 2. Sitter gọi hủy lên đơn Owner đã hủy -> GIỮ NGUYÊN PLAN CỦA OWNER
+                    await bookingService.CancelBookingAsync(sitterUser.UserId, bOwnerCancel.BookingId, "Sitter cố hủy lại");
+                    var bAfterSitter = await context.Bookings.Find(b => b.BookingId == bOwnerCancel.BookingId).FirstOrDefaultAsync();
+                    AssertTrue(bAfterSitter != null && bAfterSitter.Settlement != null && bAfterSitter.Settlement.SettlementType == "CANCEL_OWNER_100",
+                        "Sitter gọi hủy sau không ghi đè, GIỮ NGUYÊN plan CANCEL_OWNER_100 của Owner");
+
+                    // Bút toán sổ cái giữ nguyên đúng 1 bản ghi CANCEL_OWNER_100, không có bản ghi CANCEL_SITTER
+                    var cancelEntries = await context.JournalEntries.Find(j => j.BookingId == bOwnerCancel.BookingId && j.Type == "CANCEL_OWNER_100").ToListAsync();
+                    var sitterCancelEntries = await context.JournalEntries.Find(j => j.BookingId == bOwnerCancel.BookingId && j.Type == "CANCEL_SITTER").ToListAsync();
+                    AssertTrue(cancelEntries.Count == 1 && sitterCancelEntries.Count == 0,
+                        "Sổ cái giữ nguyên đúng 1 bút toán CANCEL_OWNER_100, không phát sinh thêm bút toán CANCEL_SITTER");
+
+                    // 3. Người ngoài gọi hủy -> Bị chặn 404 NotFoundException
+                    bool caughtOutsider = false;
+                    try
+                    {
+                        await bookingService.CancelBookingAsync(ObjectId.GenerateNewId().ToString(), bOwnerCancel.BookingId, "Người ngoài hủy");
+                    }
+                    catch (NotFoundException)
+                    {
+                        caughtOutsider = true;
+                    }
+                    AssertTrue(caughtOutsider, "Người ngoài gọi hủy đơn bị chặn với 404 NotFoundException");
+                }
+
+                // =========================================================================
+                // TEST 28: MIGRATION ISPRIMARY CHO SITTER CŨ CHƯA CÓ CỜ NÀY
+                // =========================================================================
+                Console.WriteLine("\n--- TEST 28: Sitter cũ trong DB chưa có cờ IsPrimary vẫn nhận được đơn sau migration ---");
+                {
+                    // Tạo một Sitter cũ hoàn toàn chưa có cờ IsPrimary (IsPrimary = false)
+                    var oldSitterUser = new User
+                    {
+                        UserId = ObjectId.GenerateNewId().ToString(),
+                        Email = $"old_sitter_{Guid.NewGuid().ToString("N")[..6]}@test.com",
+                        FullName = "Old Sitter Legacy",
+                        Role = "SITTER"
+                    };
+                    await context.Users.InsertOneAsync(oldSitterUser);
+                    createdUserIds.Add(oldSitterUser.UserId);
+
+                    var oldSitterProfile = new SitterProfile
+                    {
+                        SitterId = ObjectId.GenerateNewId().ToString(),
+                        UserId = oldSitterUser.UserId,
+                        Status = "Approved",
+                        IsVerified = true,
+                        Bio = "Old Sitter before migration"
+                    };
+                    await context.SitterProfiles.InsertOneAsync(oldSitterProfile);
+                    createdSitterIds.Add(oldSitterProfile.SitterId);
+
+                    var oldSitterService = new PetSitter.Models.SitterService
+                    {
+                        SitterServiceId = ObjectId.GenerateNewId().ToString(),
+                        SitterId = oldSitterProfile.SitterId,
+                        ServiceId = sitterService.ServiceId,
+                        Price = 250000m,
+                        IsPrimary = false // Giả lập dữ liệu cũ chưa có cờ IsPrimary
+                    };
+                    await context.SitterServices.InsertOneAsync(oldSitterService);
+
+                    for (int i = 0; i < 10; i++)
+                    {
+                        await context.SitterAvailabilities.InsertOneAsync(new SitterAvailability
+                        {
+                            SitterId = oldSitterProfile.SitterId,
+                            AvailableDate = DateTime.UtcNow.Date.AddDays(30 + i),
+                            IsAvailable = true
+                        });
+                    }
+
+                    // Chạy Seeder migration để tự động gán IsPrimary cho Sitter cũ
+                    await MongoSeeder.SeedDataAsync(context, new ConfigurationBuilder().Build());
+
+                    // Kiểm tra dịch vụ của Sitter cũ đã được cập nhật IsPrimary = true
+                    var migratedService = await context.SitterServices.Find(s => s.SitterServiceId == oldSitterService.SitterServiceId).FirstOrDefaultAsync();
+                    AssertTrue(migratedService != null && migratedService.IsPrimary,
+                        "Migration đã tự động gán IsPrimary = true cho SitterService hợp lệ của Sitter cũ");
+
+                    // Chủ nuôi tạo đơn cho Sitter cũ mà không cần chọn ServiceId cụ thể
+                    var legacyBookingReq = new CreateBookingDto
+                    {
+                        SitterId = oldSitterProfile.SitterId,
+                        NgayBatDau = DateTime.UtcNow.Date.AddDays(30).ToString("yyyy-MM-dd"),
+                        NgayKetThuc = DateTime.UtcNow.Date.AddDays(31).ToString("yyyy-MM-dd"), // 2 ngày = 500.000 ₫
+                        TenPet = "Bé Mèo Cũ",
+                        ExpectedTotal = 500000
+                    };
+                    var legacyBooking = await bookingService.CreateBookingAsync(ownerUser.UserId, legacyBookingReq);
+                    createdBookingIds.Add(legacyBooking.BookingId);
+                    AssertTrue(legacyBooking != null && legacyBooking.TotalAmount == 500000,
+                        "Sitter cũ sau migration tạo và nhận đơn thành công qua dịch vụ chính IsPrimary");
                 }
             }
             finally
