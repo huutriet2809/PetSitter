@@ -94,5 +94,41 @@ namespace PetSitter.Controllers
             var fileName = $"MonthlyReport_{year}_{month:D2}.csv";
             return File(bytes, "text/csv; charset=utf-8", fileName);
         }
+
+        [HttpPost("reconciliation/upload-statement")]
+        public async Task<IActionResult> UploadBankStatement(Microsoft.AspNetCore.Http.IFormFile? file)
+        {
+            if (file == null || file.Length == 0)
+            {
+                return BadRequest(new { message = "Vui lòng tải lên tệp sao kê ngân hàng hợp lệ." });
+            }
+
+            // Giới hạn kích thước tối đa 5MB
+            const long maxSizeBytes = 5 * 1024 * 1024;
+            if (file.Length > maxSizeBytes)
+            {
+                return BadRequest(new { message = "Kích thước tệp sao kê vượt quá giới hạn cho phép (tối đa 5MB)." });
+            }
+
+            // Kiểm tra định dạng .csv
+            var ext = System.IO.Path.GetExtension(file.FileName);
+            if (!string.Equals(ext, ".csv", StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest(new { message = "Chỉ chấp nhận tệp định dạng bảng tính CSV (.csv)." });
+            }
+
+            using var reader = new System.IO.StreamReader(file.OpenReadStream(), Encoding.UTF8);
+            var content = await reader.ReadToEndAsync();
+            var lines = content.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+
+            return Ok(new
+            {
+                success = true,
+                fileName = file.FileName,
+                fileSizeBytes = file.Length,
+                totalLines = lines.Length,
+                message = $"Tải lên tệp sao kê thành công ({lines.Length} dòng). Sẵn sàng đối chiếu."
+            });
+        }
     }
 }

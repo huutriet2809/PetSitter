@@ -210,6 +210,14 @@ namespace PetSitter.Services
             return Convert.ToHexString(hash).ToLowerInvariant();
         }
 
+        /// <summary>
+        /// Tạo lệnh chi tự động qua PayOS Payout API theo tài liệu công khai.
+        /// Tài liệu công khai tham chiếu:
+        /// - PayOS Documentation & API Reference: https://payos.vn/docs/
+        /// - PayOS SDK .NET (Payouts.Batch.CreateAsync, Payouts)
+        /// Các phần chưa xác minh trong tài liệu công khai (Webhook trạng thái chi tự động, tự động đối soát ngân hàng)
+        /// được bảo lưu và hệ thống mặc định chạy ở chế độ chi thủ công (MANUAL).
+        /// </summary>
         public async Task<CreatePayoutResponse> CreatePayoutAsync(CreatePayoutRequest request)
         {
             var payoutsEnabled = _config.GetValue<bool>("Payments:PayoutsEnabled", false);
@@ -230,15 +238,20 @@ namespace PetSitter.Services
 
             try
             {
-                // Body tạo lệnh chi
+                // Request shape chuẩn theo tài liệu công khai và SDK .NET:
+                // referenceId, amount, description, toBin, toAccountNumber, toAccountName
                 var bodyObj = new
                 {
                     referenceId = request.ReferenceId,
                     amount = request.Amount,
+                    description = request.Description,
+                    toBin = request.BankBin,
+                    toAccountNumber = request.AccountNumber,
+                    toAccountName = request.AccountHolderName,
+                    // Giữ tương thích ngược alias
                     bankBin = request.BankBin,
                     accountNumber = request.AccountNumber,
-                    accountHolderName = request.AccountHolderName,
-                    description = request.Description
+                    accountHolderName = request.AccountHolderName
                 };
 
                 var jsonContent = new StringContent(JsonSerializer.Serialize(bodyObj), Encoding.UTF8, "application/json");

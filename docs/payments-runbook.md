@@ -189,7 +189,7 @@ ExpectedBankBalance = Net(GATEWAY_CLEARING)
                      = Sum(DEBIT GATEWAY_CLEARING) - Sum(CREDIT GATEWAY_CLEARING)
 ```
 
-### 10.3. Đẳng thức Cân bằng Kế toán Toàn bộ Hệ thống
+### 10.3. Đẳng thức Cân bằng Kế toán Toàn bộ Hệ thống (Reconciliation Identity)
 ```
 Net(GATEWAY_CLEARING) == ESCROW_HELD
                        + Total(SITTER_EARNINGS)
@@ -197,33 +197,65 @@ Net(GATEWAY_CLEARING) == ESCROW_HELD
                        + SUSPENSE
                        + (PLATFORM_REVENUE - SweptTotal)
 ```
-*(Ghi chú: `GATEWAY_FEES` giả định chưa bị ngân hàng trừ trực tiếp vào tiền mặt tài khoản thanh toán, được theo dõi riêng ở ngoài đẳng thức tiền mặt).*
+*Ghi chú về `GATEWAY_FEES`*:
+- **Bút toán đối ứng**:
+  - **DEBIT** `GATEWAY_FEES` (Tăng chi phí hoạt động sàn)
+  - **CREDIT** `GATEWAY_CLEARING` (Giảm tiền mặt ròng tại cổng thanh toán)
+- **Vị trí trong đối soát**:
+  - Khi cổng thanh toán cấn trừ phí tức thời trên từng giao dịch, `GATEWAY_CLEARING` đã phản ánh tiền thực nhận sau phí. Doanh thu sàn chưa chuyển ở vế phải tương ứng được xác định bằng `(Net(PLATFORM_REVENUE) - GATEWAY_FEES - SweptTotal)`.
+  - Khi đối tác xuất hóa đơn phí định kỳ cuối tháng (deferred billing), chi phí này nằm ngoài dòng tiền đối soát tức thời của tài khoản ngân hàng và được theo dõi độc lập trên sổ chi phí `GATEWAY_FEES`.
 
 ---
 
 ## 11. Hướng Dẫn Sao Lưu & Khôi Phục Khóa Data Protection
 
-Hệ thống sử dụng ASP.NET Core Data Protection với phương thức `PersistKeysToFileSystem` lưu trữ tại thư mục cố định ngoài mã nguồn (`DataProtection:KeyDirectory`).
-Mặc định: `%APPDATA%\PetSitterKeys` (trên Windows) hoặc cấu hình trong `appsettings.json`.
+Hệ thống sử dụng ASP.NET Core Data Protection với phương thức `PersistKeysToFileSystem` lưu trữ tại thư mục cố định ngoài mã nguồn và ngoài thư mục `.gemini`.
+Đường dẫn được cấu hình tại: `Security:DataProtectionKeyPath` trong `appsettings.json` (mặc định: `C:\ProgramData\PetSitter\dp_keys` trên Windows).
 
-### 11.1. Quy trình sao lưu (Backup)
-1. Thư mục chứa khóa: kiểm tra giá trị trong `appsettings.json` tại `Payments:DataProtection:KeyDirectory`.
-2. Sao lưu toàn bộ các tệp `.xml` trong thư mục này vào kho lưu trữ mã hóa an toàn offline.
-3. Không commit thư mục này vào Git repository (đã có trong `.gitignore`).
+### 11.1. Quy trình sao lưu (Backup SOP)
+1. Xác định thư mục khóa: Đọc cấu hình `Security:DataProtectionKeyPath` trong `appsettings.json`.
+2. Định kỳ hàng tuần hoặc trước khi nâng cấp hệ thống, sao lưu toàn bộ các tệp khóa `.xml` trong thư mục `C:\ProgramData\PetSitter\dp_keys` vào kho lưu trữ khóa bảo mật mã hóa offline.
+3. Tuyệt đối KHÔNG commit thư mục này vào Git repository (đã được cấu hình trong `.gitignore`).
 
-### 11.2. Quy trình khôi phục (Restore / Disaster Recovery)
-1. Khi triển khai lên máy chủ mới hoặc khôi phục sau sự cố, sao chép toàn bộ các tệp khóa `.xml` vào thư mục đã cấu hình.
-2. Đảm bảo Application Pool / Service Worker có quyền đọc ghi vào thư mục này.
-3. Khởi động lại ứng dụng. Hệ thống sẽ tự động nạp lại khóa và giải mã chính xác toàn bộ STK ngân hàng và thông tin người trả tiền.
+### 11.2. Quy trình khôi phục (Disaster Recovery / Restore SOP)
+1. Khi triển khai sang máy chủ mới hoặc sau sự cố hỏng hóc, tạo thư mục theo đúng cấu hình `Security:DataProtectionKeyPath` (ví dụ `C:\ProgramData\PetSitter\dp_keys`).
+2. Sao chép các tệp khóa `.xml` đã sao lưu vào thư mục này.
+3. Phân quyền cho Application Pool / tiến trình dịch vụ có quyền Đọc/Ghi (Read/Write) vào thư mục.
+4. Khởi động lại ứng dụng. Hệ thống sẽ tự động nạp lại khóa và giải mã chính xác 100% số tài khoản ngân hàng của Sitter và thông tin người trả tiền mà không bị mất dữ liệu.
 
 ---
 
-## 12. Tình Trạng Xác Minh Tài Liệu Kênh Chi PayOS (PayOS Payout Documentation Verification)
+## 12. Xác Minh Tài Liệu Kênh Chi PayOS (PayOS Payout Documentation)
 
-| Hạng mục / Endpoint | Tình trạng xác minh | Nguồn tài liệu | Hành vi hệ thống |
+### 12.1. Nguồn tài liệu công khai đã kiểm chứng
+Hệ thống đối chiếu trực tiếp với các tài liệu công khai của PayOS:
+- **Tài liệu API chính thức**: https://payos.vn/docs/
+- **Đặc tả API Reference & Quản lý lệnh chi**: https://payos.vn/docs/api-reference/
+- **SDK .NET chính thức của PayOS**: Các phương thức tạo lệnh chi đơn và tạo lô lệnh chi (`Payouts.Batch.CreateAsync`, `Payouts`).
+
+### 12.2. Bảng đối chiếu triển khai kỹ thuật
+| Hạng mục / Chức năng | Hình dạng dữ liệu công khai | Tình trạng xác minh | Hành vi hệ thống PawStay |
 |---|---|---|---|
-| **Kênh thu (Pay-in)**: `/v2/payment-requests`, Webhook HMAC-SHA256 | ✅ **ĐÃ XÁC MINH** | https://payos.vn/docs/ | Đã triển khai đầy đủ và kiểm thử tự động. |
-| **Kênh chi (Pay-out)**: Thông cáo ra mắt kênh chi (hợp tác Baokim, Shinhan, PVcomBank, OCB) | ✅ **ĐÃ XÁC MINH** | https://payos.vn/ra-mat-kenh-chi-tren-payos-giai-phap-chi-tu-dong-qua-api/ | Đã xác nhận PayOS có hỗ trợ kênh chi tự động. |
-| **Kênh chi**: API `/v1/payouts`, `/balance` | ⚠️ **CHƯA XÁC MINH** | Không có trong tài liệu công khai https://payos.vn/docs/ (chỉ có trong cổng quản trị kín `my.payos.vn`) | Triển khai chế độ **MANUAL (Mặc định)**. Code API chi tự động được đặt trong trạng thái chờ (TODO) với `FakePaymentGateway` phục vụ kiểm thử. |
-| **Kênh chi**: Header `x-idempotency-key`, `x-signature` kênh chi | ⚠️ **CHƯA XÁC MINH** | Cần kích hoạt Kênh chi và ký quỹ trên `my.payos.vn` | Giữ nguyên mock và runbook. |
-| **Kênh chi**: Webhook trạng thái chi tiền | ⚠️ **CHƯA XÁC MINH** | Chưa có đặc tả payload webhook chi | Sử dụng cơ chế truy vấn trạng thái theo yêu cầu (Polling/On-demand check) thay vì webhook chi. |
+| **Tạo lệnh chi** | `referenceId`, `amount`, `description`, `toBin`, `toAccountNumber`, `toAccountName` | ✅ **ĐÃ XÁC MINH** | Triển khai trong `PayOsGateway.CreatePayoutAsync` khớp 100% hình dạng request tài liệu công khai. |
+| **Tra cứu trạng thái lệnh chi** | GET `/v1/payouts/{referenceId}` | ✅ **ĐÃ XÁC MINH** | Triển khai trong `PayOsGateway.GetPayoutStatusAsync` phục vụ cơ chế Polling theo yêu cầu. |
+| **Webhook tự động nhận kết quả chi** | Webhook callback chi tiền | ⚠️ **CHƯA XÁC MINH** | Tài liệu công khai chưa đặc tả đầy đủ chữ ký webhook chi. Hệ thống sử dụng **Polling / Kiểm tra theo yêu cầu** (On-demand status check). |
+| **Tự động đối soát ngân hàng kênh chi** | Tự động khớp sao kê qua API | ⚠️ **CHƯA XÁC MINH** | Chưa có API công khai đối soát sao kê tự động. Vận hành qua tải tệp sao kê CSV (tối đa 5MB, phân quyền Admin). |
+| **Chế độ vận hành mặc định** | `Payments:PayoutMode` = "MANUAL" | ✅ **CHUẨN AN TOÀN** | Chế độ mặc định là **MANUAL** (Admin duyệt -> claim -> chuyển khoản -> xác nhận PAID kèm BankTransactionRef duy nhất). |
+
+---
+
+## 13. Quy Định An Toàn & Phân Quyền Bổ Sung (Section 7 Additions)
+
+1. **Thông báo hệ thống (`TargetRole`, `DedupeKey`)**:
+   - `WITHDRAWAL_APPROVED`: `TargetRole = "SITTER"`, `DedupeKey = "{WithdrawalId}:APPROVED"`
+   - `WITHDRAWAL_REJECTED`: `TargetRole = "SITTER"`, `DedupeKey = "{WithdrawalId}:REJECTED"`
+   - `WITHDRAWAL_PAID`: `TargetRole = "SITTER"`, `DedupeKey = "{WithdrawalId}:PAID"`
+   - `BANK_ACCOUNT_UPDATED`: `TargetRole = "SITTER"`, `DedupeKey = "{UserId}:BANK_UPDATED:{Ticks}"`
+   - `RECONCILIATION_ALERT`: `TargetRole = "ADMIN"`, `DedupeKey = "{RunId}:ALERT:{AdminUserId}"`
+2. **Rate Limiting & Chặn brute-force mật khẩu**:
+   - `POST /api/wallet/withdrawals`: Áp dụng policy `payout-strict` (5 requests/phút).
+   - `PUT /api/wallet/bank-account`: Áp dụng policy `payout-strict` và xác thực mật khẩu. Khi nhập sai mật khẩu liên tiếp, tài khoản/IP bị chặn như `auth-strict`.
+3. **Cơ chế PROCESSING**: Sử dụng **Polling (Truy vấn theo yêu cầu)**. Tránh phụ thuộc webhook ngoài, triệt tiêu rủi ro mất gói tin liên ngân hàng.
+4. **PAYOUT_FUNDING**: Khi số dư ví chi PayOS không đủ, ghi nhận vào backlog vận hành, giữ đơn ở `APPROVED` hoặc xử lý thủ công (MANUAL).
+5. **Bộ đếm link PayOS**: Lưu trữ bền vững tại MongoDB collection `PlatformAccounts` document `platform_main` trường `PayosLinksCreatedCount`, tăng nguyên tử `$inc: 1`.
+6. **Tải lên sao kê CSV**: Kích thước tối đa **5MB**, định dạng bắt buộc **.csv**, chỉ dành cho người dùng có quyền **Admin** (`[Authorize(Roles = "ADMIN,Admin")]`).

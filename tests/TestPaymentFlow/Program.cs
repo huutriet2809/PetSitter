@@ -44,10 +44,14 @@ namespace TestPaymentFlow
             var context = new PetSitterContext(database);
 
             // Data Protection Service Provider
-            var dpKeyDir = config.GetValue<string>("Payments:DataProtection:KeyDirectory");
+            var dpKeyDir = config["Security:DataProtectionKeyPath"]
+                           ?? config.GetValue<string>("Payments:DataProtection:KeyDirectory");
             if (string.IsNullOrWhiteSpace(dpKeyDir))
             {
-                dpKeyDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PetSitterKeys");
+                var commonApp = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+                dpKeyDir = !string.IsNullOrWhiteSpace(commonApp)
+                    ? Path.Combine(commonApp, "PetSitter", "dp_keys")
+                    : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PetSitterKeys");
             }
             Directory.CreateDirectory(dpKeyDir);
 

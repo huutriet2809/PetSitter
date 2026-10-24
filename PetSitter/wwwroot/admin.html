@@ -708,9 +708,10 @@
             actionHtml = `
               <div>
                 <div style="font-size:0.75rem; color:#4338ca; margin-bottom:4px; font-weight:600;">ℹ️ ${/* safe */ claimText}</div>
-                <div style="display:flex; gap:6px;">
+                <div style="display:flex; gap:6px; align-items:center;">
                   <input type="text" id="bank-ref-${/* safe */ w.withdrawalId}" placeholder="Mã GD ngân hàng..." style="padding:4px 8px; font-size:0.85rem; border:1px solid var(--border); border-radius:4px; width:130px;" />
                   <button class="btn btn-primary btn-sm" style="background:#16a34a; border-color:#16a34a;" onclick="confirmPaidWithdrawal('${/* safe */ w.withdrawalId}')">Xác nhận PAID</button>
+                  <button class="btn btn-outline btn-sm" style="color:#64748b; font-size:0.75rem; padding:4px 6px;" onclick="unclaimWithdrawal('${/* safe */ w.withdrawalId}')" title="Nhả quyền xử lý">Nhả</button>
                 </div>
               </div>
             `;
@@ -812,6 +813,17 @@
         loadWithdrawals(currentWithdrawalStatus);
       } catch (err) {
         showError(err.message || 'Lỗi khi nhận xử lý.');
+      }
+    }
+
+    async function unclaimWithdrawal(id) {
+      if (!confirm('Nhả xử lý yêu cầu này? Yêu cầu sẽ quay lại trạng thái Đã duyệt (APPROVED) để Admin khác có thể tiếp nhận.')) return;
+      try {
+        await apiFetch(`/admin/withdrawals/${id}/unclaim`, { method: 'POST' });
+        showToast('Đã nhả xử lý yêu cầu rút tiền!', 3000, '↩️');
+        loadWithdrawals(currentWithdrawalStatus);
+      } catch (err) {
+        showError(err.message || 'Lỗi khi nhả xử lý.');
       }
     }
 

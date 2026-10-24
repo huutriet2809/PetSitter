@@ -225,9 +225,9 @@ namespace PetSitter.Services
             var vnNow = TimeZoneInfo.ConvertTimeFromUtc(nowUtc, GetVnTimeZone());
             var currentVnDateStr = vnNow.ToString("yyyy-MM-dd");
 
-            // 6. Cổng kiểm soát nguyên tử (Atomic Gate) trên EarningsAccounts (thử lại tối đa 40 lần)
+            // 6. Cổng kiểm soát nguyên tử (Atomic Gate) trên EarningsAccounts (thử lại tối đa 5 lần khi xung đột Version)
             EarningsAccount? claimedAccount = null;
-            int maxRetries = 40;
+            int maxRetries = 5;
 
             for (int attempt = 1; attempt <= maxRetries; attempt++)
             {
@@ -258,10 +258,11 @@ namespace PetSitter.Services
 
                 if (account == null) continue;
 
-                // Kiểm tra hạn mức ngày
+                // Kiểm tra hạn mức ngày (nếu qua ngày VN mới thì coi như đã reset)
                 long effectiveDaily = account.DailyWindowDate == currentVnDateStr ? account.DailyWithdrawn : 0;
                 if (effectiveDaily + dto.Amount > dailyLimit)
                 {
+                    // Vượt hạn mức ngày -> dừng ngay, không retry
                     throw new BadRequestException($"Số tiền yêu cầu vượt quá hạn mức rút trong ngày ({dailyLimit:N0} ₫). Đã rút hôm nay: {effectiveDaily:N0} ₫.");
                 }
 
@@ -269,6 +270,7 @@ namespace PetSitter.Services
                 long netAvailable = grossAvailable - account.ReservedAmount;
                 if (dto.Amount > netAvailable)
                 {
+                    // Thiếu số dư -> dừng ngay, không retry
                     throw new BadRequestException($"Số tiền yêu cầu ({dto.Amount:N0} ₫) vượt quá thu nhập khả dụng hiện có ({netAvailable:N0} ₫).");
                 }
 
@@ -316,17 +318,20 @@ namespace PetSitter.Services
                     break; // Thành công vượt qua gate
                 }
 
-                // Nếu xung đột Version -> nghỉ ngẫu nhiên và thử lại
-                await Task.Delay(Random.Shared.Next(10, 20 + (attempt * 10)));
+                // Chỉ thử lại khi xung đột Version (FindOneAndUpdate trả về null)
+                if (attempt < maxRetries)
+                {
+                    await Task.Delay(Random.Shared.Next(10, 20 + (attempt * 10)));
+                }
             }
 
             if (claimedAccount == null)
             {
-                throw new ConflictException("Hệ thống đang xử lý nhiều giao dịch rút tiền đồng thời. Vui lòng thử lại sau ít giây.");
+                throw new ConflictException("Hệ thống đang xử lý giao dịch đồng thời trên tài khoản. Vui lòng thử lại sau giây lát.");
             }
 
             // 7. Tạo bản ghi WithdrawalRequest
-            var referenceId = "WTH" + nowUtc.ToString("yyMMddHHmmss") + Random.Shared.Next(100, 999);
+            var referenceId = "WTH" + nowUtc.ToString("yyMMddHHmmss") + Guid.NewGuid().ToString("N").Substring(0, 6).ToUpperInvariant();
             var bankSnapshotJson = JsonSerializer.Serialize(new
             {
                 bank.BankBin,
@@ -358,6 +363,18 @@ namespace PetSitter.Services
             try
             {
                 await _context.WithdrawalRequests.InsertOneAsync(req);
+            }
+            catch (MongoWriteException ex) when (ex.WriteError?.Category == ServerErrorCategory.DuplicateKey)
+            {
+                _logger.LogWarning(ex, "Trùng lặp khóa WithdrawalRequest {ReferenceId}, rollback ReservedAmount.", referenceId);
+                await _context.EarningsAccounts.UpdateOneAsync(
+                    a => a.UserId == sitterUserId,
+                    Builders<EarningsAccount>.Update
+                        .Inc(a => a.ReservedAmount, -dto.Amount)
+                        .Inc(a => a.DailyWithdrawn, -dto.Amount)
+                        .Inc(a => a.Version, 1)
+                );
+                throw new ConflictException("Yêu cầu rút tiền bị trùng lặp hoặc xung đột đồng thời. Vui lòng thử lại.");
             }
             catch (Exception ex)
             {
@@ -415,14 +432,27 @@ namespace PetSitter.Services
                 throw new BadRequestException($"Không thể hủy yêu cầu ở trạng thái '{existing.Status}'. Chỉ có thể hủy khi đang chờ duyệt (REQUESTED).");
             }
 
-            // Nhả ReservedAmount và DailyWithdrawn
+            // Nhả ReservedAmount và hoàn lại DailyWithdrawn nếu trong cùng cửa sổ ngày VN
+            var reqVnDate = TimeZoneInfo.ConvertTimeFromUtc(cancelled.CreatedAt, GetVnTimeZone()).ToString("yyyy-MM-dd");
+            var account = await _context.EarningsAccounts.Find(a => a.UserId == sitterUserId).FirstOrDefaultAsync();
+
+            var updateBuilder = Builders<EarningsAccount>.Update
+                .Inc(a => a.ReservedAmount, -cancelled.Amount)
+                .Inc(a => a.Version, 1)
+                .Set(a => a.UpdatedAt, nowUtc);
+
+            if (account != null && account.DailyWindowDate == reqVnDate)
+            {
+                var refundDaily = Math.Min(account.DailyWithdrawn, cancelled.Amount);
+                if (refundDaily > 0)
+                {
+                    updateBuilder = updateBuilder.Inc(a => a.DailyWithdrawn, -refundDaily);
+                }
+            }
+
             await _context.EarningsAccounts.UpdateOneAsync(
                 a => a.UserId == sitterUserId,
-                Builders<EarningsAccount>.Update
-                    .Inc(a => a.ReservedAmount, -cancelled.Amount)
-                    .Inc(a => a.DailyWithdrawn, -cancelled.Amount)
-                    .Inc(a => a.Version, 1)
-                    .Set(a => a.UpdatedAt, nowUtc)
+                updateBuilder
             );
 
             return MapToDto(cancelled);
@@ -510,9 +540,21 @@ namespace PetSitter.Services
 
         public async Task<WithdrawalItemDto> ClaimProcessingAsync(string adminUserId, string adminName, string withdrawalId, DateTime nowUtc)
         {
-            var filter = Builders<WithdrawalRequest>.Filter.And(
-                Builders<WithdrawalRequest>.Filter.Eq(w => w.WithdrawalId, withdrawalId),
-                Builders<WithdrawalRequest>.Filter.Eq(w => w.Status, WithdrawalStatus.APPROVED)
+            var claimTimeoutMinutes = _config.GetValue<int>("Payments:ClaimTimeoutMinutes", 30);
+            var timeoutThreshold = nowUtc.AddMinutes(-claimTimeoutMinutes);
+
+            var filter = Builders<WithdrawalRequest>.Filter.Or(
+                // 1. Trạng thái APPROVED
+                Builders<WithdrawalRequest>.Filter.And(
+                    Builders<WithdrawalRequest>.Filter.Eq(w => w.WithdrawalId, withdrawalId),
+                    Builders<WithdrawalRequest>.Filter.Eq(w => w.Status, WithdrawalStatus.APPROVED)
+                ),
+                // 2. Trạng thái PROCESSING nhưng đã quá thời hạn claim (timeout)
+                Builders<WithdrawalRequest>.Filter.And(
+                    Builders<WithdrawalRequest>.Filter.Eq(w => w.WithdrawalId, withdrawalId),
+                    Builders<WithdrawalRequest>.Filter.Eq(w => w.Status, WithdrawalStatus.PROCESSING),
+                    Builders<WithdrawalRequest>.Filter.Lt(w => w.ProcessingAt, timeoutThreshold)
+                )
             );
             var update = Builders<WithdrawalRequest>.Update
                 .Set(w => w.Status, WithdrawalStatus.PROCESSING)
@@ -534,12 +576,60 @@ namespace PetSitter.Services
 
                 if (existing.Status == WithdrawalStatus.PROCESSING)
                 {
+                    if (existing.ProcessingByAdminUserId == adminUserId)
+                    {
+                        return MapToDto(existing); // Đã claim bởi chính Admin này
+                    }
                     throw new ConflictException($"Yêu cầu này đang được xử lý bởi Admin {existing.ProcessingByAdminName ?? existing.ProcessingByAdminUserId}.");
                 }
-                throw new BadRequestException($"Không thể nhận xử lý yêu cầu ở trạng thái '{existing.Status}'. Yêu cầu phải ở trạng thái APPROVED.");
+                throw new BadRequestException($"Không thể nhận xử lý yêu cầu ở trạng thái '{existing.Status}'. Yêu cầu phải ở trạng thái APPROVED hoặc quá hạn xử lý.");
             }
 
             return MapToDto(claimed);
+        }
+
+        public async Task<WithdrawalItemDto> UnclaimProcessingAsync(string adminUserId, string withdrawalId, DateTime nowUtc)
+        {
+            var req = await _context.WithdrawalRequests.Find(w => w.WithdrawalId == withdrawalId).FirstOrDefaultAsync();
+            if (req == null) throw new NotFoundException("Yêu cầu rút tiền không tồn tại.");
+
+            if (req.Status != WithdrawalStatus.PROCESSING)
+            {
+                throw new BadRequestException($"Không thể nhả xử lý yêu cầu ở trạng thái '{req.Status}'. Chỉ có thể nhả khi đang ở trạng thái PROCESSING.");
+            }
+
+            var claimTimeoutMinutes = _config.GetValue<int>("Payments:ClaimTimeoutMinutes", 30);
+            var timeoutThreshold = nowUtc.AddMinutes(-claimTimeoutMinutes);
+            bool isExpired = req.ProcessingAt.HasValue && req.ProcessingAt.Value < timeoutThreshold;
+
+            if (req.ProcessingByAdminUserId != adminUserId && !isExpired)
+            {
+                throw new BadRequestException("Chỉ Admin đang nhận claim hoặc sau khi hết hạn claim (30 phút) mới có thể nhả yêu cầu.");
+            }
+
+            var filter = Builders<WithdrawalRequest>.Filter.And(
+                Builders<WithdrawalRequest>.Filter.Eq(w => w.WithdrawalId, withdrawalId),
+                Builders<WithdrawalRequest>.Filter.Eq(w => w.Status, WithdrawalStatus.PROCESSING)
+            );
+            var update = Builders<WithdrawalRequest>.Update
+                .Set(w => w.Status, WithdrawalStatus.APPROVED)
+                .Set(w => w.ProcessingByAdminUserId, (string?)null)
+                .Set(w => w.ProcessingByAdminName, (string?)null)
+                .Set(w => w.ProcessingAt, (DateTime?)null)
+                .Set(w => w.UpdatedAt, nowUtc);
+
+            var unclaimed = await _context.WithdrawalRequests.FindOneAndUpdateAsync(
+                filter,
+                update,
+                new FindOneAndUpdateOptions<WithdrawalRequest> { ReturnDocument = ReturnDocument.After }
+            );
+
+            if (unclaimed == null)
+            {
+                throw new ConflictException("Yêu cầu rút tiền đã thay đổi trạng thái đồng thời.");
+            }
+
+            return MapToDto(unclaimed);
         }
 
         public async Task<WithdrawalItemDto> ConfirmPaidAsync(string adminUserId, string withdrawalId, ConfirmPaidDto dto, DateTime nowUtc)
@@ -674,14 +764,27 @@ namespace PetSitter.Services
                 throw new ConflictException($"Không thể từ chối yêu cầu ở trạng thái '{existing?.Status}'.");
             }
 
-            // Nhả ReservedAmount & DailyWithdrawn
+            // Nhả ReservedAmount & hoàn lại DailyWithdrawn nếu trong cùng ngày VN
+            var reqVnDate = TimeZoneInfo.ConvertTimeFromUtc(rejected.CreatedAt, GetVnTimeZone()).ToString("yyyy-MM-dd");
+            var account = await _context.EarningsAccounts.Find(a => a.UserId == rejected.SitterUserId).FirstOrDefaultAsync();
+
+            var updateBuilder = Builders<EarningsAccount>.Update
+                .Inc(a => a.ReservedAmount, -rejected.Amount)
+                .Inc(a => a.Version, 1)
+                .Set(a => a.UpdatedAt, nowUtc);
+
+            if (account != null && account.DailyWindowDate == reqVnDate)
+            {
+                var refundDaily = Math.Min(account.DailyWithdrawn, rejected.Amount);
+                if (refundDaily > 0)
+                {
+                    updateBuilder = updateBuilder.Inc(a => a.DailyWithdrawn, -refundDaily);
+                }
+            }
+
             await _context.EarningsAccounts.UpdateOneAsync(
                 a => a.UserId == rejected.SitterUserId,
-                Builders<EarningsAccount>.Update
-                    .Inc(a => a.ReservedAmount, -rejected.Amount)
-                    .Inc(a => a.DailyWithdrawn, -rejected.Amount)
-                    .Inc(a => a.Version, 1)
-                    .Set(a => a.UpdatedAt, nowUtc)
+                updateBuilder
             );
 
             // Gửi thông báo cho Sitter

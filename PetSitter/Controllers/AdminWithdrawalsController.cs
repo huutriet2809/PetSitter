@@ -49,6 +49,16 @@ namespace PetSitter.Controllers
             return Ok(res);
         }
 
+        [HttpPost("{id}/unclaim")]
+        public async Task<IActionResult> Unclaim(string id)
+        {
+            var adminUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(adminUserId)) return Unauthorized();
+
+            var res = await _withdrawalService.UnclaimProcessingAsync(adminUserId, id, DateTime.UtcNow);
+            return Ok(res);
+        }
+
         [HttpPost("{id}/confirm-paid")]
         public async Task<IActionResult> ConfirmPaid(string id, [FromBody] ConfirmPaidDto dto)
         {

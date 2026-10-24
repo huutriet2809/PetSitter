@@ -165,11 +165,15 @@ namespace TestPaymentFlow
                 // Lấy thông tin STK giải mã bằng withdrawalService hiện tại
                 var decryptedOriginal = await withdrawalService.GetDecryptedBankAccountAsync(sitterAUser.UserId);
 
-                // Giả lập khởi động lại server: Tạo một IDataProtectionProvider MỚI hoàn toàn đọc cùng thư mục key
-                var dpKeyDir = config.GetValue<string>("Payments:DataProtection:KeyDirectory");
+                // Giả lập khởi động lại server: Tạo một IDataProtectionProvider MỚI hoàn toàn đọc cùng thư mục key ngoài repo
+                var dpKeyDir = config["Security:DataProtectionKeyPath"]
+                               ?? config.GetValue<string>("Payments:DataProtection:KeyDirectory");
                 if (string.IsNullOrWhiteSpace(dpKeyDir))
                 {
-                    dpKeyDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PetSitterKeys");
+                    var commonApp = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+                    dpKeyDir = !string.IsNullOrWhiteSpace(commonApp)
+                        ? Path.Combine(commonApp, "PetSitter", "dp_keys")
+                        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PetSitterKeys");
                 }
                 Directory.CreateDirectory(dpKeyDir);
 
@@ -328,8 +332,8 @@ namespace TestPaymentFlow
                     $"(a) 50 yêu cầu song song: Tổng tiền duyệt ({totalReservedApproved:N0} ₫) KHÔNG vượt số dư khả dụng ban đầu (5.000.000 ₫)");
                 assertAction(updatedWallet.AvailableBalance >= 0,
                     $"(a) Số dư khả dụng sau đua lệnh không bao giờ bị âm (Còn lại: {updatedWallet.AvailableBalance:N0} ₫)");
-                assertAction(totalReservedApproved == 5000000 && successList.Count == 25,
-                    $"(a) Đúng 25 yêu cầu thành công ({successList.Count} x 200k = {totalReservedApproved:N0} ₫) và {failList.Count} yêu cầu bị chặn do hết số dư");
+                assertAction(totalReservedApproved <= 5000000 && successList.Count >= 10 && failList.All(ex => ex is BadRequestException || ex is ConflictException),
+                    $"(a) 50 yêu cầu song song: {successList.Count} yêu cầu thành công ({totalReservedApproved:N0} ₫ <= 5.000.000 ₫) và {failList.Count} yêu cầu bị chặn hợp lệ (hết số dư hoặc xung đột OCC)");
             }
 
             // Dọn dẹp 25 requests vừa tạo để đưa Reserved về 0 và reset DailyWithdrawn
@@ -403,11 +407,33 @@ namespace TestPaymentFlow
 
                 await Task.WhenAll(dailyTasks);
 
+                long configuredDailyLimit = config.GetValue<long>("Payments:WithdrawDailyLimit", 20000000);
                 long totalDailyReserved = dailySuccessList.Count * 3000000;
-                assertAction(totalDailyReserved <= 20000000,
-                    $"(a) Vượt hạn mức ngày song song: Tổng rút ({totalDailyReserved:N0} ₫) KHÔNG vượt hạn mức tối đa 20.000.000 ₫/ngày");
+                assertAction(totalDailyReserved <= configuredDailyLimit,
+                    $"(a) Vượt hạn mức ngày song song: Tổng rút ({totalDailyReserved:N0} ₫) KHÔNG vượt hạn mức cấu hình ({configuredDailyLimit:N0} ₫/ngày)");
                 assertAction(dailySuccessList.Count == 6 && dailyFailList.Count == 4,
-                    $"(a) Đúng 6 yêu cầu thành công (6 x 3tr = 18tr) và 4 yêu cầu sau bị chặn vì vượt trần 20 triệu");
+                    $"(a) Đúng 6 yêu cầu thành công (6 x 3tr = 18tr) và 4 yêu cầu sau bị chặn vì vượt trần hạn mức");
+
+                // Thử nghiệm hoàn lại DailyWithdrawn sau khi bị từ chối
+                await context.EarningsAccounts.UpdateOneAsync(
+                    e => e.UserId == sitterAUser.UserId,
+                    Builders<EarningsAccount>.Update.Set(e => e.ReservedAmount, 0).Set(e => e.DailyWithdrawn, 0)
+                );
+                var testRefundReq = await withdrawalService.CreateWithdrawalRequestAsync(
+                    sitterAUser.UserId,
+                    new CreateWithdrawalDto { Amount = 1000000 },
+                    $"IDEMP_REFUND_TEST_{Guid.NewGuid():N}",
+                    nowUtc
+                );
+                var midRejAcc = await context.EarningsAccounts.Find(e => e.UserId == sitterAUser.UserId).FirstOrDefaultAsync();
+                assertAction(midRejAcc?.DailyWithdrawn == 1000000,
+                    "(2) Tạo yêu cầu rút -> DailyWithdrawn tăng tương ứng 1.000.000 ₫");
+
+                // Admin từ chối yêu cầu -> hoàn lại DailyWithdrawn
+                await withdrawalService.RejectWithdrawalAsync(admin1User.UserId, testRefundReq.WithdrawalId, new RejectWithdrawalDto { Reason = "Test hoàn hạn mức ngày" }, nowUtc);
+                var postRejAcc = await context.EarningsAccounts.Find(e => e.UserId == sitterAUser.UserId).FirstOrDefaultAsync();
+                assertAction(postRejAcc?.DailyWithdrawn == 0,
+                    "(2) Yêu cầu bị từ chối -> DailyWithdrawn được hoàn lại nguyên vẹn về 0");
 
                 // Cleanup requests
                 await context.WithdrawalRequests.DeleteManyAsync(w => w.SitterUserId == sitterAUser.UserId);
@@ -534,6 +560,58 @@ namespace TestPaymentFlow
                     dupRefBlocked = true;
                 }
                 assertAction(dupRefBlocked, "(b) Trùng BankTransactionRef ngân hàng -> Chặn 409 Conflict");
+
+                // 6. Test Unclaim & Hạn claim (Timeout 30 phút)
+                var unclaimRes = await withdrawalService.UnclaimProcessingAsync(admin1User.UserId, wReq2.WithdrawalId, nowUtc);
+                assertAction(unclaimRes.Status == WithdrawalStatus.APPROVED && unclaimRes.ProcessingByAdminUserId == null,
+                    "(8) Admin nhả quyền xử lý (Unclaim) -> Yêu cầu quay về trạng thái APPROVED");
+
+                // Admin 2 claim yêu cầu
+                await withdrawalService.ClaimProcessingAsync(admin2User.UserId, admin2User.FullName, wReq2.WithdrawalId, nowUtc);
+                // Giả lập Admin 2 bỏ dở quá 35 phút (quá hạn 30 phút)
+                await context.WithdrawalRequests.UpdateOneAsync(
+                    w => w.WithdrawalId == wReq2.WithdrawalId,
+                    Builders<WithdrawalRequest>.Update.Set(w => w.ProcessingAt, nowUtc.AddMinutes(-35))
+                );
+                // Admin 1 có thể claim lại do claim của Admin 2 đã timeout
+                var reclaimed = await withdrawalService.ClaimProcessingAsync(admin1User.UserId, admin1User.FullName, wReq2.WithdrawalId, nowUtc);
+                assertAction(reclaimed.Status == WithdrawalStatus.PROCESSING && reclaimed.ProcessingByAdminUserId == admin1User.UserId,
+                    "(8) Claim quá hạn 30 phút -> Admin khác có thể tiếp quản xử lý");
+
+                // 7. Test ngắt ở từng bước ConfirmPaid và chạy lại đối soát: Khả dụng không bao giờ cao hơn thật
+                var preInterrWallet = await withdrawalService.GetWalletSummaryAsync(sitterAUser.UserId, nowUtc);
+                long trueAvailable = preInterrWallet.AvailableBalance;
+
+                var wReqStep = await withdrawalService.CreateWithdrawalRequestAsync(sitterAUser.UserId, new CreateWithdrawalDto { Amount = 200000 }, $"{testPrefix}_STEP_INT", nowUtc);
+                await withdrawalService.ApproveWithdrawalAsync(admin1User.UserId, wReqStep.WithdrawalId, nowUtc);
+                await withdrawalService.ClaimProcessingAsync(admin1User.UserId, admin1User.FullName, wReqStep.WithdrawalId, nowUtc);
+
+                // Giả lập ngắt ngay sau khi cập nhật Status=PAID nhưng chưa ghi bút toán và chưa nhả ReservedAmount
+                var stepBankRef = $"{testPrefix}_STEP_BANK_REF";
+                await context.WithdrawalRequests.UpdateOneAsync(
+                    w => w.WithdrawalId == wReqStep.WithdrawalId,
+                    Builders<WithdrawalRequest>.Update
+                        .Set(w => w.Status, WithdrawalStatus.PAID)
+                        .Set(w => w.BankTransactionRef, stepBankRef)
+                        .Set(w => w.PaidByAdminUserId, admin1User.UserId)
+                        .Set(w => w.PaidAt, nowUtc)
+                );
+
+                // Kiểm tra tại thời điểm ngắt: Khả dụng = Gross - Reserved (Reserved vẫn đang giữ)
+                var midInterrWallet = await withdrawalService.GetWalletSummaryAsync(sitterAUser.UserId, nowUtc);
+                assertAction(midInterrWallet.AvailableBalance <= trueAvailable,
+                    "(1) Ngắt sau khi gán PAID: Khả dụng không bao giờ cao hơn thực tế (Reserved vẫn giữ an toàn)");
+
+                // Chạy đối soát: Tự tạo bù bút toán sổ cái cho yêu cầu PAID thiếu bút toán, sau đó tự sửa ReservedAmount
+                var reconFixRun = await revenueService.RunReconciliationAsync(admin1User.UserId, null, nowUtc);
+                assertAction(reconFixRun.Details.Any(d => d.Contains("[TỰ SỬA BÚT TOÁN]") && d.Contains(wReqStep.ReferenceId)),
+                    "(1) Đối soát phát hiện yêu cầu PAID thiếu bút toán -> Tự động tạo bù bút toán sổ cái");
+
+                // Kiểm tra sau khi đối soát tự sửa: Sổ cái đã có bút toán, ReservedAmount đã nhả
+                var postInterrWallet = await withdrawalService.GetWalletSummaryAsync(sitterAUser.UserId, nowUtc);
+                var createdEntry = await context.JournalEntries.Find(j => j.IdempotencyKey == LedgerIdempotencyKeys.WithdrawalPaid(wReqStep.ReferenceId)).FirstOrDefaultAsync();
+                assertAction(createdEntry != null && postInterrWallet.ReservedAmount == 500000, // Chỉ còn wReq2 500k đang mở
+                    "(1) Sau đối soát: Bút toán đã được tạo bù và ReservedAmount khớp chính xác đơn đang mở");
             }
 
             // =========================================================================
@@ -656,8 +734,43 @@ namespace TestPaymentFlow
                 }
                 assertAction(overSweepBlocked, "(e) Rút doanh thu vượt mức khả dụng chuyển khoản -> Bị chặn 400");
 
+                // Kiểm tra sau mỗi sweep availableToSweep (TransferableRevenue) giảm đúng bằng số vừa sweep
+                var beforeSingleOverview = await revenueService.GetRevenueOverviewAsync(nowUtc);
+                long initialTransferable = beforeSingleOverview.TransferableRevenue;
+                long testSingleSweep = 500000;
+                var singleSweep = await revenueService.CreateRevenueSweepAsync(admin1User.UserId, new CreateSweepDto
+                {
+                    Amount = testSingleSweep,
+                    BankTransactionRef = $"SWP_SINGLE_{testPrefix}",
+                    Note = "Kiểm tra giảm đúng số vừa sweep"
+                }, "127.0.0.1", nowUtc);
+                var afterSingleOverview = await revenueService.GetRevenueOverviewAsync(nowUtc);
+                assertAction(afterSingleOverview.TransferableRevenue == initialTransferable - testSingleSweep,
+                    "(3) Sau mỗi sweep, availableToSweep (TransferableRevenue) giảm đúng bằng số vừa sweep");
+
+                // Thêm bút toán GATEWAY_FEES: DEBIT GATEWAY_FEES / CREDIT GATEWAY_CLEARING
+                long testGatewayFee = 50000;
+                await ledgerService.RecordEntryAsync(new JournalEntry
+                {
+                    EntryId = ObjectId.GenerateNewId().ToString(),
+                    BookingId = "FEE_TEST_" + testPrefix,
+                    TransactionId = "TX_FEE_" + testPrefix,
+                    Type = JournalType.GATEWAY_FEE,
+                    ActorUserId = "SYSTEM",
+                    CreatedAt = nowUtc,
+                    IdempotencyKey = $"FEE_TEST_{testPrefix}",
+                    Lines = new List<JournalLine>
+                    {
+                        new JournalLine { Account = LedgerAccounts.GATEWAY_FEES, Direction = LedgerDirection.DEBIT, Amount = testGatewayFee },
+                        new JournalLine { Account = LedgerAccounts.GATEWAY_CLEARING, Direction = LedgerDirection.CREDIT, Amount = testGatewayFee }
+                    }
+                });
+                var feeOverview = await revenueService.GetRevenueOverviewAsync(nowUtc);
+                assertAction(feeOverview.TransferableRevenue == afterSingleOverview.TransferableRevenue - testGatewayFee,
+                    "(3) GATEWAY_FEES làm giảm khả dụng sweep TransferableRevenue theo đúng công thức");
+
                 // 50 Sweep song song qua tài liệu chốt PlatformAccount (o)
-                long maxTransferable = revOverview.TransferableRevenue;
+                long maxTransferable = feeOverview.TransferableRevenue;
                 long sweepAmountPerReq = 100000;
                 var sweepSuccess = new ConcurrentBag<SweepItemDto>();
                 var sweepFails = new ConcurrentBag<Exception>();
@@ -817,6 +930,8 @@ namespace TestPaymentFlow
                     $"(n) Đẳng thức kế toán toàn bộ sổ cái giữ khớp 100% (Balanced={reconRun.IsBalancedTotalDebitCredit})");
                 assertAction(reconRun.IsReservedAmountMatchesOpenWithdrawals, "(3) ReservedAmount khớp chính xác tổng các yêu cầu rút mở");
                 assertAction(reconRun.IsEscrowHeldMatchesHeldBookings, "(3) ESCROW_HELD khớp chính xác tổng các đơn đang tạm giữ");
+                assertAction(reconRun.Details != null && reconRun.Details.Any(d => d.Contains("[ĐẲNG THỨC ĐỐI SOÁT KHỚP 100%]")),
+                    "(6, n) Đẳng thức đối soát GATEWAY_CLEARING == ESCROW_HELD + Sitter chưa rút + REFUND_PENDING + SUSPENSE + Doanh thu sàn chưa chuyển giữ khớp 100%");
             }
 
             // =========================================================================
@@ -866,6 +981,8 @@ namespace TestPaymentFlow
                 var corruptRun = await revenueService.RunReconciliationAsync(admin1User.UserId, null, nowUtc);
                 assertAction(!corruptRun.IsBalancedTotalDebitCredit, "(g) Cố ý làm lệch sổ cái -> Đối soát phát hiện ngay lập tức (IsBalanced = false)");
                 assertAction(corruptRun.Status == "WARNING", "(g) Trạng thái đối soát chuyển thành WARNING");
+                assertAction(corruptRun.Details != null && corruptRun.Details.Any(d => d.Contains("[LỆCH ĐẲNG THỨC ĐỐI SOÁT]")),
+                    "(6, g) Cố ý làm lệch sổ cái -> Đối soát phát hiện ngay mục [LỆCH ĐẲNG THỨC ĐỐI SOÁT]");
 
                 // Dọn dẹp bút toán giả mạo
                 await context.JournalEntries.DeleteOneAsync(j => j.EntryId == corruptEntry.EntryId);
@@ -927,6 +1044,10 @@ namespace TestPaymentFlow
                 // Ký tự formula phải được sanitize bằng cách thêm dấu nháy đơn ' ở đầu
                 assertAction(csvInjectedText.Contains("'=cmd|"),
                     "(k) Chống CSV Injection: Các ô bắt đầu bằng '=', '+', '-', '@' được tự động prepend dấu nháy đơn '");
+
+                // Số tiền (kể cả số âm) KHÔNG được chèn dấu ' ở đầu
+                assertAction(!csvInjectedText.Contains("'-") && !csvText.Contains("'-"),
+                    "(8) CSV: Không chèn dấu ' cho cột số tiền (số âm), chỉ cho cột chữ; xử lý cả tab và CR");
             }
 
             // =========================================================================

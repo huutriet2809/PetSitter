@@ -17,6 +17,7 @@ namespace PetSitter.Services
         Task<List<WithdrawalItemDto>> GetAdminWithdrawalsAsync(string? status = null, string? sitterUserId = null, int limit = 50);
         Task<WithdrawalItemDto> ApproveWithdrawalAsync(string adminUserId, string withdrawalId, DateTime nowUtc);
         Task<WithdrawalItemDto> ClaimProcessingAsync(string adminUserId, string adminName, string withdrawalId, DateTime nowUtc);
+        Task<WithdrawalItemDto> UnclaimProcessingAsync(string adminUserId, string withdrawalId, DateTime nowUtc);
         Task<WithdrawalItemDto> ConfirmPaidAsync(string adminUserId, string withdrawalId, ConfirmPaidDto dto, DateTime nowUtc);
         Task<WithdrawalItemDto> RejectWithdrawalAsync(string adminUserId, string withdrawalId, RejectWithdrawalDto dto, DateTime nowUtc);
         Task<WithdrawalItemDto> QueryAndProcessPayoutAsync(string adminUserId, string withdrawalId, DateTime nowUtc);

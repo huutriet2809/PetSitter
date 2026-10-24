@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using PetSitter.DTOs;
 using PetSitter.Exceptions;
 using PetSitter.Services;
@@ -54,6 +55,7 @@ namespace PetSitter.Controllers
         }
 
         [HttpPut("bank-account")]
+        [EnableRateLimiting("payout-strict")]
         public async Task<IActionResult> UpdateBankAccount([FromBody] UpdateBankAccountDto dto)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -65,6 +67,7 @@ namespace PetSitter.Controllers
 
         [HttpPost("withdrawals")]
         [HttpPost("withdraw")]
+        [EnableRateLimiting("payout-strict")]
         public async Task<IActionResult> CreateWithdrawal([FromBody] CreateWithdrawalDto dto)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);

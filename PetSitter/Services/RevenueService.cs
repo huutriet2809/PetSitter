@@ -222,15 +222,16 @@ namespace PetSitter.Services
                 };
             }
 
-            // 2. Kiểm tra điều kiện doanh thu có thể chuyển và chốt nguyên tử (thử lại tối đa 40 lần)
+            // 2. Kiểm tra điều kiện doanh thu có thể chuyển và chốt nguyên tử (thử lại tối đa 5 lần khi xung đột Version)
             PlatformAccount? updatedAccount = null;
-            int maxRetries = 40;
+            int maxRetries = 5;
 
             for (int attempt = 1; attempt <= maxRetries; attempt++)
             {
                 var overview = await GetRevenueOverviewAsync(nowUtc);
                 if (dto.Amount > overview.TransferableRevenue)
                 {
+                    // Vượt mức doanh thu khả dụng -> dừng ngay, không retry
                     throw new BadRequestException($"Số tiền chuyển ({dto.Amount:N0} ₫) vượt quá doanh thu có thể chuyển ({overview.TransferableRevenue:N0} ₫).");
                 }
 
@@ -256,12 +257,16 @@ namespace PetSitter.Services
                     break;
                 }
 
-                await Task.Delay(Random.Shared.Next(10, 20 + (attempt * 10)));
+                // Chỉ thử lại khi xung đột Version
+                if (attempt < maxRetries)
+                {
+                    await Task.Delay(Random.Shared.Next(10, 20 + (attempt * 10)));
+                }
             }
 
             if (updatedAccount == null)
             {
-                throw new ConflictException("Đang có giao dịch chuyển hoa hồng khác diễn ra đồng thời. Vui lòng thử lại.");
+                throw new ConflictException("Đang có giao dịch chuyển hoa hồng khác diễn ra đồng thời. Vui lòng thử lại sau giây lát.");
             }
 
             // 3. Ghi bản ghi RevenueSweep
@@ -352,6 +357,51 @@ namespace PetSitter.Services
             else
             {
                 details.Add($"[SỔ CÁI CÂN BẰNG] Tổng Nợ = Tổng Có = {totalDebit:N0} ₫.");
+            }
+
+            // 1.5. Tự động kiểm tra và bù bút toán cho các yêu cầu rút đã PAID nhưng thiếu bút toán sổ cái
+            var paidWithdrawals = await _context.WithdrawalRequests
+                .Find(w => w.Status == WithdrawalStatus.PAID)
+                .ToListAsync();
+            int autoRepairedPaidCount = 0;
+            foreach (var pw in paidWithdrawals)
+            {
+                var paidIdemKey = LedgerIdempotencyKeys.WithdrawalPaid(pw.ReferenceId);
+                var existingEntry = await _context.JournalEntries
+                    .Find(j => j.IdempotencyKey == paidIdemKey || (j.BookingId == "WITHDRAWAL:" + pw.ReferenceId && j.Type == JournalType.WITHDRAWAL_PAID))
+                    .FirstOrDefaultAsync();
+
+                if (existingEntry == null)
+                {
+                    var recoveryEntry = new JournalEntry
+                    {
+                        EntryId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                        TransactionId = "TX" + nowUtc.ToString("yyMMddHHmmss") + "REC",
+                        BookingId = "WITHDRAWAL:" + pw.ReferenceId,
+                        Type = JournalType.WITHDRAWAL_PAID,
+                        ActorUserId = pw.PaidByAdminUserId ?? "system_reconcile",
+                        CreatedAt = pw.PaidAt ?? nowUtc,
+                        IdempotencyKey = paidIdemKey,
+                        Lines = new List<JournalLine>
+                        {
+                            new JournalLine
+                            {
+                                Account = LedgerAccounts.SitterEarnings(pw.SitterUserId),
+                                Direction = LedgerDirection.DEBIT,
+                                Amount = pw.Amount
+                            },
+                            new JournalLine
+                            {
+                                Account = LedgerAccounts.GATEWAY_CLEARING,
+                                Direction = LedgerDirection.CREDIT,
+                                Amount = pw.Amount
+                            }
+                        }
+                    };
+                    await _ledgerService.RecordEntryAsync(recoveryEntry);
+                    autoRepairedPaidCount++;
+                    details.Add($"[TỰ SỬA BÚT TOÁN] Yêu cầu rút {pw.ReferenceId} ({pw.Amount:N0} ₫) ở trạng thái PAID nhưng thiếu bút toán sổ cái. Đã tự động tạo bù.");
+                }
             }
 
             // 2. ReservedAmount == Tổng yêu cầu rút đang mở (Chạy hàm tự động sửa)
@@ -481,6 +531,87 @@ namespace PetSitter.Services
                 {
                     details.Add($"[NGÂN HÀNG KHỚP 100%] Số dư thực tế ({actualBankBalance.Value:N0} ₫) khớp hoàn toàn với số dư sổ cái.");
                 }
+            }
+
+            // 8. Kiểm tra Đẳng thức đối soát toàn thể sổ cái:
+            // GATEWAY_CLEARING (Net Debit) == ESCROW_HELD + SitterUnwithdrawn + REFUND_PENDING + SUSPENSE + (PLATFORM_REVENUE - SweptTotal)
+            var allLinesForIdentity = await _context.JournalEntries.Aggregate()
+                .Unwind<JournalEntry, BsonDocument>(j => j.Lines)
+                .Group(new BsonDocument
+                {
+                    { "_id", "$Lines.Account" },
+                    { "Debit", new BsonDocument("$sum", new BsonDocument("$cond", new BsonArray
+                        {
+                            new BsonDocument("$eq", new BsonArray { "$Lines.Direction", LedgerDirection.DEBIT }),
+                            "$Lines.Amount",
+                            0
+                        }))
+                    },
+                    { "Credit", new BsonDocument("$sum", new BsonDocument("$cond", new BsonArray
+                        {
+                            new BsonDocument("$eq", new BsonArray { "$Lines.Direction", LedgerDirection.CREDIT }),
+                            "$Lines.Amount",
+                            0
+                        }))
+                    }
+                })
+                .ToListAsync();
+
+            long netClearingBal = 0;
+            long netEscrowBal = 0;
+            long netSitterBal = 0;
+            long netRefundBal = 0;
+            long netSuspenseBal = 0;
+            long netPlatformBal = 0;
+            long netGatewayFeesBal = 0;
+
+            foreach (var doc in allLinesForIdentity)
+            {
+                var acc = doc["_id"].AsString;
+                var deb = doc["Debit"].ToInt64();
+                var cred = doc["Credit"].ToInt64();
+
+                if (acc == LedgerAccounts.GATEWAY_CLEARING)
+                {
+                    netClearingBal = deb - cred; // Normal DEBIT
+                }
+                else if (acc == LedgerAccounts.ESCROW_HELD)
+                {
+                    netEscrowBal += (cred - deb); // Normal CREDIT
+                }
+                else if (acc.StartsWith("SITTER_EARNINGS:"))
+                {
+                    netSitterBal += (cred - deb); // Normal CREDIT
+                }
+                else if (acc == LedgerAccounts.REFUND_PENDING)
+                {
+                    netRefundBal += (cred - deb); // Normal CREDIT
+                }
+                else if (acc == LedgerAccounts.SUSPENSE)
+                {
+                    netSuspenseBal += (cred - deb); // Normal CREDIT
+                }
+                else if (acc == LedgerAccounts.PLATFORM_REVENUE)
+                {
+                    netPlatformBal += (cred - deb); // Normal CREDIT (đã trừ Debit khi Sweep)
+                }
+                else if (acc == LedgerAccounts.GATEWAY_FEES)
+                {
+                    netGatewayFeesBal += (deb - cred); // Normal DEBIT (chi phí cổng thanh toán)
+                }
+            }
+
+            long unwithdrawnPlatformRevenue = netPlatformBal - netGatewayFeesBal;
+            long expectedClearingSum = netEscrowBal + netSitterBal + netRefundBal + netSuspenseBal + unwithdrawnPlatformRevenue;
+            bool isIdentityMatched = netClearingBal == expectedClearingSum;
+            if (isIdentityMatched)
+            {
+                details.Add($"[ĐẲNG THỨC ĐỐI SOÁT KHỚP 100%] GATEWAY_CLEARING ({netClearingBal:N0} ₫) == ESCROW_HELD ({netEscrowBal:N0} ₫) + Sitter chưa rút ({netSitterBal:N0} ₫) + REFUND_PENDING ({netRefundBal:N0} ₫) + SUSPENSE ({netSuspenseBal:N0} ₫) + Doanh thu sàn chưa chuyển ({unwithdrawnPlatformRevenue:N0} ₫).");
+            }
+            else
+            {
+                isWarning = true;
+                details.Add($"[LỆCH ĐẲNG THỨC ĐỐI SOÁT] GATEWAY_CLEARING ({netClearingBal:N0} ₫) != Vế phải ({expectedClearingSum:N0} ₫). Chênh lệch: {Math.Abs(netClearingBal - expectedClearingSum):N0} ₫.");
             }
 
             var run = new ReconciliationRun
@@ -671,9 +802,14 @@ namespace PetSitter.Services
             if (string.IsNullOrEmpty(value)) return "\"\"";
             var cell = value;
 
-            // Chống CSV Injection: Bắt đầu bằng = + - @ tab \r thì thêm tiền tố '
-            if (cell.StartsWith("=") || cell.StartsWith("+") || cell.StartsWith("-") ||
-                cell.StartsWith("@") || cell.StartsWith("\t") || cell.StartsWith("\r"))
+            // Xử lý CR và Tab
+            cell = cell.Replace("\r\n", " ").Replace("\r", " ").Replace("\t", " ");
+
+            // Nếu là số thuần túy (kể cả số âm như -50000 hoặc số thập phân), KHÔNG chèn dấu '
+            bool isNumeric = decimal.TryParse(cell, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out _);
+
+            // Chống CSV Injection: CHỈ chèn tiền tố ' cho cột chữ nếu bắt đầu bằng =, +, -, @
+            if (!isNumeric && (cell.StartsWith("=") || cell.StartsWith("+") || cell.StartsWith("-") || cell.StartsWith("@")))
             {
                 cell = "'" + cell;
             }

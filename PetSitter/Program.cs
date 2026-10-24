@@ -90,11 +90,15 @@ builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IWithdrawalService, WithdrawalService>();
 builder.Services.AddScoped<IRevenueService, RevenueService>();
 
-// Data Protection cho mã hóa PayerInfo & tài khoản ngân hàng (lưu thư mục cố định ngoài repo)
-var dpKeyDir = builder.Configuration["DataProtection:KeyDirectory"];
+// Data Protection cho mã hóa PayerInfo & tài khoản ngân hàng (lưu thư mục cố định ngoài repo, đọc từ Security:DataProtectionKeyPath)
+var dpKeyDir = builder.Configuration["Security:DataProtectionKeyPath"]
+               ?? builder.Configuration["DataProtection:KeyDirectory"];
 if (string.IsNullOrWhiteSpace(dpKeyDir))
 {
-    dpKeyDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PetSitterKeys");
+    var commonApp = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+    dpKeyDir = !string.IsNullOrWhiteSpace(commonApp)
+        ? System.IO.Path.Combine(commonApp, "PetSitter", "dp_keys")
+        : System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PetSitterKeys");
 }
 System.IO.Directory.CreateDirectory(dpKeyDir);
 builder.Services.AddDataProtection()
@@ -227,7 +231,21 @@ builder.Services.AddRateLimiter(options =>
         });
     });
 
-    // 4. Global limiter: 100 request/phút/user (fallback IP), ngoại lệ hoàn toàn cho PayOS Webhook
+    // 4. payout-strict: 5 request/phút/user (fallback IP) cho các thao tác ví nhạy cảm (rút tiền, đổi ngân hàng)
+    options.AddPolicy("payout-strict", httpContext =>
+    {
+        var partitionKey = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)
+                           ?? httpContext.Connection.RemoteIpAddress?.ToString()
+                           ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 5,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        });
+    });
+
+    // 5. Global limiter: 100 request/phút/user (fallback IP), ngoại lệ hoàn toàn cho PayOS Webhook
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
     {
         if (httpContext.Request.Path.StartsWithSegments("/api/payments/payos/webhook", StringComparison.OrdinalIgnoreCase))
