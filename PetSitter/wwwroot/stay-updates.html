@@ -1,11 +1,11 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Nhật ký chăm thú | PawStay</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/style.css">
+    <link rel="stylesheet" href="assets/style.css?v=4">
     <style>
         .updates-container { max-width: 800px; margin: 40px auto; padding: 20px; }
         .post-form { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 30px; }
@@ -65,12 +65,12 @@
         <img id="viewer-img" src="" alt="View">
     </div>
 
-    <script src="assets/data.js"></script>
-    <script src="assets/api.js"></script>
-    <script src="assets/components.js"></script>
+    <script src="assets/data.js?v=4"></script>
+    <script src="assets/api.js?v=4"></script>
+    <script src="assets/components.js?v=4"></script>
     <script>
         const urlParams = new URLSearchParams(window.location.search);
-        const bookingId = urlParams.get('bookingId');
+        const bookingId = urlParams.get('bookingId') || urlParams.get('id');
         let selectedFiles = [];
         let me = null;
 

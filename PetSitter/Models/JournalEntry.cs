@@ -44,6 +44,9 @@ namespace PetSitter.Models
         public const string PLATFORM_REVENUE = "PLATFORM_REVENUE";
         public const string REFUND_PENDING = "REFUND_PENDING";
         public const string SUSPENSE = "SUSPENSE";
+        public const string PAYOUT_PENDING = "PAYOUT_PENDING";
+        public const string GATEWAY_FEES = "GATEWAY_FEES";
+        public const string PLATFORM_SWEPT = "PLATFORM_SWEPT";
 
         public static string SitterEarnings(string sitterUserId)
         {
@@ -63,6 +66,9 @@ namespace PetSitter.Models
         public const string PLATFORM_REVENUE = LedgerAccounts.PLATFORM_REVENUE;
         public const string REFUND_PENDING = LedgerAccounts.REFUND_PENDING;
         public const string SUSPENSE = LedgerAccounts.SUSPENSE;
+        public const string PAYOUT_PENDING = LedgerAccounts.PAYOUT_PENDING;
+        public const string GATEWAY_FEES = LedgerAccounts.GATEWAY_FEES;
+        public const string PLATFORM_SWEPT = LedgerAccounts.PLATFORM_SWEPT;
 
         public static string SitterEarnings(string sitterUserId) => LedgerAccounts.SitterEarnings(sitterUserId);
     }
@@ -82,6 +88,11 @@ namespace PetSitter.Models
         public const string DISPUTE_SPLIT = "DISPUTE_SPLIT";
         public const string LATE_PAYMENT_REFUND = "LATE_PAYMENT_REFUND";
         public const string PAYMENT_ABNORMAL_SUSPENSE = "PAYMENT_ABNORMAL_SUSPENSE";
+        public const string WITHDRAWAL_PAID = "WITHDRAWAL_PAID";
+        public const string REVENUE_SWEEP = "REVENUE_SWEEP";
+        public const string GATEWAY_FEE = "GATEWAY_FEE";
+        public const string SUSPENSE_REFUND_OWNER = "SUSPENSE_REFUND_OWNER";
+        public const string SUSPENSE_ASSIGN_BOOKING = "SUSPENSE_ASSIGN_BOOKING";
     }
 
     public static class LedgerIdempotencyKeys
@@ -98,6 +109,11 @@ namespace PetSitter.Models
         public static string RefundCompleted(string refundId) => $"{refundId}:REFUND_COMPLETED";
         public static string LatePaymentRefund(string bookingId) => $"{bookingId}:LATE_PAYMENT_REFUND";
         public static string AbnormalSuspense(long orderCode) => $"{orderCode}:ABNORMAL_SUSPENSE";
+        public static string WithdrawalPaid(string referenceId) => $"{referenceId}:PAID";
+        public static string RevenueSweep(string bankTransactionRef) => $"SWEEP:{bankTransactionRef}";
+        public static string GatewayFee(long orderCode) => $"{orderCode}:GATEWAY_FEE";
+        public static string SuspenseRefund(long orderCode) => $"{orderCode}:SUSPENSE_REFUND";
+        public static string SuspenseAssign(long orderCode) => $"{orderCode}:SUSPENSE_ASSIGN";
     }
 }
 

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="vi">
 <head>
   <meta charset="UTF-8" />
@@ -18,13 +18,13 @@
   <!-- Favicon -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>">
 
-  <link rel="stylesheet" href="assets/style.css" />
+  <link rel="stylesheet" href="assets/style.css?v=4" />
   <style>
     /* =====================================================
        TRANG CHỦ v2 — Page-specific styles
        ===================================================== */
 
-    /* â”€â”€ HERO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* ── HERO ────────────────────────────── */
     .hero {
       position: relative;
       min-height: 90vh;
@@ -155,7 +155,7 @@
     .trust-pill-text { font-weight: 600; color: var(--text-primary); }
     .trust-pill-sub  { font-size: 0.72rem; color: var(--text-secondary); }
 
-    /* â”€â”€ STATS SECTION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* ── STATS SECTION ────────────────────── */
     .stats-section { padding: 0 20px; margin-top: -1px; }
     .stats-wrapper {
       max-width: 1100px; margin: 0 auto;
@@ -166,7 +166,7 @@
       box-shadow: var(--shadow-card);
     }
 
-    /* â”€â”€ FEATURED SITTERS CAROUSEL â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* ── FEATURED SITTERS CAROUSEL ──────── */
     .featured-section { padding: 80px 20px 40px; }
     .featured-header {
       display: flex; align-items: flex-end;
@@ -176,7 +176,7 @@
     }
     .carousel-container { position: relative; padding: 0 8px; }
 
-    /* â”€â”€ BENEFITS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* ── BENEFITS ────────────────────────── */
     .benefits-section { padding: 60px 20px 80px; }
     .benefits-grid {
       display: grid;
@@ -216,7 +216,7 @@
     .benefit-title { font-size: 1.05rem; font-weight: 700; margin-bottom: 8px; }
     .benefit-desc  { font-size: 0.86rem; color: var(--text-secondary); line-height: 1.65; }
 
-    /* â”€â”€ WHY PAWSTAY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* ── WHY PAWSTAY ─────────────────────── */
     .why-section {
       padding: 80px 20px;
       background: var(--bg-secondary);
@@ -271,7 +271,7 @@
     .why-mini-num  { font-size: 1.5rem; font-weight: 800; color: var(--accent-light); }
     .why-mini-label{ font-size: 0.72rem; color: var(--text-muted); margin-top: 3px; }
 
-    /* â”€â”€ HOW IT WORKS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* ── HOW IT WORKS ────────────────────── */
     .how-section { padding: 80px 20px; }
     .steps-row {
       display: grid;
@@ -314,7 +314,7 @@
     .step-title { font-size: 0.95rem; font-weight: 700; margin-bottom: 6px; }
     .step-desc  { font-size: 0.8rem; color: var(--text-secondary); line-height: 1.55; }
 
-    /* â”€â”€ REVIEWS SNIPPET â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* ── REVIEWS SNIPPET ─────────────────── */
     .reviews-section { padding: 80px 20px; background: var(--bg-secondary); }
     .reviews-grid {
       display: grid;
@@ -355,7 +355,7 @@
       display: flex; align-items: center; gap: 6px;
     }
 
-    /* â”€â”€ CTA SECTION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* ── CTA SECTION ─────────────────────── */
     .cta-section { padding: 80px 20px; }
     .cta-box {
       background: linear-gradient(135deg, #1c1420 0%, #1a1a24 50%, #1e1622 100%);
@@ -376,13 +376,13 @@
     .cta-box .section-title    { margin-bottom: 10px; }
     .cta-box .section-subtitle { margin: 0 auto 32px; }
 
-    /* â”€â”€ ANIMATIONS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* ── ANIMATIONS ──────────────────────── */
     @keyframes fadeInUp {
       from { opacity: 0; transform: translateY(22px); }
       to   { opacity: 1; transform: translateY(0); }
     }
 
-    /* â”€â”€ RESPONSIVE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+    /* ── RESPONSIVE ──────────────────────── */
     @media (max-width: 900px) {
       .why-grid { grid-template-columns: 1fr; gap: 32px; }
       .steps-row { grid-template-columns: 1fr 1fr; }
@@ -423,7 +423,7 @@
 
       <p class="hero-desc">
         PawStay kết nối bạn với pet-sitter đã xác minh danh tính, có kinh nghiệm thực tế.
-        Cập nhật ảnh hàng ngày. Thanh toán qua escrow. Hoàn tiền 100% nếu có sự cố.
+        Cập nhật ảnh hàng ngày. Giữ tiền an toàn qua Escrow. Có <a href="refund-policy.html" style="color: var(--accent-light, #d9959d); text-decoration: underline; text-underline-offset: 3px; font-weight: 600;" title="Xem chi tiết chính sách hoàn tiền">chính sách hoàn tiền</a> rõ ràng, sự cố được Admin xem xét phân xử.
       </p>
 
       <div class="hero-actions">
@@ -458,7 +458,7 @@
           <span class="hero-stat-label">Khách hàng hài lòng</span>
         </div>
         <div class="hero-stat">
-          <span class="hero-stat-num">4.9â˜…</span>
+          <span class="hero-stat-num">4.9★</span>
           <span class="hero-stat-label">Rating trung bình</span>
         </div>
       </div>
@@ -532,7 +532,7 @@
           <h2 class="section-title" id="featured-title">Sitter nổi bật</h2>
         </div>
         <a href="sitters.html" class="btn btn-outline" id="see-all-sitters">
-          Xem tất cả â†’
+          Xem tất cả →
         </a>
       </div>
 
@@ -581,8 +581,8 @@
           <div class="benefit-icon" aria-hidden="true">💳</div>
           <h3 class="benefit-title">Thanh toán escrow an toàn</h3>
           <p class="benefit-desc">
-            Tiền được giữ trong escrow cho đến khi dịch vụ hoàn thành.
-            Hoàn tiền 100% trong 24 giờ nếu sitter huỷ hoặc có sự cố nghiêm trọng.
+            Tiền được giữ an toàn qua Escrow cho đến khi dịch vụ hoàn thành.
+            Có <a href="refund-policy.html" style="color: var(--accent-light, #d9959d); text-decoration: underline; text-underline-offset: 3px; font-weight: 600;" title="Xem chi tiết chính sách hoàn tiền">chính sách hủy & hoàn tiền</a> rõ ràng; mọi sự cố phát sinh đều được Admin xem xét và phân xử minh bạch.
           </p>
         </div>
         <div class="benefit-card">
@@ -597,8 +597,7 @@
           <div class="benefit-icon" aria-hidden="true">🆘</div>
           <h3 class="benefit-title">Hỗ trợ khẩn cấp 24/7</h3>
           <p class="benefit-desc">
-            Đội ngũ PawStay luôn trực tuyến qua Zalo và hotline. Nếu sitter không phản hồi trong 2 giờ,
-            chúng tôi tìm sitter thay thế ngay.
+            Đội ngũ PawStay luôn trực tuyến hỗ trợ qua hotline & Zalo. Sitter có tối đa 48 giờ để phản hồi, nếu quá hạn đơn đặt sẽ tự động hết hạn và bạn hoàn toàn không bị trừ tiền.
           </p>
         </div>
         <div class="benefit-card">
@@ -674,7 +673,7 @@
               <div class="why-mini-label">Sitter xác minh</div>
             </div>
             <div class="why-mini-stat">
-              <div class="why-mini-num">4.9â˜…</div>
+              <div class="why-mini-num">4.9★</div>
               <div class="why-mini-label">Rating TB</div>
             </div>
             <div class="why-mini-stat">
@@ -684,7 +683,7 @@
           </div>
           <div class="why-divider"></div>
           <a href="sitters.html" class="btn btn-primary btn-block" id="why-cta">
-            Tìm sitter ngay â†’
+            Tìm sitter ngay →
           </a>
         </div>
       </div>
@@ -809,21 +808,21 @@
   </section>
 
   <!-- ===================== SCRIPTS ===================== -->
-  <script src="assets/api.js"></script>
-  <script src="assets/data.js"></script>
-  <script src="assets/components.js"></script>
+  <script src="assets/api.js?v=4"></script>
+  <script src="assets/data.js?v=4"></script>
+  <script src="assets/components.js?v=4"></script>
   <script>
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ──────────────────────────────────────────────────
     // HERO BG: kích hoạt animation pan sau khi load
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ──────────────────────────────────────────────────
     const heroBg = document.getElementById('hero-bg');
     const heroImg = new Image();
     heroImg.onload = () => heroBg.classList.add('loaded');
     heroImg.src = 'assets/images/hero_pets.png';
 
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ──────────────────────────────────────────────────
     // FEATURED SITTERS CAROUSEL & API CALLS
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ──────────────────────────────────────────────────
     function buildSitterCard(sitter) {
       const initials = getInitials(sitter.ten);
       return `
@@ -923,9 +922,9 @@
 
     loadHomePageData();
 
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ──────────────────────────────────────────────────
     // NEWSLETTER FORM
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ──────────────────────────────────────────────────
     document.getElementById('newsletter-form').addEventListener('submit', async function(e) {
       e.preventDefault();
       const inputEl = document.getElementById('newsletter-email');
@@ -949,9 +948,9 @@
       }
     });
 
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ──────────────────────────────────────────────────
     // Smooth scroll cho link "Cách hoạt động"
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ──────────────────────────────────────────────────
     document.getElementById('cta-hero-how').addEventListener('click', function(e) {
       e.preventDefault();
       document.getElementById('how').scrollIntoView({ behavior: 'smooth' });

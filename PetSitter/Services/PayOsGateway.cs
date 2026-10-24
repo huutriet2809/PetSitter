@@ -209,5 +209,111 @@ namespace PetSitter.Services
             var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(data));
             return Convert.ToHexString(hash).ToLowerInvariant();
         }
+
+        public async Task<CreatePayoutResponse> CreatePayoutAsync(CreatePayoutRequest request)
+        {
+            var payoutsEnabled = _config.GetValue<bool>("Payments:PayoutsEnabled", false);
+            var payoutMode = _config["Payments:PayoutMode"] ?? "MANUAL";
+            if (!payoutsEnabled || !string.Equals(payoutMode, "PAYOS", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Dịch vụ chi tự động qua PayOS hiện chưa được kích hoạt. Vui lòng sử dụng chế độ chi thủ công (MANUAL).");
+            }
+
+            var payoutClientId = _config["Payments:PayOs:PayoutClientId"] ?? _clientId;
+            var payoutApiKey = _config["Payments:PayOs:PayoutApiKey"] ?? _apiKey;
+            var payoutChecksumKey = _config["Payments:PayOs:PayoutChecksumKey"] ?? _checksumKey;
+
+            if (string.IsNullOrWhiteSpace(payoutClientId) || string.IsNullOrWhiteSpace(payoutApiKey) || string.IsNullOrWhiteSpace(payoutChecksumKey))
+            {
+                throw new InvalidOperationException("Thiếu thông số kỹ thuật (PayoutClientId, PayoutApiKey, PayoutChecksumKey) cho kênh chi PayOS.");
+            }
+
+            try
+            {
+                // Body tạo lệnh chi
+                var bodyObj = new
+                {
+                    referenceId = request.ReferenceId,
+                    amount = request.Amount,
+                    bankBin = request.BankBin,
+                    accountNumber = request.AccountNumber,
+                    accountHolderName = request.AccountHolderName,
+                    description = request.Description
+                };
+
+                var jsonContent = new StringContent(JsonSerializer.Serialize(bodyObj), Encoding.UTF8, "application/json");
+                var reqMsg = new HttpRequestMessage(HttpMethod.Post, $"{_baseUrl.TrimEnd('/')}/v1/payouts")
+                {
+                    Content = jsonContent
+                };
+                reqMsg.Headers.Add("x-client-id", payoutClientId);
+                reqMsg.Headers.Add("x-api-key", payoutApiKey);
+                reqMsg.Headers.Add("x-idempotency-key", request.ReferenceId);
+
+                var response = await _httpClient.SendAsync(reqMsg);
+                var resBody = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogError("Lỗi gọi PayOS CreatePayout ({StatusCode}): {Body}", response.StatusCode, resBody);
+                    return new CreatePayoutResponse
+                    {
+                        ReferenceId = request.ReferenceId,
+                        Status = "FAILED",
+                        ErrorMessage = $"PayOS Payout lỗi {response.StatusCode}: {resBody}"
+                    };
+                }
+
+                using var doc = JsonDocument.Parse(resBody);
+                var root = doc.RootElement;
+                var payoutId = root.TryGetProperty("payoutId", out var pid) ? pid.GetString() ?? request.ReferenceId : request.ReferenceId;
+                var status = root.TryGetProperty("status", out var st) ? st.GetString() ?? "PROCESSING" : "PROCESSING";
+                var txRef = root.TryGetProperty("transactionRef", out var tr) ? tr.GetString() : null;
+
+                return new CreatePayoutResponse
+                {
+                    PayoutId = payoutId,
+                    ReferenceId = request.ReferenceId,
+                    Status = status,
+                    TransactionRef = txRef
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ngoại lệ khi gọi PayOS CreatePayout cho ReferenceId {ReferenceId}", request.ReferenceId);
+                return new CreatePayoutResponse
+                {
+                    ReferenceId = request.ReferenceId,
+                    Status = "PROCESSING", // Timeout hoặc mạng -> giữ PROCESSING để truy vấn lại
+                    ErrorMessage = ex.Message
+                };
+            }
+        }
+
+        public async Task<GatewayPayoutStatusResponse?> GetPayoutStatusAsync(string referenceId)
+        {
+            var payoutClientId = _config["Payments:PayOs:PayoutClientId"] ?? _clientId;
+            var payoutApiKey = _config["Payments:PayOs:PayoutApiKey"] ?? _apiKey;
+
+            var reqMsg = new HttpRequestMessage(HttpMethod.Get, $"{_baseUrl.TrimEnd('/')}/v1/payouts/{referenceId}");
+            reqMsg.Headers.Add("x-client-id", payoutClientId);
+            reqMsg.Headers.Add("x-api-key", payoutApiKey);
+
+            var response = await _httpClient.SendAsync(reqMsg);
+            if (!response.IsSuccessStatusCode) return null;
+
+            var resBody = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(resBody);
+            var root = doc.RootElement;
+
+            return new GatewayPayoutStatusResponse
+            {
+                PayoutId = root.TryGetProperty("payoutId", out var pid) ? pid.GetString() ?? referenceId : referenceId,
+                ReferenceId = referenceId,
+                Status = root.TryGetProperty("status", out var st) ? st.GetString() ?? "PROCESSING" : "PROCESSING",
+                TransactionRef = root.TryGetProperty("transactionRef", out var tr) ? tr.GetString() : null,
+                ErrorMessage = root.TryGetProperty("errorMessage", out var em) ? em.GetString() : null
+            };
+        }
     }
 }

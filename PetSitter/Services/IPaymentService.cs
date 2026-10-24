@@ -13,5 +13,10 @@ namespace PetSitter.Services
         Task<List<RefundQueueItemDto>> GetRefundQueueAsync(int limit = 50);
         Task CompleteRefundAsync(string adminUserId, string refundId, CompleteRefundDto dto, DateTime nowUtc);
         Task UpdateRefundAccountAsync(string ownerUserId, string bookingId, UpdateRefundAccountDto dto);
+
+        // 5B: SUSPENSE handling & Decrypted refund accounts
+        Task AssignSuspensePaymentAsync(string adminUserId, long orderCode, AssignSuspenseDto dto, DateTime nowUtc);
+        Task RefundSuspensePaymentAsync(string adminUserId, long orderCode, RefundSuspenseDto dto, DateTime nowUtc);
+        Task<DecryptedAccountDto> GetDecryptedRefundAccountAsync(string adminUserId, string refundId, string? ipAddress, DateTime nowUtc);
     }
 }

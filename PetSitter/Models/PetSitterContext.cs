@@ -30,6 +30,11 @@ namespace PetSitter.Models
         public IMongoCollection<Payment> Payments => _database.GetCollection<Payment>("Payments");
         public IMongoCollection<JournalEntry> JournalEntries => _database.GetCollection<JournalEntry>("JournalEntries");
         public IMongoCollection<RefundRequest> RefundRequests => _database.GetCollection<RefundRequest>("RefundRequests");
+        public IMongoCollection<WithdrawalRequest> WithdrawalRequests => _database.GetCollection<WithdrawalRequest>("WithdrawalRequests");
+        public IMongoCollection<EarningsAccount> EarningsAccounts => _database.GetCollection<EarningsAccount>("EarningsAccounts");
+        public IMongoCollection<PlatformAccount> PlatformAccounts => _database.GetCollection<PlatformAccount>("PlatformAccounts");
+        public IMongoCollection<RevenueSweep> RevenueSweeps => _database.GetCollection<RevenueSweep>("RevenueSweeps");
+        public IMongoCollection<ReconciliationRun> ReconciliationRuns => _database.GetCollection<ReconciliationRun>("ReconciliationRuns");
 
         public IMongoCollection<T> GetCollection<T>(string name)
         {

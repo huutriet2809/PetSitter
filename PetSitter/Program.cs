@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using MongoDB.Driver;
@@ -86,9 +87,20 @@ builder.Services.AddScoped<ISitterService, PetSitter.Services.SitterService>();
 builder.Services.AddScoped<IBookingService, BookingService>();
 builder.Services.AddScoped<IPetService, PetService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<IWithdrawalService, WithdrawalService>();
+builder.Services.AddScoped<IRevenueService, RevenueService>();
 
-// Data Protection cho mã hóa PayerInfo & tài khoản ngân hàng
-builder.Services.AddDataProtection();
+// Data Protection cho mã hóa PayerInfo & tài khoản ngân hàng (lưu thư mục cố định ngoài repo)
+var dpKeyDir = builder.Configuration["DataProtection:KeyDirectory"];
+if (string.IsNullOrWhiteSpace(dpKeyDir))
+{
+    dpKeyDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PetSitterKeys");
+}
+System.IO.Directory.CreateDirectory(dpKeyDir);
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new System.IO.DirectoryInfo(dpKeyDir))
+    .SetApplicationName("PetSitterApp");
+
 builder.Services.AddHttpClient();
 
 // Cấu hình Cổng thanh toán (PayOS vs Fake Mock) & Sổ cái (Ledger)

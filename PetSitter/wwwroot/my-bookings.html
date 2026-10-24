@@ -1,11 +1,11 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Lịch sử đặt lịch - PawStay</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>">
-  <link rel="stylesheet" href="assets/style.css" />
+  <link rel="stylesheet" href="assets/style.css?v=4" />
   <style>
     .history-container { max-width: 800px; margin: 40px auto; padding: 20px; }
     .booking-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 20px; margin-bottom: 15px; }
@@ -106,9 +106,53 @@
     </div>
   </div>
 
-  <script src="assets/data.js"></script>
-  <script src="assets/api.js"></script>
-  <script src="assets/components.js"></script>
+  <!-- Modal Hủy chuyến đi cho Chủ nuôi (Owner) -->
+  <div class="modal" id="cancel-booking-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">Xác nhận hủy chuyến đi</h3>
+        <button class="modal-close" onclick="closeCancelModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="cancel-booking-form">
+          <input type="hidden" id="cancel-booking-id" />
+          
+          <div style="background:var(--bg-secondary); padding:12px 14px; border-radius:6px; margin-bottom:14px; border:1px solid var(--border);">
+            <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+              <span>Mã đơn đặt lịch:</span>
+              <strong id="cancel-booking-code" style="color:var(--text-primary);">—</strong>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+              <span>Ngày bắt đầu chăm sóc:</span>
+              <strong id="cancel-start-date" style="color:var(--text-primary);">—</strong>
+            </div>
+            <div style="display:flex; justify-content:space-between;">
+              <span>Tổng giá trị đơn:</span>
+              <strong id="cancel-total-amount" style="color:var(--text-primary);">0 ₫</strong>
+            </div>
+          </div>
+
+          <div id="cancel-policy-box" style="margin-bottom:16px; padding:12px; border-radius:6px; border:1px solid var(--border);">
+            <!-- Nội dung chính sách hoàn tiền 48h/24h sẽ được render tại đây -->
+          </div>
+
+          <div style="margin-bottom:16px;">
+            <label style="display:block; margin-bottom:6px; font-weight:600;">Lý do hủy chuyến (Tùy chọn, tối đa 500 ký tự)</label>
+            <textarea id="cancel-booking-reason" maxlength="500" placeholder="Cho người chăm sóc biết lý do bạn hủy chuyến..." style="width:100%; height:80px; padding:10px; border-radius:6px; border:1px solid var(--border); background:var(--bg-primary); color:var(--text-primary);"></textarea>
+          </div>
+
+          <div style="display:flex; gap:10px; justify-content:flex-end;">
+            <button type="button" class="btn btn-outline" onclick="closeCancelModal()">Giữ chuyến</button>
+            <button type="submit" class="btn btn-primary" id="btn-submit-cancel" style="background:#ef4444; border-color:#ef4444;">Xác nhận hủy chuyến</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/data.js?v=4"></script>
+  <script src="assets/api.js?v=4"></script>
+  <script src="assets/components.js?v=4"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       if (!localStorage.getItem('pawstay_token')) {
@@ -156,16 +200,19 @@
       return `còn ${hours} giờ ${minutes} phút`;
     }
 
+    let loadedBookings = [];
+
     async function loadBookings() {
       const container = document.getElementById('booking-list');
       try {
         const bookings = await apiFetch('/bookings/my');
-        if (bookings.length === 0) {
+        loadedBookings = bookings || [];
+        if (loadedBookings.length === 0) {
           container.innerHTML = '<p>Bạn chưa có chuyến đi nào.</p>';
           return;
         }
 
-        container.innerHTML = bookings.map(b => {
+        container.innerHTML = loadedBookings.map(b => {
           let statusClass = 'status-pending';
           if (b.trangThai === 'ACCEPTED') statusClass = 'status-accepted';
           if (b.trangThai === 'COMPLETION_PENDING') statusClass = 'status-completion-pending';
@@ -175,8 +222,11 @@
           if (b.trangThai === 'EXPIRED') statusClass = 'status-expired';
 
           let cancelBtn = '';
-          if (b.trangThai === 'PENDING' || (b.trangThai === 'ACCEPTED' && new Date(b.ngayBatDau).getTime() > Date.now())) {
-            cancelBtn = `<button class="btn btn-outline btn-sm" onclick="cancelBooking('${/* safe */ b.bookingId}')">Hủy chuyến</button>`;
+          const vnTodayStr = new Date(Date.now() + 7 * 3600000).toISOString().split('T')[0];
+          const startVnStr = new Date(new Date(b.ngayBatDau).getTime() + 7 * 3600000).toISOString().split('T')[0];
+          // Cho phép hủy nếu đơn đang PENDING hoặc ACCEPTED (trước ngày bắt đầu)
+          if (b.trangThai === 'PENDING' || (b.trangThai === 'ACCEPTED' && startVnStr > vnTodayStr)) {
+            cancelBtn = `<button class="btn btn-outline btn-sm" style="color:#ef4444; border-color:#ef4444;" onclick="openCancelModal('${/* safe */ b.bookingId}')">Hủy chuyến</button>`;
           }
 
           let payBtn = '';
@@ -201,6 +251,7 @@
 
           let completionBtns = '';
           let noticeHtml = '';
+
           if (b.paymentStatus === 'PENDING_PAYMENT') {
             const payTimeRem = formatTimeRemaining(b.paymentDeadline);
             noticeHtml = `
@@ -217,6 +268,12 @@
             noticeHtml = `
               <div style="grid-column: 1 / -1; margin-top: 10px; padding: 10px; background: rgba(168, 85, 247, 0.08); border-radius: 6px; font-size: 0.9rem; color: #7e22ce;">
                 ⏳ <strong>Sitter đã hoàn thành dịch vụ:</strong> Bạn ${escapeHtml(timeRem)} để xác nhận hoặc báo vấn đề trước khi hệ thống tự động hoàn tất.
+              </div>
+            `;
+          } else if (b.trangThai === 'ACCEPTED' && b.paymentStatus === 'HELD' && startVnStr <= vnTodayStr) {
+            noticeHtml = `
+              <div style="grid-column: 1 / -1; margin-top: 10px; padding: 10px; background: rgba(59, 130, 246, 0.08); border-radius: 6px; font-size: 0.9rem; color: #1d4ed8;">
+                🏡 <strong>Chuyến đi đang diễn ra:</strong> Sitter đang chăm sóc bé cưng của bạn. Cần hỗ trợ? <a href="contact.html" style="color:#1d4ed8; font-weight:600; text-decoration:underline;">Liên hệ PawStay</a>
               </div>
             `;
           } else if (b.trangThai === 'DISPUTED') {
@@ -355,15 +412,145 @@
       }
     });
 
-    async function cancelBooking(id) {
-      if (!confirm('Bạn có chắc chắn muốn hủy chuyến này?')) return;
-      try {
-        await apiFetch(`/bookings/${id}/cancel`, { method: 'POST' });
-        loadBookings();
-      } catch (e) {
-        showError(e.message);
+    function openCancelModal(bookingId) {
+      const b = loadedBookings.find(item => item.bookingId === bookingId);
+      if (!b) return;
+
+      document.getElementById('cancel-booking-id').value = bookingId;
+      document.getElementById('cancel-booking-code').textContent = `#${b.maDatLich || b.bookingId}`;
+      document.getElementById('cancel-start-date').textContent = formatNgayDep(b.ngayBatDau);
+      document.getElementById('cancel-total-amount').textContent = formatTien(b.tongTien);
+      document.getElementById('cancel-booking-reason').value = '';
+
+      const policyBox = document.getElementById('cancel-policy-box');
+      const submitBtn = document.getElementById('btn-submit-cancel');
+      submitBtn.disabled = false;
+
+      // Tính mốc 00:00:00 ngày bắt đầu theo giờ Việt Nam (UTC+7)
+      const startDate = new Date(b.ngayBatDau);
+      const startYear = startDate.getFullYear();
+      const startMonth = startDate.getMonth();
+      const startDay = startDate.getDate();
+      // 00:00:00 GMT+7 tương đương Date.UTC(startYear, startMonth, startDay, 0, 0, 0) - 7 giờ
+      const startMidnightVnMs = Date.UTC(startYear, startMonth, startDay, 0, 0, 0) - (7 * 3600000);
+      const nowUtcMs = Date.now();
+      const remainingMs = startMidnightVnMs - nowUtcMs;
+      const remainingHours = remainingMs / 3600000;
+
+      const vnTodayStr = new Date(Date.now() + 7 * 3600000).toISOString().split('T')[0];
+      const startVnStr = new Date(new Date(b.ngayBatDau).getTime() + 7 * 3600000).toISOString().split('T')[0];
+
+      if (startVnStr <= vnTodayStr) {
+        submitBtn.disabled = true;
+        policyBox.style.background = 'rgba(239, 68, 68, 0.08)';
+        policyBox.style.borderColor = '#ef4444';
+        policyBox.innerHTML = `
+          <div style="color:#dc2626; font-weight:600; margin-bottom:4px;">⛔ Không thể hủy đơn trực tuyến</div>
+          <p style="margin:0; font-size:0.88rem; color:var(--text-secondary);">
+            Đã đến hoặc qua ngày bắt đầu dịch vụ (từ 00:00 ngày ${formatNgayDep(b.ngayBatDau)}). Cần hỗ trợ? <a href="contact.html" style="color:#dc2626; font-weight:600; text-decoration:underline;">Liên hệ PawStay ngay</a>
+          </p>
+        `;
+      } else if (b.paymentStatus !== 'HELD' || b.trangThai === 'PENDING') {
+        // Đơn chưa thanh toán hoặc chưa cọc
+        policyBox.style.background = 'rgba(59, 130, 246, 0.08)';
+        policyBox.style.borderColor = '#3b82f6';
+        policyBox.innerHTML = `
+          <div style="color:#2563eb; font-weight:600; margin-bottom:6px;">ℹ️ Đơn chưa thanh toán tiền cọc</div>
+          <div style="display:flex; justify-content:space-between; margin-bottom:4px; font-size:0.9rem;">
+            <span>Số tiền hoàn:</span>
+            <strong style="color:#16a34a;">0 ₫ (Không mất chi phí)</strong>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:0.9rem;">
+            <span>Số tiền mất:</span>
+            <strong style="color:var(--text-muted);">0 ₫</strong>
+          </div>
+          <p style="margin:8px 0 0; font-size:0.85rem; color:var(--text-muted);">
+            Bạn có thể hủy đơn miễn phí vì chưa phát sinh giao dịch thanh toán tạm giữ.
+          </p>
+        `;
+      } else {
+        // Đơn đã thanh toán (paymentStatus === 'HELD')
+        const total = b.tongTien || 0;
+        if (remainingHours >= 48) {
+          policyBox.style.background = 'rgba(34, 197, 94, 0.08)';
+          policyBox.style.borderColor = '#22c55e';
+          policyBox.innerHTML = `
+            <div style="color:#15803d; font-weight:600; margin-bottom:6px;">✅ Hủy trước ≥ 48 giờ: Hoàn tiền 100%</div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:4px; font-size:0.92rem;">
+              <span>Số tiền hoàn lại cho bạn:</span>
+              <strong style="color:#16a34a; font-size:1.05rem;">100% (${formatTien(total)})</strong>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:0.92rem;">
+              <span>Số tiền mất:</span>
+              <strong style="color:var(--text-muted);">0 ₫</strong>
+            </div>
+            <p style="margin:8px 0 0; font-size:0.83rem; color:var(--text-muted);">
+              Thời gian còn lại đến ngày bắt đầu: <strong>${Math.floor(remainingHours)} giờ</strong>. Hệ thống sẽ tạo yêu cầu hoàn tiền 100% về tài khoản của bạn.
+            </p>
+          `;
+        } else if (remainingHours >= 24) {
+          const refund50 = Math.floor(total / 2);
+          const loss50 = total - refund50;
+          policyBox.style.background = 'rgba(249, 115, 22, 0.08)';
+          policyBox.style.borderColor = '#ea580c';
+          policyBox.innerHTML = `
+            <div style="color:#c2410c; font-weight:600; margin-bottom:6px;">⚠️ Hủy trong khoảng 24h - 48h: Hoàn tiền 50%</div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:4px; font-size:0.92rem;">
+              <span>Số tiền hoàn lại cho bạn:</span>
+              <strong style="color:#ea580c; font-size:1.05rem;">50% (${formatTien(refund50)})</strong>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:0.92rem;">
+              <span>Số tiền mất (hỗ trợ Sitter):</span>
+              <strong style="color:#ef4444; font-size:1.05rem;">50% (${formatTien(loss50)})</strong>
+            </div>
+            <p style="margin:8px 0 0; font-size:0.83rem; color:var(--text-muted);">
+              Thời gian còn lại: <strong>${Math.floor(remainingHours)} giờ</strong>. 50% số tiền còn lại được chuyển bồi thường cho người chăm sóc và phí dịch vụ nền tảng.
+            </p>
+          `;
+        } else {
+          policyBox.style.background = 'rgba(239, 68, 68, 0.08)';
+          policyBox.style.borderColor = '#ef4444';
+          policyBox.innerHTML = `
+            <div style="color:#dc2626; font-weight:600; margin-bottom:6px;">🚨 Hủy gấp dưới 24 giờ: Không hoàn tiền (0%)</div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:4px; font-size:0.92rem;">
+              <span>Số tiền hoàn lại cho bạn:</span>
+              <strong style="color:#dc2626; font-size:1.05rem;">0 ₫ (0%)</strong>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:0.92rem;">
+              <span>Số tiền mất:</span>
+              <strong style="color:#ef4444; font-size:1.05rem;">100% (${formatTien(total)})</strong>
+            </div>
+            <p style="margin:8px 0 0; font-size:0.83rem; color:#dc2626;">
+              Thời gian còn lại: <strong>${Math.floor(remainingHours)} giờ</strong>. Do hủy sát ngày, toàn bộ tiền sẽ được chuyển cho người chăm sóc để bù đắp giữ lịch hẹn và phí sàn.
+            </p>
+          `;
+        }
       }
+
+      document.getElementById('cancel-booking-modal').classList.add('open');
     }
+
+    function closeCancelModal() {
+      document.getElementById('cancel-booking-modal').classList.remove('open');
+    }
+
+    document.getElementById('cancel-booking-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const bookingId = document.getElementById('cancel-booking-id').value;
+      const reason = document.getElementById('cancel-booking-reason').value.trim();
+
+      try {
+        await apiFetch(`/bookings/${bookingId}/cancel`, {
+          method: 'POST',
+          body: JSON.stringify({ lyDo: reason })
+        });
+        showToast('Đã hủy chuyến đi thành công!', 3000, '✅');
+        closeCancelModal();
+        loadBookings();
+      } catch (err) {
+        showError(err.message || 'Không thể hủy chuyến đi.');
+      }
+    });
 
     async function payBooking(bookingId) {
       try {

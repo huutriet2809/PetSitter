@@ -394,6 +394,102 @@ namespace PetSitter.Data
                 Console.WriteLine("[Seeder Lỗi] Không thể tạo RefundRequests indexes: " + ex.Message);
             }
 
+            // Create Indexes for WithdrawalRequests:
+            // 1. Unique index on ReferenceId
+            // 2. Unique index on IdempotencyKey
+            // 3. Compound index on (SitterUserId, CreatedAt desc)
+            // 4. Compound index on (Status, CreatedAt desc)
+            // 5. Partial unique index on BankTransactionRef (khi BankTransactionRef != null và khác rỗng)
+            try
+            {
+                var wthCol = context.WithdrawalRequests;
+                var wthRefIdModel = new CreateIndexModel<WithdrawalRequest>(
+                    Builders<WithdrawalRequest>.IndexKeys.Ascending(w => w.ReferenceId),
+                    new CreateIndexOptions { Unique = true }
+                );
+                var wthIdempModel = new CreateIndexModel<WithdrawalRequest>(
+                    Builders<WithdrawalRequest>.IndexKeys.Ascending(w => w.IdempotencyKey),
+                    new CreateIndexOptions { Unique = true }
+                );
+                var wthSitterCreatedModel = new CreateIndexModel<WithdrawalRequest>(
+                    Builders<WithdrawalRequest>.IndexKeys.Ascending(w => w.SitterUserId).Descending(w => w.CreatedAt)
+                );
+                var wthStatusCreatedModel = new CreateIndexModel<WithdrawalRequest>(
+                    Builders<WithdrawalRequest>.IndexKeys.Ascending(w => w.Status).Descending(w => w.CreatedAt)
+                );
+                var wthBankTxRefModel = new CreateIndexModel<WithdrawalRequest>(
+                    Builders<WithdrawalRequest>.IndexKeys.Ascending(w => w.BankTransactionRef),
+                    new CreateIndexOptions<WithdrawalRequest>
+                    {
+                        Unique = true,
+                        PartialFilterExpression = Builders<WithdrawalRequest>.Filter.And(
+                            Builders<WithdrawalRequest>.Filter.Type(w => w.BankTransactionRef, MongoDB.Bson.BsonType.String),
+                            Builders<WithdrawalRequest>.Filter.Gt(w => w.BankTransactionRef, "")
+                        )
+                    }
+                );
+                await wthCol.Indexes.CreateManyAsync(new[] { wthRefIdModel, wthIdempModel, wthSitterCreatedModel, wthStatusCreatedModel, wthBankTxRefModel });
+                Console.WriteLine("[Seeder] Tạo thành công các index cho WithdrawalRequests.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[Seeder Lỗi] Không thể tạo WithdrawalRequests indexes: " + ex.Message);
+            }
+
+            // Create Indexes for EarningsAccounts:
+            // 1. Unique index on UserId
+            try
+            {
+                var earnCol = context.EarningsAccounts;
+                var earnUserModel = new CreateIndexModel<EarningsAccount>(
+                    Builders<EarningsAccount>.IndexKeys.Ascending(e => e.UserId),
+                    new CreateIndexOptions { Unique = true }
+                );
+                await earnCol.Indexes.CreateOneAsync(earnUserModel);
+                Console.WriteLine("[Seeder] Tạo thành công các index cho EarningsAccounts.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[Seeder Lỗi] Không thể tạo EarningsAccounts indexes: " + ex.Message);
+            }
+
+            // Create Indexes for RevenueSweeps:
+            // 1. Unique index on BankTransactionRef
+            // 2. Index on CreatedAt desc
+            try
+            {
+                var swpCol = context.RevenueSweeps;
+                var swpTxRefModel = new CreateIndexModel<RevenueSweep>(
+                    Builders<RevenueSweep>.IndexKeys.Ascending(s => s.BankTransactionRef),
+                    new CreateIndexOptions { Unique = true }
+                );
+                var swpCreatedModel = new CreateIndexModel<RevenueSweep>(
+                    Builders<RevenueSweep>.IndexKeys.Descending(s => s.CreatedAt)
+                );
+                await swpCol.Indexes.CreateManyAsync(new[] { swpTxRefModel, swpCreatedModel });
+                Console.WriteLine("[Seeder] Tạo thành công các index cho RevenueSweeps.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[Seeder Lỗi] Không thể tạo RevenueSweeps indexes: " + ex.Message);
+            }
+
+            // Create Indexes for ReconciliationRuns:
+            // 1. Index on RunAt desc
+            try
+            {
+                var recCol = context.ReconciliationRuns;
+                var recRunAtModel = new CreateIndexModel<ReconciliationRun>(
+                    Builders<ReconciliationRun>.IndexKeys.Descending(r => r.RunAt)
+                );
+                await recCol.Indexes.CreateOneAsync(recRunAtModel);
+                Console.WriteLine("[Seeder] Tạo thành công các index cho ReconciliationRuns.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[Seeder Lỗi] Không thể tạo ReconciliationRuns indexes: " + ex.Message);
+            }
+
             if (seedDemo)
             {
                 var admin = await usersCollection.Find(u => u.Role == "ADMIN").FirstOrDefaultAsync();

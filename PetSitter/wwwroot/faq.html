@@ -6,7 +6,7 @@
     <title>Câu hỏi thường gặp (FAQ) | PawStay</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/style.css">
+    <link rel="stylesheet" href="assets/style.css?v=4">
     <style>
         .static-page { max-width: 800px; margin: 40px auto; padding: 40px; background: white; border-radius: 12px; box-shadow: var(--shadow-sm); }
         .static-page h1 { margin-bottom: 20px; font-size: 2rem; }
@@ -22,8 +22,10 @@
         <h2>3. Quy trình hoàn thành dịch vụ và đánh giá diễn ra như thế nào?</h2><p>Sau khi kết thúc chuyến đi, Sitter sẽ đánh dấu hoàn tất (Chờ hoàn tất - COMPLETION_PENDING). Chủ nuôi có 3 ngày để xác nhận hoàn tất (Đã hoàn thành - COMPLETED) và viết đánh giá, hoặc gửi khiếu nại (Đang khiếu nại - DISPUTED) nếu có sự cố phát sinh. Nếu quá thời hạn trên mà chủ nuôi chưa phản hồi, hệ thống sẽ tự động xác nhận hoàn tất.</p>
         <h2>4. Cách tính số ngày chăm sóc thú cưng như thế nào?</h2><p>PawStay áp dụng quy ước tính ngày chăm sóc bao gồm cả hai đầu ngày [Ngày bắt đầu, Ngày kết thúc] (Số ngày = (Ngày kết thúc - Ngày bắt đầu) + 1 ngày). Ví dụ: gửi từ ngày 20/10 đến 20/10 tính là 1 ngày chăm sóc; gửi từ 20/10 đến 21/10 tính là 2 ngày chăm sóc. Quy ước này áp dụng thống nhất cho báo giá, tính phí, và kiểm tra lịch bận/khả dụng của người chăm sóc.</p>
         <h2>5. Thời hạn và điều kiện hủy đơn đặt lịch như thế nào?</h2><p>Đơn đặt lịch chỉ có thể hủy trực tuyến trên hệ thống trước 00:00 của ngày bắt đầu dịch vụ (giờ Việt Nam UTC+7). Khi đã đến hoặc qua ngày bắt đầu dịch vụ (tính từ 00:00 ngày bắt đầu), chức năng hủy trực tuyến sẽ tự động khóa để bảo đảm quyền lợi và công tác chuẩn bị của Người chăm sóc; nếu phát sinh sự cố khẩn cấp, bạn vui lòng liên hệ bộ phận hỗ trợ hoặc gửi Khiếu nại (Dispute). Mức hoàn tiền chi tiết trước thời điểm bắt đầu được quy định rõ tại <a href="refund-policy.html">Chính sách hoàn tiền</a>.</p>
+        <h2>6. Thời gian và điều kiện rút tiền thu nhập của Người chăm sóc (Sitter) như thế nào?</h2><p>Thu nhập từ đơn đặt dịch vụ được chuyển vào số dư tạm giữ và sẽ chính thức mở thành số dư khả dụng sau 48 giờ kể từ khi đơn chuyển trạng thái COMPLETED (thời gian giữ an toàn để đối soát và xử lý khiếu nại nếu có). Người chăm sóc có thể rút tiền về tài khoản ngân hàng chính chủ bất cứ lúc nào với số tiền tối thiểu là 50.000 ₫/lần và hạn mức tối đa là 20.000.000 ₫/ngày. Yêu cầu rút tiền được duyệt và chuyển khoản thủ công trong giờ làm việc (từ 24 đến 48 giờ làm việc).</p>
+        <h2>7. Quy định liên kết và thay đổi tài khoản ngân hàng nhận thu nhập?</h2><p>Người chăm sóc chỉ được liên kết tài khoản ngân hàng chính chủ đã mở tại các ngân hàng thương mại Việt Nam. Khi cập nhật hoặc thay đổi thông tin tài khoản ngân hàng, hệ thống yêu cầu xác thực bằng mật khẩu tài khoản và tự động kích hoạt thời gian đóng băng an toàn trong 24 giờ (trong thời gian này tạm thời không thể tạo yêu cầu rút tiền) nhằm phòng ngừa rủi ro bị chiếm quyền kiểm soát tài khoản. Mọi thay đổi tài khoản ngân hàng đều được thông báo qua giao diện và gửi thư điện tử.</p>
     </div>
-    <script src="assets/api.js"></script>
-    <script src="assets/components.js"></script>
+    <script src="assets/api.js?v=4"></script>
+    <script src="assets/components.js?v=4"></script>
 </body>
 </html>

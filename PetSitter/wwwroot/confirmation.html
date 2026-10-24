@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="vi">
 <head>
   <meta charset="UTF-8" />
@@ -10,7 +10,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>" />
   
   <!-- Stylesheet -->
-  <link rel="stylesheet" href="assets/style.css" />
+  <link rel="stylesheet" href="assets/style.css?v=4" />
   
   <style>
     /* =====================================================
@@ -353,14 +353,14 @@
   </div>
 
   <!-- ===================== JAVASCRIPT ===================== -->
-  <script src="assets/data.js"></script>
-  <script src="assets/api.js"></script>
-  <script src="assets/components.js"></script>
+  <script src="assets/data.js?v=4"></script>
+  <script src="assets/api.js?v=4"></script>
+  <script src="assets/components.js?v=4"></script>
   
   <script>
     document.addEventListener('DOMContentLoaded', async function() {
       const urlParams = new URLSearchParams(window.location.search);
-      const bookingId = urlParams.get('id');
+      const bookingId = urlParams.get('id') || urlParams.get('bookingId');
       const container = document.getElementById('confirmation-content');
 
       if (!bookingId) {
@@ -455,7 +455,7 @@
         <div class="success-heading">
           <h1>Đặt lịch thành công! 🎉</h1>
           <p>
-            Yêu cầu chăm sóc đã được gửi tới sitter. Sitter sẽ phản hồi và liên hệ xác nhận trong vòng <strong>2 giờ</strong>.
+            Yêu cầu chăm sóc đã được gửi tới sitter. Sitter sẽ phản hồi và liên hệ xác nhận trong vòng <strong>48 giờ</strong>.
           </p>
         </div>
 
@@ -467,6 +467,24 @@
             Vui lòng lưu lại mã này để tra cứu hoặc liên hệ hỗ trợ.
           </p>
         </div>
+
+        ${booking.paymentStatus === 'PENDING_PAYMENT' ? `
+        <!-- Banner thanh toán ngay nếu đơn đã được duyệt và đang chờ thanh toán -->
+        <div style="background: rgba(22, 163, 74, 0.08); border: 1.5px solid #16a34a; border-radius: var(--radius-lg); padding: 20px; margin-bottom: 24px; text-align: center;">
+          <h3 style="color: #16a34a; font-size: 1.1rem; margin-bottom: 8px;">💳 Sitter đã chấp nhận đơn - Chờ thanh toán giữ chỗ</h3>
+          <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 16px;">
+            Vui lòng hoàn tất thanh toán qua VietQR (PayOS) để kích hoạt giữ chỗ đảm bảo.
+          </p>
+          <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+            <button class="btn btn-primary btn-lg" onclick="payNow('${/* safe */ booking.bookingId}')" style="background: #16a34a; border-color: #16a34a;">
+              💳 Thanh toán ngay (VietQR)
+            </button>
+            <a href="my-bookings.html?bookingId=${/* safe */ booking.bookingId}" class="btn btn-outline btn-lg">
+              Xem chi tiết tại Lịch của tôi
+            </a>
+          </div>
+        </div>
+        ` : ''}
 
         <!-- SUMMARY CARD -->
         <div class="summary-card">
@@ -547,9 +565,26 @@
           </div>
         </div>
 
-        <p style="text-align:center; color:var(--text-muted); font-size:0.9rem; margin:16px 0;">
-          💡 <em>PawStay là nền tảng kết nối trực tiếp. Sau khi Sitter xác nhận, hai bên sẽ tự liên hệ và thanh toán trực tiếp khi giao nhận thú cưng.</em>
-        </p>
+        <!-- Quy trình Escrow an toàn -->
+        <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 22px; margin: 24px 0;">
+          <h3 style="font-size: 0.95rem; font-weight: 700; color: var(--accent-light); margin-bottom: 14px; display: flex; align-items: center; gap: 8px;">
+            🛡️ Quy trình thanh toán ký quỹ an toàn (Escrow)
+          </h3>
+          <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; font-size: 0.88rem; color: var(--text-secondary); line-height: 1.6;">
+            <li style="display: flex; gap: 10px;">
+              <span style="color: var(--accent); font-weight: bold;">•</span>
+              <span><strong>Bước 1:</strong> Sitter xác nhận đơn (trong vòng 48 giờ).</span>
+            </li>
+            <li style="display: flex; gap: 10px;">
+              <span style="color: var(--accent); font-weight: bold;">•</span>
+              <span><strong>Bước 2:</strong> Bạn thanh toán 100% qua VietQR (PayOS), tiền được PawStay giữ an toàn.</span>
+            </li>
+            <li style="display: flex; gap: 10px;">
+              <span style="color: var(--accent); font-weight: bold;">•</span>
+              <span><strong>Bước 3:</strong> Tiền chỉ giải ngân cho Sitter sau khi chuyến gửi hoàn tất. <em>Không thanh toán tiền mặt cho Sitter.</em></span>
+            </li>
+          </ul>
+        </div>
 
         <!-- Actions -->
         <div class="action-buttons">
@@ -564,6 +599,19 @@
           </button>
         </div>
       `;
+    }
+
+    async function payNow(bookingId) {
+      try {
+        const res = await apiFetch(`/bookings/${bookingId}/pay`, { method: 'POST' });
+        if (res && res.checkoutUrl) {
+          window.location.href = res.checkoutUrl;
+        } else {
+          window.location.href = `my-bookings.html?bookingId=${encodeURIComponent(bookingId)}`;
+        }
+      } catch (err) {
+        alert(err.message || 'Không thể tạo liên kết thanh toán.');
+      }
     }
   </script>
 </body>

@@ -1,0 +1,586 @@
+﻿<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bảng điều khiển Chủ nuôi | PawStay</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>" />
+  <link rel="stylesheet" href="assets/style.css?v=4" />
+  <style>
+    .dashboard-wrapper {
+      padding: 120px 24px 60px;
+      max-width: 1100px;
+      margin: 0 auto;
+      min-height: 80vh;
+    }
+    .welcome-header {
+      margin-bottom: 28px;
+    }
+    .welcome-header h1 {
+      font-size: 1.85rem;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .welcome-header p {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+    }
+
+    /* Active stay banner */
+    .active-stay-banner {
+      background: linear-gradient(135deg, rgba(201, 123, 132, 0.15) 0%, rgba(201, 123, 132, 0.05) 100%);
+      border: 1px solid var(--border-accent);
+      border-radius: var(--radius-lg);
+      padding: 20px 24px;
+      margin-bottom: 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .active-stay-info {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .active-stay-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+      flex-shrink: 0;
+    }
+
+    /* Metric cards */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 18px;
+      margin-bottom: 32px;
+    }
+    .metric-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 20px;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .metric-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-card);
+    }
+    .metric-card .label {
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .metric-card .value {
+      font-size: 2rem;
+      font-weight: 700;
+      margin: 8px 0 4px;
+      color: var(--text-primary);
+    }
+    .metric-card .subtext {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    /* 2 columns layout */
+    .dashboard-layout {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 28px;
+    }
+    @media (max-width: 900px) {
+      .dashboard-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Section cards */
+    .dashboard-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    .card-header-flex {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 18px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 12px;
+    }
+    .card-header-flex h3 {
+      font-size: 1.15rem;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Booking items */
+    .mini-booking-item {
+      padding: 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      margin-bottom: 12px;
+      background: var(--bg-secondary);
+      transition: border-color 0.2s ease;
+    }
+    .mini-booking-item:hover {
+      border-color: var(--border-accent);
+    }
+    .mini-booking-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .mini-booking-body {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      font-size: 0.88rem;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+    }
+    .mini-booking-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: flex-end;
+    }
+
+    /* Pet mini list */
+    .mini-pet-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      border-radius: var(--radius-md);
+      background: var(--bg-secondary);
+      margin-bottom: 10px;
+      border: 1px solid var(--border);
+    }
+    .mini-pet-avatar {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      background: rgba(201, 123, 132, 0.15);
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      flex-shrink: 0;
+    }
+
+    /* Notification mini list */
+    .mini-notif-item {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.85rem;
+    }
+    .mini-notif-item:last-child {
+      border-bottom: none;
+    }
+    .mini-notif-title {
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 2px;
+    }
+    .mini-notif-time {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .empty-box {
+      text-align: center;
+      padding: 30px 16px;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="dashboard-wrapper">
+    <!-- Welcome Header -->
+    <div class="welcome-header">
+      <h1>Xin chào, <span id="owner-name" style="color:var(--accent);">Bạn</span> 🐾</h1>
+      <p>Tổng quan hoạt động trông giữ thú cưng và các chuyến đi của bạn tại PawStay Đà Nẵng.</p>
+    </div>
+
+    <!-- Active Stay Banner (Chỉ hiện khi có đơn đang chăm sóc) -->
+    <div id="active-stay-section" style="display:none;"></div>
+
+    <!-- 4 KPI Metrics Cards -->
+    <div class="metrics-grid">
+      <div class="metric-card" style="border-left: 4px solid #3b82f6;">
+        <span class="label">📅 Chuyến đi sắp tới</span>
+        <div class="value" id="metric-upcoming">0</div>
+        <span class="subtext">Đã xác nhận & sẵn sàng</span>
+      </div>
+      <div class="metric-card" style="border-left: 4px solid #16a34a;">
+        <span class="label">🏡 Đang gửi trông</span>
+        <div class="value" id="metric-active">0</div>
+        <span class="subtext">Đang được Sitter chăm sóc</span>
+      </div>
+      <div class="metric-card" style="border-left: 4px solid #ca8a04;">
+        <span class="label">💳 Chờ thanh toán</span>
+        <div class="value" id="metric-pending-payment">0</div>
+        <span class="subtext">Cần thanh toán để giữ chỗ</span>
+      </div>
+      <div class="metric-card" style="border-left: 4px solid var(--accent);">
+        <span class="label">🐾 Thú cưng đã lưu</span>
+        <div class="value" id="metric-pets">0</div>
+        <span class="subtext">Hồ sơ thú cưng đã tạo</span>
+      </div>
+    </div>
+
+    <!-- Layout 2 Cột -->
+    <div class="dashboard-layout">
+      <!-- Cột trái: Đơn đặt gần đây -->
+      <div class="main-column">
+        <div class="dashboard-card">
+          <div class="card-header-flex">
+            <h3>📋 Chuyến đi gần đây</h3>
+            <a href="my-bookings.html" class="btn btn-ghost btn-sm">Xem tất cả lịch →</a>
+          </div>
+          <div id="recent-bookings-list">
+            <div class="empty-box">Đang tải danh sách đặt lịch...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cột phải: Thú cưng & Thông báo -->
+      <div class="side-column">
+        <!-- Thú cưng của tôi -->
+        <div class="dashboard-card">
+          <div class="card-header-flex">
+            <h3>🐶 Thú cưng của tôi</h3>
+            <a href="my-pets.html" class="btn btn-ghost btn-sm">Quản lý →</a>
+          </div>
+          <div id="my-pets-list">
+            <div class="empty-box">Đang tải thông tin thú cưng...</div>
+          </div>
+          <div style="margin-top: 15px;">
+            <a href="sitters.html" class="btn btn-primary" style="width:100%; text-align:center;">🔍 Đặt lịch trông thú cưng</a>
+          </div>
+        </div>
+
+        <!-- Thông báo gần đây -->
+        <div class="dashboard-card">
+          <div class="card-header-flex">
+            <h3>🔔 Thông báo mới nhất</h3>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="openAllNotifications()">Xem tất cả →</button>
+          </div>
+          <div id="recent-notifications-list">
+            <div class="empty-box">Đang tải thông báo...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/data.js?v=4"></script>
+  <script src="assets/api.js?v=4"></script>
+  <script src="assets/components.js?v=4"></script>
+  <script>
+    window.addEventListener('pageshow', (e) => {
+      if (!localStorage.getItem('pawstay_token')) {
+        window.location.replace('login.html');
+      }
+    });
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      if (!localStorage.getItem('pawstay_token')) {
+        window.location.href = 'login.html';
+        return;
+      }
+
+      const user = typeof getCurrentUser === 'function' ? getCurrentUser() : JSON.parse(localStorage.getItem('pawstay_user') || 'null');
+      const role = (user && user.role ? user.role : '').toUpperCase();
+      if (role === 'ADMIN') {
+        window.location.href = 'admin.html';
+        return;
+      }
+      if (role === 'SITTER') {
+        window.location.href = 'sitter-dashboard.html';
+        return;
+      }
+
+      if (user) {
+        const rawName = (user.fullName || user.ten || user.email || 'Bạn').trim();
+        document.getElementById('owner-name').textContent = rawName;
+      }
+
+      await loadDashboardData();
+    });
+
+    async function loadDashboardData() {
+      try {
+        // Tải đồng thời bookings, pets và notifications
+        const [bookings, pets, notifs] = await Promise.all([
+          apiFetch('/bookings/my').catch(() => []),
+          apiFetch('/pets').catch(() => []),
+          apiFetch('/notifications?limit=5').catch(() => [])
+        ]);
+
+        renderMetrics(bookings, pets);
+        renderActiveStayBanner(bookings);
+        renderRecentBookings(bookings);
+        renderPets(pets);
+        renderNotifications(notifs);
+      } catch (err) {
+        console.error('Lỗi tải dữ liệu dashboard:', err);
+      }
+    }
+
+    function renderMetrics(bookings, pets) {
+      const nowMs = Date.now();
+      const vnTodayStr = new Date(nowMs + 7 * 3600000).toISOString().split('T')[0];
+
+      let upcomingCount = 0;
+      let activeCount = 0;
+      let pendingPaymentCount = 0;
+
+      (bookings || []).forEach(b => {
+        // Loại trừ tuyệt đối các đơn đã hủy, hết hạn hoặc từ chối
+        if (b.trangThai === 'CANCELLED' || b.trangThai === 'EXPIRED' || b.trangThai === 'REJECTED') {
+          return;
+        }
+
+        const startVnStr = new Date(new Date(b.ngayBatDau).getTime() + 7 * 3600000).toISOString().split('T')[0];
+        const endVnStr = new Date(new Date(b.ngayKetThuc).getTime() + 7 * 3600000).toISOString().split('T')[0];
+
+        // Đơn chờ thanh toán
+        if (b.paymentStatus === 'PENDING_PAYMENT') {
+          pendingPaymentCount++;
+        }
+
+        // Đơn đã chấp nhận
+        if (b.trangThai === 'ACCEPTED') {
+          if (startVnStr > vnTodayStr) {
+            upcomingCount++;
+          } else if (startVnStr <= vnTodayStr && endVnStr >= vnTodayStr) {
+            activeCount++;
+          }
+        } else if (b.trangThai === 'COMPLETION_PENDING') {
+          // COMPLETION_PENDING chỉ tính vào Đang gửi trông, tuyệt đối không tính vào Sắp tới
+          activeCount++;
+        }
+      });
+
+      document.getElementById('metric-upcoming').textContent = upcomingCount;
+      document.getElementById('metric-active').textContent = activeCount;
+      document.getElementById('metric-pending-payment').textContent = pendingPaymentCount;
+      document.getElementById('metric-pets').textContent = (pets || []).length;
+    }
+
+    function renderActiveStayBanner(bookings) {
+      const bannerContainer = document.getElementById('active-stay-section');
+      const nowMs = Date.now();
+      const vnTodayStr = new Date(nowMs + 7 * 3600000).toISOString().split('T')[0];
+
+      // Tìm đơn đang lưu trú
+      const activeBooking = (bookings || []).find(b => {
+        const startVnStr = new Date(new Date(b.ngayBatDau).getTime() + 7 * 3600000).toISOString().split('T')[0];
+        const endVnStr = new Date(new Date(b.ngayKetThuc).getTime() + 7 * 3600000).toISOString().split('T')[0];
+        return (b.trangThai === 'ACCEPTED' && b.paymentStatus === 'HELD' && startVnStr <= vnTodayStr && endVnStr >= vnTodayStr) 
+            || b.trangThai === 'COMPLETION_PENDING';
+      });
+
+      if (!activeBooking) {
+        bannerContainer.style.display = 'none';
+        return;
+      }
+
+      const isPendingConfirm = activeBooking.trangThai === 'COMPLETION_PENDING';
+      bannerContainer.style.display = 'block';
+      bannerContainer.innerHTML = `
+        <div class="active-stay-banner">
+          <div class="active-stay-info">
+            <div class="active-stay-icon">🐾</div>
+            <div>
+              <div style="font-size:0.85rem; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:0.5px;">
+                ${isPendingConfirm ? '⏳ CHỜ BẠN XÁC NHẬN HOÀN TẤT' : '🏡 ĐANG GỬI CHĂM SÓC'}
+              </div>
+              <h3 style="margin:4px 0 2px; font-size:1.15rem;">
+                Bé <strong>${escapeHtml(activeBooking.pet?.tenPet || 'Thú cưng')}</strong> đang ở cùng Sitter <strong>${escapeHtml(activeBooking.sitterName)}</strong>
+              </h3>
+              <p style="margin:0; font-size:0.85rem; color:var(--text-secondary);">
+                Thời gian: ${formatNgay(activeBooking.ngayBatDau)} - ${formatNgay(activeBooking.ngayKetThuc)} • Đơn #${escapeHtml(activeBooking.maDatLich)}
+              </p>
+            </div>
+          </div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <a href="stay-updates.html?bookingId=${/* safe */ activeBooking.bookingId}" class="btn btn-primary btn-sm">📷 Xem nhật ký lưu trú</a>
+            ${isPendingConfirm ? `<a href="my-bookings.html?bookingId=${/* safe */ activeBooking.bookingId}" class="btn btn-outline btn-sm">Xác nhận hoàn tất</a>` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderRecentBookings(bookings) {
+      const container = document.getElementById('recent-bookings-list');
+      if (!bookings || bookings.length === 0) {
+        container.innerHTML = `
+          <div class="empty-box">
+            <p>Bạn chưa có lịch đặt nào.</p>
+            <a href="sitters.html" class="btn btn-outline btn-sm" style="margin-top:8px;">Tìm người chăm sóc ngay</a>
+          </div>
+        `;
+        return;
+      }
+
+      // Lấy tối đa 5 đơn gần nhất
+      const top5 = bookings.slice(0, 5);
+      container.innerHTML = top5.map(b => {
+        let statusBadge = getStatusBadgeHtml(b.trangThai);
+        let paymentBadge = getPaymentBadgeHtml(b.paymentStatus);
+
+        let actionBtn = '';
+        if (b.paymentStatus === 'PENDING_PAYMENT') {
+          actionBtn = `<a href="my-bookings.html?bookingId=${/* safe */ b.bookingId}" class="btn btn-primary btn-sm" style="background:#16a34a; border-color:#16a34a;">💳 Thanh toán</a>`;
+        } else if (b.trangThai === 'ACCEPTED' || b.trangThai === 'COMPLETION_PENDING') {
+          actionBtn = `<a href="stay-updates.html?bookingId=${/* safe */ b.bookingId}" class="btn btn-outline btn-sm">Nhật ký</a>`;
+        }
+
+        return `
+          <div class="mini-booking-item">
+            <div class="mini-booking-head">
+              <div>
+                <strong>Đơn #${escapeHtml(b.maDatLich)}</strong> • <a href="sitter-profile.html?id=${/* safe */ b.sitterId}" style="color:var(--text-primary); font-weight:600;">${escapeHtml(b.sitterName)}</a>
+              </div>
+              <div style="display:flex; gap:6px; align-items:center;">
+                ${statusBadge}
+                ${paymentBadge}
+              </div>
+            </div>
+            <div class="mini-booking-body">
+              <div>
+                <span>🐶 Thú cưng:</span> <strong>${escapeHtml(b.pet?.tenPet || 'Chưa cập nhật')}</strong>
+              </div>
+              <div>
+                <span>💰 Tổng tiền:</span> <strong>${formatTien(b.tongTien)}</strong>
+              </div>
+              <div style="grid-column: 1 / -1;">
+                <span>🗓️ Thời gian:</span> ${formatNgay(b.ngayBatDau)} - ${formatNgay(b.ngayKetThuc)}
+              </div>
+            </div>
+            <div class="mini-booking-actions">
+              ${actionBtn}
+              <a href="my-bookings.html?bookingId=${/* safe */ b.bookingId}" class="btn btn-ghost btn-sm">Chi tiết →</a>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderPets(pets) {
+      const container = document.getElementById('my-pets-list');
+      if (!pets || pets.length === 0) {
+        container.innerHTML = `
+          <div class="empty-box">
+            <p>Bạn chưa lưu thông tin thú cưng nào.</p>
+            <a href="my-pets.html" class="btn btn-outline btn-sm" style="margin-top:6px;">+ Thêm thú cưng</a>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = pets.slice(0, 3).map(p => `
+        <div class="mini-pet-item">
+          <div class="mini-pet-avatar">
+            ${p.species === 'Mèo' ? '🐱' : '🐶'}
+          </div>
+          <div style="flex:1;">
+            <strong style="color:var(--text-primary);">${escapeHtml(p.name)}</strong>
+            <div style="font-size:0.8rem; color:var(--text-secondary);">
+              ${escapeHtml(p.species || '')} ${p.breed ? '• ' + escapeHtml(p.breed) : ''} ${p.weight ? '• ' + p.weight + 'kg' : ''}
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function renderNotifications(notifs) {
+      const container = document.getElementById('recent-notifications-list');
+      if (!notifs || notifs.length === 0) {
+        container.innerHTML = `<div class="empty-box">Không có thông báo mới.</div>`;
+        return;
+      }
+
+      container.innerHTML = notifs.map(n => `
+        <div class="mini-notif-item">
+          <div class="mini-notif-title">${escapeHtml(n.title)}</div>
+          <div style="color:var(--text-secondary); margin-bottom:2px;">${escapeHtml(n.message)}</div>
+          <div class="mini-notif-time">${formatThoiGian(n.createdAt)}</div>
+        </div>
+      `).join('');
+    }
+
+    function formatNgay(dateStr) {
+      if (!dateStr) return '';
+      const d = new Date(dateStr);
+      return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
+    }
+
+    function formatThoiGian(isoStr) {
+      if (!isoStr) return '';
+      const d = new Date(isoStr);
+      return d.toLocaleDateString('vi-VN') + ' ' + d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function getStatusBadgeHtml(status) {
+      const map = {
+        'PENDING': { label: 'Chờ duyệt', bg: 'rgba(234, 179, 8, 0.1)', color: '#eab308' },
+        'ACCEPTED': { label: 'Đã nhận', bg: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6' },
+        'COMPLETION_PENDING': { label: 'Chờ hoàn tất', bg: 'rgba(168, 85, 247, 0.1)', color: '#a855f7' },
+        'COMPLETED': { label: 'Hoàn thành', bg: 'rgba(34, 197, 94, 0.1)', color: '#22c55e' },
+        'DISPUTED': { label: 'Tranh chấp', bg: 'rgba(249, 115, 22, 0.1)', color: '#ea580c' },
+        'CANCELLED': { label: 'Đã hủy', bg: 'rgba(239, 68, 68, 0.1)', color: '#ef4444' }
+      };
+      const cfg = map[status] || { label: status, bg: 'rgba(107, 114, 128, 0.1)', color: '#6b7280' };
+      return `<span style="padding:2px 8px; border-radius:12px; font-size:0.75rem; font-weight:600; background:${cfg.bg}; color:${cfg.color};">${escapeHtml(cfg.label)}</span>`;
+    }
+
+    function getPaymentBadgeHtml(status) {
+      if (status === 'PENDING_PAYMENT') {
+        return `<span style="padding:2px 8px; border-radius:12px; font-size:0.75rem; font-weight:600; background:rgba(234, 179, 8, 0.15); color:#ca8a04; border:1px solid #ca8a04;">Chờ thanh toán</span>`;
+      } else if (status === 'HELD') {
+        return `<span style="padding:2px 8px; border-radius:12px; font-size:0.75rem; font-weight:600; background:rgba(22, 163, 74, 0.15); color:#16a34a; border:1px solid #16a34a;">Đã giữ cọc</span>`;
+      } else if (status === 'REFUND_PENDING') {
+        return `<span style="padding:2px 8px; border-radius:12px; font-size:0.75rem; font-weight:600; background:rgba(249, 115, 22, 0.15); color:#ea580c; border:1px solid #ea580c;">Chờ hoàn tiền</span>`;
+      }
+      return '';
+    }
+
+    function openAllNotifications() {
+      const bell = document.getElementById('notif-bell-btn');
+      if (bell) {
+        bell.click();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        showToast('Tất cả thông báo đang hiển thị trên thanh menu chuông.', 2000, '🔔');
+      }
+    }
+  </script>
+</body>
+</html>

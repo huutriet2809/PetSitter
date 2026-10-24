@@ -46,11 +46,25 @@ namespace PetSitter.Models
 
         public int TotalReviews { get; set; } = 0;
 
+        // Tài khoản ngân hàng nhận tiền rút của Sitter
+        public SitterBankAccount? BankAccount { get; set; }
+
         // Navigation properties
         [ForeignKey("UserId")]
         public User? User { get; set; }
         public ICollection<SitterService> SitterServices { get; set; } = new List<SitterService>();
         public ICollection<SitterAvailability> SitterAvailabilities { get; set; } = new List<SitterAvailability>();
+    }
+
+    public class SitterBankAccount
+    {
+        public string BankBin { get; set; } = null!; // Mã BIN / ngân hàng (VD: 970436, VCB, MB...)
+        public string BankName { get; set; } = null!; // Tên ngân hàng
+        public string EncryptedAccountNumber { get; set; } = null!; // Số tài khoản đã mã hóa Data Protection
+        public string MaskedAccountNumber { get; set; } = null!; // ****1234
+        public string AccountHolderName { get; set; } = null!; // Tên chủ tài khoản
+        public bool NameMatchesRegisteredName { get; set; } = true; // Khớp với FullName đăng ký
+        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow; // Thời điểm cập nhật (để tính cooldown 24h)
     }
 }
 

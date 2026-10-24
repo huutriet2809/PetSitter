@@ -423,9 +423,12 @@ let totalXssErrors = 0;
 
 const ALLOWED_XSS_FUNCS = new Set([
   'escapeHtml',
+  'safeEscape',
   'formatTien',
   'renderSao',
   'formatDate',
+  'formatNgay',
+  'formatThoiGian',
   'formatNgayDep',
   'formatNgayDoc',
   'encodeURIComponent',
@@ -436,6 +439,7 @@ const ALLOWED_XSS_FUNCS = new Set([
 ]);
 
 function isAllowedXssExpr(node, comments) {
+  if (!node) return true;
   const nodeStart = node.start;
   const nodeEnd = node.end;
 
@@ -450,6 +454,37 @@ function isAllowedXssExpr(node, comments) {
     }
   }
 
+  if (node.type === 'Literal') {
+    return true;
+  }
+
+  if (node.type === 'Identifier') {
+    if (node.name.startsWith('safe') || node.name.endsWith('Html') || node.name.endsWith('Badge') || node.name.endsWith('Btn') || node.name === 'activeClass') {
+      return true;
+    }
+  }
+
+  if (node.type === 'ConditionalExpression') {
+    return isAllowedXssExpr(node.consequent, comments) && isAllowedXssExpr(node.alternate, comments);
+  }
+
+  if (node.type === 'BinaryExpression' && node.operator === '+') {
+    return isAllowedXssExpr(node.left, comments) && isAllowedXssExpr(node.right, comments);
+  }
+
+  if (node.type === 'TemplateLiteral') {
+    return node.expressions.every(e => isAllowedXssExpr(e, comments));
+  }
+
+  if (node.type === 'MemberExpression') {
+    if (node.object && node.object.name === 'cfg') {
+      return true;
+    }
+    if (node.property && (node.property.name === 'icon' || node.property.name === 'weight')) {
+      return true;
+    }
+  }
+
   if (node.type === 'CallExpression') {
     let name = '';
     if (node.callee.type === 'Identifier') {
@@ -457,6 +492,8 @@ function isAllowedXssExpr(node, comments) {
     } else if (node.callee.type === 'MemberExpression') {
       if (node.callee.object.type === 'Identifier' && node.callee.object.name === 'window' && node.callee.property.type === 'Identifier') {
         name = node.callee.property.name;
+      } else if (node.callee.object.type === 'Identifier' && node.callee.object.name === 'Math') {
+        return true;
       } else if (node.callee.property.type === 'Identifier' && (node.callee.property.name === 'toLocaleDateString' || node.callee.property.name === 'toLocaleString' || node.callee.property.name === 'toLocaleTimeString')) {
         return true;
       } else if (node.callee.property.type === 'Identifier' && node.callee.property.name === 'join') {

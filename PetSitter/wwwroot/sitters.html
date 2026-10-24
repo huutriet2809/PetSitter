@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="vi">
 <head>
   <meta charset="UTF-8" />
@@ -9,7 +9,7 @@
   <meta property="og:description" content="Hơn 60 sitter đã xác minh tại Đà Nẵng. Giá từ 140,000đ/ngày." />
   <meta property="og:type"        content="website" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>">
-  <link rel="stylesheet" href="assets/style.css" />
+  <link rel="stylesheet" href="assets/style.css?v=4" />
   <style>
     /* =====================================================
        TRANG DANH SÁCH SITTER - Style riêng
@@ -348,9 +348,9 @@
 
   <!-- ===================== JAVASCRIPT ===================== -->
   <!-- Load shared scripts -->
-  <script src="assets/data.js"></script>
-  <script src="assets/api.js"></script>
-  <script src="assets/components.js"></script>
+  <script src="assets/data.js?v=4"></script>
+  <script src="assets/api.js?v=4"></script>
+  <script src="assets/components.js?v=4"></script>
   <script>
     // Hàm tạo HTML cho một sitter card
     function taoSitterCard(sitter) {
@@ -458,8 +458,27 @@
       });
     });
 
-    // === KHỞI TẠO: Render tất cả sitter khi trang load ===
-    loc('all');
+    // === KHỞI TẠO: Đọc ?area= từ URL khi trang load ===
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialArea = urlParams.get('area') || 'all';
+
+    // Cập nhật active cho nút filter tương ứng
+    let matchedBtn = null;
+    document.querySelectorAll('.filter-btn').forEach(b => {
+      b.classList.remove('active');
+      if (b.dataset.area === initialArea) {
+        matchedBtn = b;
+      }
+    });
+
+    if (matchedBtn) {
+      matchedBtn.classList.add('active');
+    } else {
+      const allBtn = document.querySelector('.filter-btn[data-area="all"]');
+      if (allBtn) allBtn.classList.add('active');
+    }
+
+    loc(initialArea);
   </script>
 </body>
 </html>

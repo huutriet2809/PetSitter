@@ -183,12 +183,3 @@ async function getMe() {
         return null;
     }
 }
-
-function logout() {
-    if (typeof window.stopNotifPolling === 'function') {
-        window.stopNotifPolling();
-    }
-    localStorage.removeItem('pawstay_user');
-    localStorage.removeItem('pawstay_token');
-    window.location.href = 'index.html';
-}

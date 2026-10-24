@@ -101,3 +101,129 @@ Tất cả các bút toán sổ cái kép tuân thủ quy tắc một hàm sinh 
   - API tạo link thanh toán: https://payos.vn/docs/
 - **Lưu ý kiểm chứng giao diện PayOS Portal**:
   Các bước thiết lập thủ công trên giao diện quản trị `my.payos.vn` (như cấu hình Kênh chi, Kênh đối tác, Mô hình ví nạp trước - Prefunded Balance) thuộc quyền kiểm soát của đối tác thứ ba và chưa được kiểm chứng tự động từ môi trường AI. **Cần chủ tài khoản kiểm tra trực tiếp trên portal của PayOS** để kích hoạt các tính năng chi tiền tự động nếu muốn nâng cấp từ hoàn tiền thủ công sang webhook chi tiền tự động.
+
+---
+
+## 7. Quy Trình Chi Tiền Rút Sitter Thủ Công (SOP Manual Payout)
+
+Hệ thống mặc định vận hành rút tiền ở chế độ **THỦ CÔNG (MANUAL)** để đảm bảo an toàn tuyệt đối nguồn tiền.
+
+### 7.1. Chu trình trạng thái yêu cầu rút tiền (Withdrawal Lifecycle)
+1. **REQUESTED (Chờ duyệt)**: Sitter tạo yêu cầu. Khóa nguyên tử số tiền vào `EarningsAccounts.ReservedAmount`. **KHÔNG ghi sổ cái ở bước này**. Khả dụng rút = `Tổng ghi có SITTER_EARNINGS (AvailableAt <= nowUtc) - Tổng đã PAID - ReservedAmount`.
+2. **APPROVED (Đã duyệt)**: Admin kiểm tra tính hợp lệ và duyệt yêu cầu. Hệ thống chặn Admin tự duyệt yêu cầu rút tiền của chính mình.
+3. **PROCESSING (Nhận xử lý chi - Claim Processing)**:
+   - Admin bấm "Nhận xử lý chi" (`POST /admin/withdrawals/{id}/claim-processing`).
+   - Claim nguyên tử gán `ClaimedByAdminUserId` và `ClaimedAt`.
+   - Nếu Admin B cố bấm cùng lúc, hệ thống chặn với mã lỗi 409 Conflict: *"Yêu cầu đang được xử lý bởi Admin X"*.
+4. **PAID (Đã chuyển tiền)**:
+   - Admin thực hiện chuyển khoản ngoài hệ thống ngân hàng (Vietcombank, MB, Techcombank,...).
+   - Nhập mã giao dịch ngân hàng duy nhất (`BankTransactionRef`).
+   - Hệ thống kiểm tra tính duy nhất của `BankTransactionRef` (chống nhập trùng).
+   - Bút toán sổ cái kép chính thức được ghi:
+     - **DEBIT** `SITTER_EARNINGS:{SitterUserId}` (Amount)
+     - **CREDIT** `GATEWAY_CLEARING` (Amount)
+   - Nhả `ReservedAmount` tương ứng trên `EarningsAccount`.
+5. **REJECTED / CANCELLED / FAILED**:
+   - Chỉ giải phóng `ReservedAmount` trở lại số dư khả dụng của Sitter.
+   - **0 bút toán sổ cái nào được sinh ra**.
+
+---
+
+## 8. Quy Trình Rút Doanh Thu Nền Tảng (Platform Revenue Sweep)
+
+- **Nguyên tắc quản lý dòng tiền sàn**:
+  Toàn bộ doanh thu hoa hồng 10% được hạch toán vào tài khoản sổ cái `PLATFORM_REVENUE`.
+- **Tài liệu chốt nguyên tử (`PlatformAccount`)**:
+  - Ghi nhận `SweptTotal` lũy kế và `Version` để chống xung đột cập nhật đồng thời (Optimistic Concurrency Control).
+  - Khả dụng rút sàn (`TransferableAmount`):
+    `TransferableAmount = Net(PLATFORM_REVENUE) - SweptTotal - RevenueReserveBuffer`.
+- **Khoản đệm an toàn (`RevenueReserveBuffer`)**:
+  - Tính bằng tổng doanh thu các đơn COMPLETED trong cửa sổ `RevenueReserveHours` (mặc định 48 giờ) gần nhất.
+  - **Lý do đệm đúng theo thiết kế**:
+    1. Phòng ngừa hoàn tiền thủ công các phát sinh sau chuyến đi.
+    2. Dự phòng giải quyết giao dịch bất thường trong tài khoản `SUSPENSE`.
+    3. Bù trừ sai số phí cổng thanh toán (`GATEWAY_FEES`).
+- **Bút toán sổ cái kép khi Sweep**:
+  - **DEBIT** `PLATFORM_REVENUE` (Amount)
+  - **CREDIT** `GATEWAY_CLEARING` (Amount)
+
+---
+
+## 9. Xử Lý Giao Dịch Bất Thường (SUSPENSE)
+
+Giao dịch bất thường là giao dịch chuyển khoản vào cổng PayOS nhưng sai số tiền hoặc không tìm thấy đơn tương ứng, được ghi nhận vào tài khoản `SUSPENSE`.
+
+1. **Phương án 1: Gán vào đơn đặt lịch hợp lệ (`AssignSuspensePaymentAsync`)**:
+   - Admin nhập `BookingId` và ghi chú giải trình.
+   - Ghi sổ:
+     - **DEBIT** `SUSPENSE` (ReceivedAmount)
+     - **CREDIT** `ESCROW_HELD` (ReceivedAmount)
+   - Cập nhật `Payment.Status = PAID`, `Payment.IsAbnormal = false`, `Payment.BookingId = bookingId`.
+2. **Phương án 2: Hoàn tiền cho người chuyển (`RefundSuspensePaymentAsync`)**:
+   - Admin nhập lý do hoàn tiền.
+   - Tạo yêu cầu hoàn tiền `RefundRequest` với `Status = REFUND_PENDING`.
+   - Ghi sổ:
+     - **DEBIT** `SUSPENSE` (ReceivedAmount)
+     - **CREDIT** `REFUND_PENDING` (ReceivedAmount)
+   - Cập nhật `Payment.Status = REFUND_PENDING`.
+   - Admin thực hiện hoàn tiền theo quy trình mục 5 (ghi sổ `REFUND_PENDING -> GATEWAY_CLEARING` khi chuyển khoản xong).
+
+---
+
+## 10. Đẳng Thức Đối Soát Toàn Thể Sổ Cái (Reconciliation Identity)
+
+### 10.1. Quy ước dấu các tài khoản Sổ cái
+| Tài khoản | Loại tài khoản | Số dư bình thường | Chiều ghi tăng | Chiều ghi giảm |
+|---|---|---|---|---|
+| `GATEWAY_CLEARING` | Tài sản (Tiền mặt tại ngân hàng/cổng) | DEBIT | DEBIT (+) | CREDIT (-) |
+| `ESCROW_HELD` | Nợ phải trả (Tiền giữ hộ khách) | CREDIT | CREDIT (+) | DEBIT (-) |
+| `SITTER_EARNINGS` | Nợ phải trả (Thu nhập giữ hộ Sitter) | CREDIT | CREDIT (+) | DEBIT (-) |
+| `REFUND_PENDING` | Nợ phải trả (Chờ hoàn khách) | CREDIT | CREDIT (+) | DEBIT (-) |
+| `SUSPENSE` | Nợ phải trả (Tạm giữ bất thường) | CREDIT | CREDIT (+) | DEBIT (-) |
+| `PLATFORM_REVENUE` | Vốn chủ / Doanh thu | CREDIT | CREDIT (+) | DEBIT (-) |
+| `GATEWAY_FEES` | Chi phí ngoài tiền mặt | DEBIT | DEBIT (+) | CREDIT (-) |
+
+### 10.2. Đẳng thức Số dư Tiền mặt Ngân hàng Kỳ vọng (ExpectedBankBalance)
+```
+ExpectedBankBalance = Net(GATEWAY_CLEARING)
+                     = Sum(DEBIT GATEWAY_CLEARING) - Sum(CREDIT GATEWAY_CLEARING)
+```
+
+### 10.3. Đẳng thức Cân bằng Kế toán Toàn bộ Hệ thống
+```
+Net(GATEWAY_CLEARING) == ESCROW_HELD
+                       + Total(SITTER_EARNINGS)
+                       + REFUND_PENDING
+                       + SUSPENSE
+                       + (PLATFORM_REVENUE - SweptTotal)
+```
+*(Ghi chú: `GATEWAY_FEES` giả định chưa bị ngân hàng trừ trực tiếp vào tiền mặt tài khoản thanh toán, được theo dõi riêng ở ngoài đẳng thức tiền mặt).*
+
+---
+
+## 11. Hướng Dẫn Sao Lưu & Khôi Phục Khóa Data Protection
+
+Hệ thống sử dụng ASP.NET Core Data Protection với phương thức `PersistKeysToFileSystem` lưu trữ tại thư mục cố định ngoài mã nguồn (`DataProtection:KeyDirectory`).
+Mặc định: `%APPDATA%\PetSitterKeys` (trên Windows) hoặc cấu hình trong `appsettings.json`.
+
+### 11.1. Quy trình sao lưu (Backup)
+1. Thư mục chứa khóa: kiểm tra giá trị trong `appsettings.json` tại `Payments:DataProtection:KeyDirectory`.
+2. Sao lưu toàn bộ các tệp `.xml` trong thư mục này vào kho lưu trữ mã hóa an toàn offline.
+3. Không commit thư mục này vào Git repository (đã có trong `.gitignore`).
+
+### 11.2. Quy trình khôi phục (Restore / Disaster Recovery)
+1. Khi triển khai lên máy chủ mới hoặc khôi phục sau sự cố, sao chép toàn bộ các tệp khóa `.xml` vào thư mục đã cấu hình.
+2. Đảm bảo Application Pool / Service Worker có quyền đọc ghi vào thư mục này.
+3. Khởi động lại ứng dụng. Hệ thống sẽ tự động nạp lại khóa và giải mã chính xác toàn bộ STK ngân hàng và thông tin người trả tiền.
+
+---
+
+## 12. Tình Trạng Xác Minh Tài Liệu Kênh Chi PayOS (PayOS Payout Documentation Verification)
+
+| Hạng mục / Endpoint | Tình trạng xác minh | Nguồn tài liệu | Hành vi hệ thống |
+|---|---|---|---|
+| **Kênh thu (Pay-in)**: `/v2/payment-requests`, Webhook HMAC-SHA256 | ✅ **ĐÃ XÁC MINH** | https://payos.vn/docs/ | Đã triển khai đầy đủ và kiểm thử tự động. |
+| **Kênh chi (Pay-out)**: Thông cáo ra mắt kênh chi (hợp tác Baokim, Shinhan, PVcomBank, OCB) | ✅ **ĐÃ XÁC MINH** | https://payos.vn/ra-mat-kenh-chi-tren-payos-giai-phap-chi-tu-dong-qua-api/ | Đã xác nhận PayOS có hỗ trợ kênh chi tự động. |
+| **Kênh chi**: API `/v1/payouts`, `/balance` | ⚠️ **CHƯA XÁC MINH** | Không có trong tài liệu công khai https://payos.vn/docs/ (chỉ có trong cổng quản trị kín `my.payos.vn`) | Triển khai chế độ **MANUAL (Mặc định)**. Code API chi tự động được đặt trong trạng thái chờ (TODO) với `FakePaymentGateway` phục vụ kiểm thử. |
+| **Kênh chi**: Header `x-idempotency-key`, `x-signature` kênh chi | ⚠️ **CHƯA XÁC MINH** | Cần kích hoạt Kênh chi và ký quỹ trên `my.payos.vn` | Giữ nguyên mock và runbook. |
+| **Kênh chi**: Webhook trạng thái chi tiền | ⚠️ **CHƯA XÁC MINH** | Chưa có đặc tả payload webhook chi | Sử dụng cơ chế truy vấn trạng thái theo yêu cầu (Polling/On-demand check) thay vì webhook chi. |

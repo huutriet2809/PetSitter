@@ -13,17 +13,98 @@ function getCurrentPage() {
   return file;
 }
 
+function safeEscape(str) {
+  if (typeof window !== 'undefined' && typeof window.escapeHtml === 'function') {
+    return window.escapeHtml(str);
+  }
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+if (typeof window !== 'undefined' && typeof window.escapeHtml !== 'function') {
+  window.escapeHtml = safeEscape;
+}
+
+function isCurrentPage(targetHref, currentPage) {
+  if (!targetHref) return false;
+  const linkFile = targetHref.split('?')[0].split('#')[0];
+  const curFile = (currentPage || '').split('?')[0].split('#')[0];
+  if (linkFile === curFile) return true;
+  if ((curFile === '' || curFile === 'index.html' || curFile === '/') && linkFile === 'index.html') return true;
+  return false;
+}
+
 // ------------------------------------------------
-// NAV LINK DATA — Chỉnh ở đây để thay đổi menu
+// DỮ LIỆU ĐIỀU HƯỚNG THEO ROLE (GIỮA & DROPDOWN)
 // ------------------------------------------------
-const NAV_LINKS = [
-  { href: 'index.html',        label: 'Trang chủ' },
-  { href: 'sitters.html',      label: 'Tìm Sitter' },
-  { href: 'become-sitter.html',label: 'Trở thành Sitter' },
-  { href: 'how-it-works.html', label: 'Cách hoạt động' },
-  { href: 'about.html',        label: 'Về chúng tôi' },
-  { href: 'contact.html',      label: 'Liên hệ' },
-];
+function getNavLinksForRole(role, isLoggedIn) {
+  if (!isLoggedIn) {
+    return [
+      { href: 'index.html', label: 'Trang chủ' },
+      { href: 'sitters.html', label: 'Tìm Sitter' },
+      { href: 'how-it-works.html', label: 'Cách hoạt động' },
+      { href: 'contact.html', label: 'Liên hệ' }
+    ];
+  }
+
+  const normalized = (role || '').toUpperCase();
+  if (normalized === 'ADMIN') {
+    return [
+      { href: 'admin.html', label: 'Quản trị' },
+      { href: 'admin-messages.html', label: 'Tin nhắn' }
+    ];
+  }
+
+  if (normalized === 'SITTER') {
+    return [
+      { href: 'sitter-dashboard.html', label: 'Bảng điều khiển' },
+      { href: 'sitter-calendar.html', label: 'Lịch rảnh' },
+      { href: 'sitter-profile.html', label: 'Hồ sơ Sitter' }
+    ];
+  }
+
+  // Mặc định: OWNER / USER
+  return [
+    { href: 'index.html', label: 'Trang chủ' },
+    { href: 'sitters.html', label: 'Tìm Sitter' },
+    { href: 'my-bookings.html', label: 'Lịch của tôi' },
+    { href: 'how-it-works.html', label: 'Cách hoạt động' }
+  ];
+}
+
+function getDropdownLinksForRole(role) {
+  const normalized = (role || '').toUpperCase();
+  if (normalized === 'ADMIN') {
+    return [
+      { href: 'profile.html', label: 'Thông tin tài khoản', icon: '👤' }
+    ];
+  }
+
+  if (normalized === 'SITTER') {
+    return [
+      { href: 'profile.html', label: 'Thông tin tài khoản', icon: '👤' }
+    ];
+  }
+
+  // Mặc định: OWNER / USER
+  return [
+    { href: 'owner-dashboard.html', label: 'Bảng điều khiển', icon: '📊' },
+    { href: 'my-pets.html', label: 'Thú cưng của tôi', icon: '🐾' },
+    { href: 'become-sitter.html', label: 'Trở thành Sitter', icon: '✨' },
+    { href: 'profile.html', label: 'Thông tin tài khoản', icon: '👤' }
+  ];
+}
+
+function getRoleBadgeText(role) {
+  const normalized = (role || '').toUpperCase();
+  if (normalized === 'ADMIN') return 'Quản trị viên';
+  if (normalized === 'SITTER') return 'Pet Sitter';
+  return 'Chủ nuôi';
+}
 
 // ------------------------------------------------
 // RENDER NAVBAR
@@ -37,55 +118,50 @@ function renderNavbar() {
 
   const currentPage = getCurrentPage();
   const user        = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
+  const userRole    = user ? (user.role || '').toUpperCase() : '';
 
-  // Tạo nav links HTML
-  const navLinksHtml = NAV_LINKS.map(link => {
-    const isActive = currentPage === link.href ? 'active' : '';
-    return `<li><a href="${/* safe */ link.href}" class="${/* safe */ isActive}">${/* safe */ link.label}</a></li>`;
+  // Lấy danh sách link giữa và dropdown theo role
+  const centerLinks   = getNavLinksForRole(userRole, !!user);
+  const dropdownLinks = user ? getDropdownLinksForRole(userRole) : [];
+  const roleBadgeText = getRoleBadgeText(userRole);
+
+  // Tạo center nav links HTML (Desktop)
+  const navLinksHtml = centerLinks.map(link => {
+    const isActive = isCurrentPage(link.href, currentPage) ? 'active' : '';
+    return `<li><a href="${safeEscape(link.href)}" class="${safeEscape(isActive)}">${safeEscape(link.label)}</a></li>`;
   }).join('');
 
-  // Mobile nav links
-  const mobileLinksHtml = NAV_LINKS.map(link => {
-    const isActive = currentPage === link.href ? 'active' : '';
-    return `<a href="${/* safe */ link.href}" class="${/* safe */ isActive}">${/* safe */ link.label}</a>`;
+  // Mobile links (Link giữa)
+  const mobileCenterLinksHtml = centerLinks.map(link => {
+    const isActive = isCurrentPage(link.href, currentPage) ? 'active' : '';
+    return `<a href="${safeEscape(link.href)}" class="${safeEscape(isActive)}">${safeEscape(link.label)}</a>`;
   }).join('');
 
+  // Chuẩn bị thông tin người dùng cho Avatar & Dropdown
+  let avatarLetter = 'U';
   let shortName = 'Bạn';
-  let roleLinks = [];
+  let rawName = 'Bạn';
 
   if (user) {
-    const rawName = (user.fullName || user.ten || user.email || 'Bạn').trim();
-    shortName = rawName.split(/\s+/).pop() || rawName;
-    const role = (user.role || '').toUpperCase();
-
-    if (role === 'ADMIN') {
-      roleLinks = [
-        { href: 'admin.html', label: 'Quản trị' },
-        { href: 'admin-messages.html', label: 'Tin nhắn' },
-        { href: 'profile.html', label: 'Tài khoản' }
-      ];
-    } else if (role === 'SITTER') {
-      roleLinks = [
-        { href: 'sitter-dashboard.html', label: 'Bảng điều khiển' },
-        { href: 'sitter-profile.html', label: 'Hồ sơ Sitter' },
-        { href: 'sitter-calendar.html', label: 'Lịch rảnh' },
-        { href: 'profile.html', label: 'Tài khoản' }
-      ];
+    rawName = (user.fullName || user.ten || user.email || 'Bạn').trim();
+    if (rawName.includes('@')) {
+      shortName = rawName.split('@')[0];
+      avatarLetter = (shortName.charAt(0) || 'U').toUpperCase();
     } else {
-      // USER
-      roleLinks = [
-        { href: 'my-bookings.html', label: 'Lịch của tôi' },
-        { href: 'my-pets.html', label: 'Thú cưng của tôi' },
-        { href: 'profile.html', label: 'Tài khoản' },
-        { href: 'become-sitter.html', label: 'Trở thành Sitter' }
-      ];
+      const parts = rawName.split(/\s+/).filter(Boolean);
+      shortName = parts.length > 1 ? parts.slice(-2).join(' ') : rawName;
+      const lastWord = parts[parts.length - 1];
+      avatarLetter = (lastWord ? lastWord.charAt(0) : rawName.charAt(0)).toUpperCase();
     }
   }
 
-  const safeShortName = (typeof window !== 'undefined' && typeof window.escapeHtml === 'function') 
-    ? window.escapeHtml(shortName) 
-    : shortName;
+  const safeShortName     = safeEscape(shortName);
+  const safeFullName      = safeEscape(rawName);
+  const safeEmail         = safeEscape(user && user.email ? user.email : '');
+  const safeAvatarLetter  = safeEscape(avatarLetter);
+  const safeRoleBadgeText = safeEscape(roleBadgeText);
 
+  // Chuông thông báo (In-app)
   const notifBellHtml = user
     ? `<div class="notif-wrapper" id="notif-wrapper">
          <button id="notif-bell-btn" class="notif-bell" aria-label="Thông báo" aria-expanded="false" type="button">
@@ -104,38 +180,95 @@ function renderNavbar() {
        </div>`
     : '';
 
+  // Dropdown người dùng (Desktop)
+  const accountDropdownHtml = user
+    ? `<div class="account-menu-wrapper" id="account-menu-wrapper">
+         <button id="account-menu-btn" class="account-menu-btn" type="button" aria-expanded="false" aria-haspopup="true" aria-label="Menu tài khoản của ${safeShortName}">
+           <span class="account-avatar" aria-hidden="true">${safeAvatarLetter}</span>
+           <span class="account-shortname">${safeShortName}</span>
+           <span class="account-caret" aria-hidden="true">▾</span>
+         </button>
+         <div id="account-menu-dropdown" class="account-menu-dropdown hidden" role="menu" aria-label="Menu người dùng">
+           <div class="account-menu-header">
+             <div class="account-menu-user">${safeFullName}</div>
+             ${safeEmail ? `<div class="account-menu-email">${safeEmail}</div>` : ''}
+             <span class="account-menu-badge">${safeRoleBadgeText}</span>
+           </div>
+           <div class="account-menu-items">
+             ${dropdownLinks.map(l => {
+               const activeClass = isCurrentPage(l.href, currentPage) ? 'active' : '';
+               return `<a href="${safeEscape(l.href)}" class="account-menu-item ${activeClass}" role="menuitem">${l.icon ? l.icon + ' ' : ''}${safeEscape(l.label)}</a>`;
+             }).join('')}
+           </div>
+           <div class="account-menu-divider"></div>
+           <button type="button" onclick="logout()" class="account-menu-item account-menu-logout" role="menuitem">
+             <span>🚪 Đăng xuất</span>
+           </button>
+         </div>
+       </div>`
+    : '';
+
+  // Khối bên phải (Desktop)
   const authHtml = user
-    ? `<span style="font-size:0.82rem;color:var(--text-secondary)">Xin chào, <strong style="color:var(--accent)">${/* safe */ safeShortName}</strong></span>
-       ${/* safe */ notifBellHtml}
-       ${roleLinks.map(l => `<a href="${/* safe */ l.href}" class="btn btn-ghost btn-sm">${/* safe */ l.label}</a>`).join(' ')}
-       <button onclick="logout()" class="btn btn-ghost btn-sm">Đăng xuất</button>`
+    ? `${notifBellHtml}
+       ${accountDropdownHtml}`
     : `<a href="login.html" class="btn btn-ghost btn-sm" id="nav-login">Đăng nhập</a>
        <a href="signup.html" class="btn btn-primary btn-sm" id="nav-signup">Đăng ký</a>`;
 
-  // Mobile auth
-  const mobileAuthHtml = user
-    ? `${roleLinks.map(l => `<a href="${/* safe */ l.href}" class="btn btn-ghost btn-sm">${/* safe */ l.label}</a>`).join('')}
-       <button onclick="logout()" class="btn btn-ghost btn-sm">Đăng xuất</button>`
-    : `<a href="login.html" class="btn btn-ghost btn-sm">Đăng nhập</a>
-       <a href="signup.html" class="btn btn-primary btn-sm">Đăng ký</a>`;
+  // Khối bên trong Mobile Drawer
+  const mobileDrawerHtml = user
+    ? `<div class="mobile-nav-links">
+         ${mobileCenterLinksHtml}
+       </div>
+       <div class="mobile-nav-divider"></div>
+       <div class="mobile-nav-auth">
+         <div class="mobile-user-card">
+           <div class="account-avatar">${safeAvatarLetter}</div>
+           <div class="mobile-user-details">
+             <div class="mobile-user-name">${safeFullName}</div>
+             ${safeEmail ? `<div class="mobile-user-email">${safeEmail}</div>` : ''}
+             <span class="account-menu-badge">${safeRoleBadgeText}</span>
+           </div>
+         </div>
+         <div class="mobile-user-menu">
+           ${dropdownLinks.map(l => {
+             const activeClass = isCurrentPage(l.href, currentPage) ? 'active' : '';
+             return `<a href="${safeEscape(l.href)}" class="mobile-nav-item ${activeClass}">${l.icon ? l.icon + ' ' : ''}${safeEscape(l.label)}</a>`;
+           }).join('')}
+         </div>
+         <div class="mobile-nav-divider"></div>
+         <button type="button" onclick="logout()" class="btn btn-outline mobile-logout-btn">
+           🚪 Đăng xuất
+         </button>
+       </div>`
+    : `<div class="mobile-nav-links">
+         ${mobileCenterLinksHtml}
+       </div>
+       <div class="mobile-nav-divider"></div>
+       <div class="mobile-nav-auth">
+         <div class="mobile-guest-auth">
+           <a href="login.html" class="btn btn-ghost btn-sm">Đăng nhập</a>
+           <a href="signup.html" class="btn btn-primary btn-sm">Đăng ký</a>
+         </div>
+       </div>`;
 
   const navbarHtml = `
     <nav class="navbar" id="navbar" role="navigation" aria-label="Điều hướng chính">
       <div class="navbar-inner">
-        <!-- Logo -->
+        <!-- Logo (trái) -->
         <a href="index.html" class="logo" aria-label="PawStay - Trang chủ">
           <div class="logo-icon" aria-hidden="true">🐾</div>
           <span class="logo-text">Paw<span>Stay</span></span>
         </a>
 
-        <!-- Nav Links (Desktop) -->
+        <!-- Link điều hướng chính (giữa) -->
         <ul class="nav-center" role="list">
-          ${/* safe */ navLinksHtml}
+          ${navLinksHtml}
         </ul>
 
-        <!-- Auth buttons (Desktop) -->
+        <!-- Chuông thông báo + Dropdown người dùng / Nút đăng nhập-đăng ký (phải) -->
         <div class="nav-right">
-          ${/* safe */ authHtml}
+          ${authHtml}
         </div>
 
         <!-- Mobile toggle -->
@@ -147,44 +280,52 @@ function renderNavbar() {
 
     <!-- Mobile drawer -->
     <div class="mobile-nav" id="mobile-nav" role="dialog" aria-label="Menu di động">
-      ${/* safe */ mobileLinksHtml}
-      <div class="mobile-nav-divider"></div>
-      <div class="mobile-nav-auth">
-        ${/* safe */ mobileAuthHtml}
-      </div>
+      ${mobileDrawerHtml}
     </div>
   `;
 
   // Chèn navbar vào đầu body
   document.body.insertAdjacentHTML('afterbegin', navbarHtml);
 
-  // Khởi tạo tính năng thông báo nếu người dùng đã đăng nhập
+  // Khởi tạo tính năng thông báo và menu tài khoản nếu người dùng đã đăng nhập
   if (user) {
     initNotificationSystem(user);
+    initAccountDropdown();
   }
 
   // Gắn sự kiện mobile toggle
   const toggleBtn = document.getElementById('nav-toggle');
-  if (toggleBtn) {
+  const mobileNav = document.getElementById('mobile-nav');
+  if (toggleBtn && mobileNav) {
     toggleBtn.addEventListener('click', function() {
-      const mobileNav  = document.getElementById('mobile-nav');
       const toggleIcon = document.getElementById('nav-toggle-icon');
-      if (!mobileNav || !toggleIcon) return;
-      const isOpen     = mobileNav.classList.toggle('open');
+      if (!toggleIcon) return;
+      const isOpen = mobileNav.classList.toggle('open');
       this.setAttribute('aria-expanded', isOpen);
       toggleIcon.textContent = isOpen ? '✕' : '☰';
+    });
+
+    // Đóng drawer khi bấm vào bất kỳ liên kết nào bên trong
+    mobileNav.querySelectorAll('a').forEach(link => {
+      link.addEventListener('click', function() {
+        mobileNav.classList.remove('open');
+        toggleBtn.setAttribute('aria-expanded', 'false');
+        const toggleIcon = document.getElementById('nav-toggle-icon');
+        if (toggleIcon) toggleIcon.textContent = '☰';
+      });
     });
   }
 
   // Đóng mobile nav khi click ra ngoài
   document.addEventListener('click', function(e) {
-    const mobileNav = document.getElementById('mobile-nav');
-    const toggle    = document.getElementById('nav-toggle');
-    if (mobileNav && mobileNav.classList.contains('open') &&
-        !mobileNav.contains(e.target) && !toggle.contains(e.target)) {
-      mobileNav.classList.remove('open');
+    const mNav   = document.getElementById('mobile-nav');
+    const toggle = document.getElementById('nav-toggle');
+    if (mNav && mNav.classList.contains('open') &&
+        !mNav.contains(e.target) && !toggle.contains(e.target)) {
+      mNav.classList.remove('open');
       const toggleIcon = document.getElementById('nav-toggle-icon');
       if (toggleIcon) toggleIcon.textContent = '☰';
+      if (toggle) toggle.setAttribute('aria-expanded', 'false');
     }
   });
 }
@@ -411,6 +552,15 @@ function initNotificationSystem(user) {
 
   bellBtn.addEventListener('click', function(e) {
     e.stopPropagation();
+    // Đóng menu tài khoản nếu đang mở
+    const accDropdown = document.getElementById('account-menu-dropdown');
+    const accBtn = document.getElementById('account-menu-btn');
+    if (accDropdown && accDropdown.classList.contains('open')) {
+      accDropdown.classList.remove('open');
+      accDropdown.classList.add('hidden');
+      if (accBtn) accBtn.setAttribute('aria-expanded', 'false');
+    }
+
     const isOpen = dropdown.classList.contains('open');
     if (isOpen) {
       dropdown.classList.remove('open');
@@ -475,6 +625,141 @@ function initNotificationSystem(user) {
   refreshUnreadCount();
   startPolling();
 }
+
+// Global helper mở popover thông báo từ bất kỳ trang nào
+window.openAllNotifications = function() {
+  const bellBtn = document.getElementById('notif-bell-btn');
+  const dropdown = document.getElementById('notif-dropdown');
+  if (bellBtn) {
+    if (dropdown && !dropdown.classList.contains('open')) {
+      bellBtn.click();
+    } else if (!dropdown) {
+      bellBtn.click();
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  } else {
+    if (typeof showToast === 'function') {
+      showToast('Thông báo đang hiển thị trên thanh menu chuông.', 2000, '🔔');
+    }
+  }
+};
+
+// ------------------------------------------------
+// QUẢN LÝ DROPDOWN TÀI KHOẢN TRÊN HEADER
+// ------------------------------------------------
+function initAccountDropdown() {
+  const btn = document.getElementById('account-menu-btn');
+  const dropdown = document.getElementById('account-menu-dropdown');
+  const wrapper = document.getElementById('account-menu-wrapper');
+  if (!btn || !dropdown || !wrapper) return;
+
+  btn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    // Đóng dropdown thông báo nếu đang mở
+    const notifDropdown = document.getElementById('notif-dropdown');
+    const bellBtn = document.getElementById('notif-bell-btn');
+    if (notifDropdown && notifDropdown.classList.contains('open')) {
+      notifDropdown.classList.remove('open');
+      notifDropdown.classList.add('hidden');
+      if (bellBtn) bellBtn.setAttribute('aria-expanded', 'false');
+    }
+
+    const isOpen = dropdown.classList.contains('open');
+    if (isOpen) {
+      dropdown.classList.remove('open');
+      dropdown.classList.add('hidden');
+      btn.setAttribute('aria-expanded', 'false');
+    } else {
+      dropdown.classList.remove('hidden');
+      dropdown.classList.add('open');
+      btn.setAttribute('aria-expanded', 'true');
+    }
+  });
+
+  // Đóng dropdown khi click ra ngoài
+  document.addEventListener('click', function(e) {
+    if (wrapper && !wrapper.contains(e.target)) {
+      dropdown.classList.remove('open');
+      dropdown.classList.add('hidden');
+      btn.setAttribute('aria-expanded', 'false');
+    }
+  });
+
+  // Đóng dropdown khi nhấn phím Escape
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      dropdown.classList.remove('open');
+      dropdown.classList.add('hidden');
+      btn.setAttribute('aria-expanded', 'false');
+    }
+  });
+}
+
+// ------------------------------------------------
+// QUẢN LÝ ĐĂNG XUẤT (LOGOUT) TOÀN CỤC
+// ------------------------------------------------
+async function logout(skipConfirm = false) {
+  if (!skipConfirm) {
+    const ok = confirm('Bạn có chắc chắn muốn đăng xuất tài khoản PawStay không?');
+    if (!ok) return;
+  }
+
+  // Dừng polling thông báo
+  if (typeof window.stopNotifPolling === 'function') {
+    window.stopNotifPolling();
+  }
+
+  // Thu hồi refresh token qua API backend
+  try {
+    const token = localStorage.getItem('pawstay_token');
+    const headers = {};
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+
+    if (typeof apiFetch === 'function') {
+      await apiFetch('/auth/logout', { method: 'POST', headers }).catch(() => {});
+    } else {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers,
+        credentials: 'include'
+      }).catch(() => {});
+    }
+  } catch (e) {
+    // Bỏ qua lỗi kết nối
+  } finally {
+    // Luôn luôn dọn sạch storage và chuyển hướng về login.html
+    localStorage.removeItem('pawstay_token');
+    localStorage.removeItem('pawstay_user');
+    sessionStorage.clear();
+    window.location.href = 'login.html';
+  }
+}
+
+window.logout = logout;
+
+// ------------------------------------------------
+// BẢO VỆ TRANG RIÊNG TƯ KHI DÙNG NÚT BACK (BFCACHE)
+// ------------------------------------------------
+window.addEventListener('pageshow', function(event) {
+  const privatePages = [
+    'owner-dashboard.html',
+    'sitter-dashboard.html',
+    'admin.html',
+    'admin-messages.html',
+    'my-bookings.html',
+    'my-pets.html',
+    'profile.html',
+    'stay-updates.html',
+    'sitter-edit.html',
+    'sitter-calendar.html'
+  ];
+  const currentPage = (window.location.pathname.split('/').pop() || '').toLowerCase();
+  if (privatePages.includes(currentPage)) {
+    if (!localStorage.getItem('pawstay_token')) {
+      window.location.replace('login.html');
+    }
+  }
+});
 
 // ------------------------------------------------
 // RENDER FOOTER

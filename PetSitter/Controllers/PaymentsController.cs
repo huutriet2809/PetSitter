@@ -141,7 +141,7 @@ namespace PetSitter.Controllers
         /// Tổng quan tài chính & thanh toán hệ thống (Admin)
         /// </summary>
         [HttpGet("admin/payments/overview")]
-        [Authorize(Roles = "Admin")]
+        [Authorize(Roles = "ADMIN,Admin")]
         public async Task<IActionResult> GetAdminPaymentsOverview()
         {
             var overview = await _ledgerService.GetAdminPaymentsOverviewAsync(DateTime.UtcNow);
@@ -152,7 +152,7 @@ namespace PetSitter.Controllers
         /// Danh sách hàng chờ hoàn tiền REFUND_PENDING (Admin)
         /// </summary>
         [HttpGet("admin/refunds")]
-        [Authorize(Roles = "Admin")]
+        [Authorize(Roles = "ADMIN,Admin")]
         public async Task<IActionResult> GetAdminRefundQueue([FromQuery] int limit = 50)
         {
             if (limit <= 0 || limit > 100) limit = 50;
@@ -164,7 +164,7 @@ namespace PetSitter.Controllers
         /// Xác nhận đã hoàn tiền thủ công qua ngân hàng (Admin)
         /// </summary>
         [HttpPost("admin/refunds/{id}/complete")]
-        [Authorize(Roles = "Admin")]
+        [Authorize(Roles = "ADMIN,Admin")]
         public async Task<IActionResult> CompleteRefund(string id, [FromBody] CompleteRefundDto dto)
         {
             var adminUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -172,6 +172,49 @@ namespace PetSitter.Controllers
 
             await _paymentService.CompleteRefundAsync(adminUserId, id, dto, DateTime.UtcNow);
             return Ok(new { message = "Xác nhận hoàn tiền thành công." });
+        }
+
+        /// <summary>
+        /// Xem thông tin tài khoản giải mã của yêu cầu hoàn tiền (Admin, có audit log)
+        /// </summary>
+        [HttpGet("admin/refunds/{id}/decrypted-account")]
+        [Authorize(Roles = "ADMIN,Admin")]
+        public async Task<IActionResult> GetDecryptedRefundAccount(string id)
+        {
+            var adminUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(adminUserId)) return Unauthorized();
+
+            var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+            var acc = await _paymentService.GetDecryptedRefundAccountAsync(adminUserId, id, ip, DateTime.UtcNow);
+            return Ok(acc);
+        }
+
+        /// <summary>
+        /// Gán giao dịch bất thường (SUSPENSE) vào đơn đặt lịch hợp lệ (Admin)
+        /// </summary>
+        [HttpPost("admin/payments/suspense/{orderCode}/assign")]
+        [Authorize(Roles = "ADMIN,Admin")]
+        public async Task<IActionResult> AssignSuspensePayment(long orderCode, [FromBody] AssignSuspenseDto dto)
+        {
+            var adminUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(adminUserId)) return Unauthorized();
+
+            await _paymentService.AssignSuspensePaymentAsync(adminUserId, orderCode, dto, DateTime.UtcNow);
+            return Ok(new { message = "Gán giao dịch bất thường vào đơn thành công." });
+        }
+
+        /// <summary>
+        /// Hoàn trả giao dịch bất thường (SUSPENSE) về cho người thanh toán (Admin)
+        /// </summary>
+        [HttpPost("admin/payments/suspense/{orderCode}/refund")]
+        [Authorize(Roles = "ADMIN,Admin")]
+        public async Task<IActionResult> RefundSuspensePayment(long orderCode, [FromBody] RefundSuspenseDto dto)
+        {
+            var adminUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(adminUserId)) return Unauthorized();
+
+            await _paymentService.RefundSuspensePaymentAsync(adminUserId, orderCode, dto, DateTime.UtcNow);
+            return Ok(new { message = "Tạo yêu cầu hoàn tiền cho giao dịch bất thường thành công." });
         }
 
         /// <summary>

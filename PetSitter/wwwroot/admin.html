@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin - Duyệt Sitter</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>">
-  <link rel="stylesheet" href="assets/style.css" />
+  <link rel="stylesheet" href="assets/style.css?v=4" />
   <style>
     .admin-container { max-width: 1000px; margin: 40px auto; padding: 20px; }
     .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 20px; margin-bottom: 20px; }
@@ -17,35 +17,232 @@
     .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
     .tab { padding: 10px 20px; cursor: pointer; border-bottom: 2px solid transparent; font-weight: 500; }
     .tab.active { border-bottom-color: var(--primary); color: var(--primary); font-weight: 600; }
+    .sub-tabs { display: flex; gap: 8px; margin-bottom: 15px; }
+    .btn-subtab { padding: 6px 16px; border-radius: 20px; font-size: 0.85rem; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); cursor: pointer; transition: all 0.2s ease; }
+    .btn-subtab:hover { background: var(--bg-card-hover); color: var(--text-primary); }
+    .btn-subtab.active { background: var(--primary); color: #fff; border-color: var(--primary); font-weight: 600; }
   </style>
 </head>
 <body>
   <div class="admin-container">
     <h1>Quản trị hệ thống PawStay</h1>
     <div class="tabs">
-      <div class="tab active" id="tab-applications" onclick="switchTab('applications')">Hồ sơ Sitter chờ duyệt</div>
+      <div class="tab active" id="tab-applications" onclick="switchTab('applications')">Hồ sơ Sitter</div>
       <div class="tab" id="tab-disputes" onclick="switchTab('disputes')">Đơn khiếu nại (Disputed)</div>
       <div class="tab" id="tab-payments" onclick="switchTab('payments')">Thanh toán & Hoàn tiền</div>
+      <div class="tab" id="tab-withdrawals" onclick="switchTab('withdrawals')">Rút tiền Sitter (Payouts)</div>
+      <div class="tab" id="tab-revenue" onclick="switchTab('revenue')">Doanh thu & Đối soát</div>
     </div>
     <div id="error-msg"></div>
+    <div id="subtabs-container" style="display:none;"></div>
     <div id="list-container">Đang tải...</div>
   </div>
 
-  <script src="assets/data.js"></script>
-  <script src="assets/api.js"></script>
-  <script src="assets/components.js"></script>
+  <!-- Modal Hòa giải tranh chấp (SPLIT) -->
+  <div class="modal" id="split-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">Hòa giải tranh chấp (SPLIT)</h3>
+        <button class="modal-close" onclick="closeSplitModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="split-form">
+          <input type="hidden" id="split-booking-id" />
+          <input type="hidden" id="split-total-amount" />
+          <div style="background:var(--bg-secondary); padding:12px; border-radius:6px; margin-bottom:15px; border:1px solid var(--border);">
+            <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+              <span>Tổng giá trị đơn:</span>
+              <strong id="split-total-display" style="color:var(--text-primary);">0 ₫</strong>
+            </div>
+            <div style="display:flex; justify-content:space-between; font-size:0.9rem; color:var(--text-muted);">
+              <span>Người chăm sóc sẽ nhận:</span>
+              <strong id="split-sitter-preview" style="color:#16a34a;">0 ₫</strong>
+            </div>
+          </div>
+
+          <div style="margin-bottom:15px;">
+            <label style="display:block; margin-bottom:6px; font-weight:600;">Số tiền hoàn lại cho Chủ nuôi (₫) <span style="color:#ef4444;">*</span></label>
+            <input type="number" id="split-refund-amount" required min="1000" step="1000" placeholder="Nhập số tiền hoàn (lớn hơn 0 và nhỏ hơn tổng tiền)..." style="width:100%; padding:10px; border-radius:6px; border:1px solid var(--border); background:var(--bg-primary); color:var(--text-primary);" oninput="updateSplitPreview()" />
+            <div id="split-amount-hint" style="font-size:0.8rem; color:var(--text-muted); margin-top:4px;">Số tiền hoàn phải lớn hơn 0 ₫ và nhỏ hơn tổng đơn.</div>
+          </div>
+
+          <div style="margin-bottom:15px;">
+            <label style="display:block; margin-bottom:6px; font-weight:600;">Ghi chú kết luận của Admin (10 đến 500 ký tự) <span style="color:#ef4444;">*</span></label>
+            <textarea id="split-note" required minlength="10" maxlength="500" placeholder="Mô tả căn cứ và phương án phân chia tiền giữa chủ nuôi và người chăm sóc..." style="width:100%; height:90px; padding:10px; border-radius:6px; border:1px solid var(--border); background:var(--bg-primary); color:var(--text-primary);"></textarea>
+          </div>
+
+          <div style="display:flex; gap:10px; justify-content:flex-end;">
+            <button type="button" class="btn btn-outline" onclick="closeSplitModal()">Hủy bỏ</button>
+            <button type="submit" class="btn btn-primary" style="background:#d97706; border-color:#d97706;">Xác nhận hòa giải (SPLIT)</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Xem STK giải mã -->
+  <div class="modal" id="bank-decrypt-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">Thông tin tài khoản ngân hàng</h3>
+        <button class="modal-close" onclick="closeBankDecryptModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="background:#fef2f2; border:1px solid #fecaca; color:#991b1b; padding:10px; border-radius:6px; font-size:0.85rem; margin-bottom:15px;">
+          🔒 <strong>Cảnh báo bảo mật:</strong> Thao tác xem tài khoản ngân hàng đầy đủ đã được ghi nhận vào Nhật ký Kiểm toán (Audit Log) kèm thông tin tài khoản Admin và IP của bạn.
+        </div>
+        <div style="background:var(--bg-secondary); padding:16px; border-radius:8px; border:1px solid var(--border);">
+          <div style="margin-bottom:10px;">
+            <div style="font-size:0.8rem; color:var(--text-muted);">Ngân hàng:</div>
+            <strong id="decrypt-bank-name" style="font-size:1.05rem;">—</strong>
+          </div>
+          <div style="margin-bottom:10px;">
+            <div style="font-size:0.8rem; color:var(--text-muted);">Số tài khoản:</div>
+            <strong id="decrypt-account-number" style="font-size:1.3rem; letter-spacing:1px; color:#1d4ed8;">—</strong>
+          </div>
+          <div>
+            <div style="font-size:0.8rem; color:var(--text-muted);">Tên chủ tài khoản:</div>
+            <strong id="decrypt-account-holder" style="font-size:1.05rem;">—</strong>
+          </div>
+        </div>
+        <div style="display:flex; justify-content:flex-end; margin-top:15px;">
+          <button type="button" class="btn btn-outline" onclick="closeBankDecryptModal()">Đóng</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Rút doanh thu nền tảng (Revenue Sweep) -->
+  <div class="modal" id="sweep-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">Rút doanh thu nền tảng (Platform Sweep)</h3>
+        <button class="modal-close" onclick="closeSweepModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="sweep-form" onsubmit="event.preventDefault(); submitSweep();">
+          <div style="background:var(--bg-secondary); padding:12px; border-radius:6px; margin-bottom:15px; border:1px solid var(--border); font-size:0.9rem;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+              <span>Doanh thu tích lũy:</span>
+              <strong id="sweep-platform-revenue">—</strong>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+              <span>Khoản đệm an toàn (Buffer):</span>
+              <strong id="sweep-buffer-amount" style="color:#d97706;">—</strong>
+            </div>
+            <div style="display:flex; justify-content:space-between; border-top:1px solid var(--border); padding-top:6px; margin-top:6px;">
+              <span>Khả dụng rút tối đa:</span>
+              <strong id="sweep-max-transferable" style="color:#16a34a; font-size:1.1rem;">—</strong>
+            </div>
+          </div>
+          <div style="margin-bottom:12px;">
+            <label style="display:block; font-size:0.85rem; margin-bottom:4px; font-weight:600;">Số tiền rút (₫) *</label>
+            <input type="number" id="sweep-input-amount" required min="10000" step="1000" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg-card); color:var(--text-primary);" />
+          </div>
+          <div style="margin-bottom:12px;">
+            <label style="display:block; font-size:0.85rem; margin-bottom:4px; font-weight:600;">Mã giao dịch ngân hàng / Tham chiếu *</label>
+            <input type="text" id="sweep-input-ref" required placeholder="VD: SWP20261024001" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg-card); color:var(--text-primary);" />
+          </div>
+          <div style="margin-bottom:15px;">
+            <label style="display:block; font-size:0.85rem; margin-bottom:4px; font-weight:600;">Ghi chú / Mục đích *</label>
+            <input type="text" id="sweep-input-note" required placeholder="VD: Rút doanh thu tuần 4 tháng 10" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg-card); color:var(--text-primary);" />
+          </div>
+          <div style="display:flex; gap:10px; justify-content:flex-end;">
+            <button type="button" class="btn btn-outline" onclick="closeSweepModal()">Hủy bỏ</button>
+            <button type="submit" class="btn btn-primary">Xác nhận rút doanh thu</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Gán giao dịch bất thường (SUSPENSE) vào đơn -->
+  <div class="modal" id="suspense-assign-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">Gán giao dịch bất thường vào Đơn đặt</h3>
+        <button class="modal-close" onclick="closeSuspenseAssignModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="suspense-assign-form" onsubmit="event.preventDefault(); submitSuspenseAssign();">
+          <input type="hidden" id="assign-order-code" />
+          <div style="margin-bottom:12px;">
+            <label style="display:block; font-size:0.85rem; margin-bottom:4px; font-weight:600;">Mã đơn đặt lịch (BookingId) *</label>
+            <input type="text" id="assign-booking-id" required placeholder="VD: 6718a..." style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg-card); color:var(--text-primary);" />
+          </div>
+          <div style="margin-bottom:15px;">
+            <label style="display:block; font-size:0.85rem; margin-bottom:4px; font-weight:600;">Ghi chú / Căn cứ giải trình *</label>
+            <textarea id="assign-note" required minlength="5" placeholder="Nhập căn cứ gán giao dịch..." style="width:100%; height:80px; padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg-card); color:var(--text-primary);"></textarea>
+          </div>
+          <div style="display:flex; gap:10px; justify-content:flex-end;">
+            <button type="button" class="btn btn-outline" onclick="closeSuspenseAssignModal()">Hủy</button>
+            <button type="submit" class="btn btn-primary">Xác nhận gán (SUSPENSE -> ESCROW)</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Hoàn tiền cho giao dịch bất thường (SUSPENSE) -->
+  <div class="modal" id="suspense-refund-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">Hoàn tiền giao dịch bất thường (SUSPENSE)</h3>
+        <button class="modal-close" onclick="closeSuspenseRefundModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="suspense-refund-form" onsubmit="event.preventDefault(); submitSuspenseRefund();">
+          <input type="hidden" id="refund-order-code" />
+          <div style="margin-bottom:15px;">
+            <label style="display:block; font-size:0.85rem; margin-bottom:4px; font-weight:600;">Lý do hoàn trả *</label>
+            <textarea id="refund-reason" required minlength="5" placeholder="VD: Khách chuyển nhầm / thừa tiền, không xác định được dịch vụ..." style="width:100%; height:80px; padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg-card); color:var(--text-primary);"></textarea>
+          </div>
+          <div style="display:flex; gap:10px; justify-content:flex-end;">
+            <button type="button" class="btn btn-outline" onclick="closeSuspenseRefundModal()">Hủy</button>
+            <button type="submit" class="btn btn-primary" style="background:#dc2626; border-color:#dc2626;">Tạo yêu cầu hoàn tiền (SUSPENSE -> REFUND_PENDING)</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/data.js?v=4"></script>
+  <script src="assets/api.js?v=4"></script>
+  <script src="assets/components.js?v=4"></script>
   <script>
     let currentTab = 'applications';
+    let currentAppStatus = 'Pending';
+
+    window.addEventListener('pageshow', (e) => {
+      if (!localStorage.getItem('pawstay_token')) {
+        window.location.replace('login.html');
+      }
+    });
 
     document.addEventListener('DOMContentLoaded', async () => {
       if (!localStorage.getItem('pawstay_token')) {
         window.location.href = 'login.html';
         return;
       }
+      const user = typeof getCurrentUser === 'function' ? getCurrentUser() : JSON.parse(localStorage.getItem('pawstay_user') || 'null');
+      const role = (user && user.role ? user.role : '').toUpperCase();
+      if (role !== 'ADMIN') {
+        window.location.href = role === 'SITTER' ? 'sitter-dashboard.html' : 'owner-dashboard.html';
+        return;
+      }
       const urlParams = new URLSearchParams(window.location.search);
       const targetBookingId = urlParams.get('bookingId');
+      const targetTab = urlParams.get('tab');
       if (targetBookingId) {
         switchTab('disputes');
+      } else if (targetTab === 'payments') {
+        switchTab('payments');
+      } else if (targetTab === 'disputes') {
+        switchTab('disputes');
+      } else if (targetTab === 'withdrawals') {
+        switchTab('withdrawals');
+      } else if (targetTab === 'revenue') {
+        switchTab('revenue');
       } else {
         loadApplications();
       }
@@ -57,46 +254,90 @@
       const activeEl = document.getElementById(`tab-${tab}`);
       if (activeEl) activeEl.classList.add('active');
 
+      const subtabsContainer = document.getElementById('subtabs-container');
       if (tab === 'applications') {
-        loadApplications();
-      } else if (tab === 'disputes') {
-        loadDisputes();
-      } else if (tab === 'payments') {
-        loadPaymentsOverview();
+        subtabsContainer.style.display = 'block';
+        loadApplications(currentAppStatus);
+      } else {
+        subtabsContainer.style.display = 'none';
+        if (tab === 'disputes') {
+          loadDisputes();
+        } else if (tab === 'payments') {
+          loadPaymentsOverview();
+        } else if (tab === 'withdrawals') {
+          loadWithdrawals('REQUESTED');
+        } else if (tab === 'revenue') {
+          loadRevenueOverview('overview');
+        }
       }
     }
 
-    async function loadApplications() {
+    function switchAppStatus(status) {
+      currentAppStatus = status;
+      loadApplications(status);
+    }
+
+    async function loadApplications(status = currentAppStatus) {
+      const subtabsContainer = document.getElementById('subtabs-container');
+      subtabsContainer.style.display = 'block';
+      subtabsContainer.innerHTML = `
+        <div class="sub-tabs">
+          <button class="btn-subtab ${/* safe */ status === 'Pending' ? 'active' : ''}" onclick="switchAppStatus('Pending')">Chờ duyệt</button>
+          <button class="btn-subtab ${/* safe */ status === 'Approved' ? 'active' : ''}" onclick="switchAppStatus('Approved')">Đã duyệt</button>
+          <button class="btn-subtab ${/* safe */ status === 'Rejected' ? 'active' : ''}" onclick="switchAppStatus('Rejected')">Đã từ chối</button>
+        </div>
+      `;
+
       const container = document.getElementById('list-container');
       container.innerHTML = 'Đang tải...';
       try {
-        const apps = await apiFetch('/admin/sitter-applications?status=Pending');
-        if (apps.length === 0) {
-          container.innerHTML = '<p>Không có hồ sơ nào đang chờ duyệt.</p>';
+        const apps = await apiFetch(`/admin/sitter-applications?status=${encodeURIComponent(status)}`);
+        if (!apps || apps.length === 0) {
+          const statusLabels = { 'Pending': 'đang chờ duyệt', 'Approved': 'đã được duyệt', 'Rejected': 'bị từ chối' };
+          container.innerHTML = `<p>Không có hồ sơ nào ${/* safe */ statusLabels[status] || status}.</p>`;
           return;
         }
 
-        container.innerHTML = apps.map(app => `
-          <div class="card" id="app-${/* safe */ app.id}">
-            <div class="header-row">
-              <h3>${escapeHtml(app.fullName)} (Khu vực: ${escapeHtml(app.khuVuc)})</h3>
+        container.innerHTML = apps.map(app => {
+          let actionBtns = '';
+          let statusBadge = '';
+
+          if (status === 'Pending') {
+            actionBtns = `
               <div class="action-btns">
                 <button class="btn btn-primary btn-sm" onclick="approve('${/* safe */ app.id}')">Duyệt</button>
                 <button class="btn btn-outline btn-sm" onclick="showReject('${/* safe */ app.id}')">Từ chối</button>
               </div>
+            `;
+          } else if (status === 'Approved') {
+            statusBadge = `<span class="status-badge" style="background: rgba(34, 197, 94, 0.15); color: #16a34a; font-weight:600; padding:4px 10px; border-radius:12px; font-size:0.85rem;">Đã duyệt</span>`;
+          } else if (status === 'Rejected') {
+            statusBadge = `<span class="status-badge" style="background: rgba(239, 68, 68, 0.15); color: #dc2626; font-weight:600; padding:4px 10px; border-radius:12px; font-size:0.85rem;">Đã từ chối</span>`;
+          }
+
+          return `
+            <div class="card" id="app-${/* safe */ app.id}">
+              <div class="header-row">
+                <div>
+                  <h3 style="display:inline-block; margin-right:8px;">${escapeHtml(app.fullName)} (Khu vực: ${escapeHtml(app.khuVuc)})</h3>
+                  ${/* safe */ statusBadge}
+                </div>
+                ${/* safe */ actionBtns}
+              </div>
+              <p><strong>Kinh nghiệm:</strong> ${/* safe */ app.kinhNghiem} năm</p>
+              <p><strong>Giá cơ bản:</strong> ${formatTien(app.giaMoiNgay)} / ngày</p>
+              <p><strong>Loại Pet nhận:</strong> ${(app.loaiPetNhan || []).map(escapeHtml).join(', ')}</p>
+              <p><strong>Tags:</strong> ${(app.tags || []).map(escapeHtml).join(', ')}</p>
+              <p><strong>Bio:</strong> ${escapeHtml(app.bio)}</p>
+              ${/* safe */ app.status === 'Rejected' && app.lyDoTuChoi ? `<p style="color:#ef4444; margin-top:8px;"><strong>Lý do từ chối:</strong> ${escapeHtml(app.lyDoTuChoi)}</p>` : ''}
+              
+              <div class="reject-container" id="reject-${/* safe */ app.id}">
+                <input type="text" id="lydo-${/* safe */ app.id}" placeholder="Lý do từ chối (tối đa 500 ký tự)..." maxlength="500" />
+                <button class="btn btn-outline btn-sm" onclick="reject('${/* safe */ app.id}')">Xác nhận từ chối</button>
+              </div>
             </div>
-            <p><strong>Kinh nghiệm:</strong> ${/* safe */ app.kinhNghiem} năm</p>
-            <p><strong>Giá cơ bản:</strong> ${formatTien(app.giaMoiNgay)} / ngày</p>
-            <p><strong>Loại Pet nhận:</strong> ${(app.loaiPetNhan || []).map(escapeHtml).join(', ')}</p>
-            <p><strong>Tags:</strong> ${(app.tags || []).map(escapeHtml).join(', ')}</p>
-            <p><strong>Bio:</strong> ${escapeHtml(app.bio)}</p>
-            
-            <div class="reject-container" id="reject-${/* safe */ app.id}">
-              <input type="text" id="lydo-${/* safe */ app.id}" placeholder="Lý do từ chối..." />
-              <button class="btn btn-outline btn-sm" onclick="reject('${/* safe */ app.id}')">Xác nhận từ chối</button>
-            </div>
-          </div>
-        `).join('');
+          `;
+        }).join('');
       } catch (err) {
         showError(err.message || 'Lỗi tải danh sách hồ sơ. Bạn có phải Admin không?');
         container.innerHTML = '';
@@ -134,8 +375,9 @@
             <div style="margin-top: 15px; border-top: 1px dashed var(--border); padding-top: 15px;">
               <label style="display:block; margin-bottom: 6px; font-weight: 600;">Ghi chú xử lý của Admin (10 đến 500 ký tự) <span style="color:#ef4444;">*</span></label>
               <textarea id="note-${/* safe */ d.bookingId}" placeholder="Nhập kết luận và căn cứ giải quyết tranh chấp..." style="width:100%; height:80px; padding:8px; border:1px solid var(--border); border-radius:4px; background:var(--bg-secondary); color:var(--text-primary); margin-bottom:10px;"></textarea>
-              <div style="display:flex; gap:10px;">
+              <div style="display:flex; gap:10px; flex-wrap:wrap;">
                 <button class="btn btn-primary btn-sm" onclick="resolveDispute('${/* safe */ d.bookingId}', 'COMPLETED')">Duyệt hoàn tất (COMPLETED)</button>
+                <button class="btn btn-outline btn-sm" style="color:#d97706; border-color:#d97706;" onclick="openSplitModal('${/* safe */ d.bookingId}', ${/* safe */ d.tongTien})">Hòa giải (SPLIT)</button>
                 <button class="btn btn-outline btn-sm" style="color:#ef4444; border-color:#ef4444;" onclick="resolveDispute('${/* safe */ d.bookingId}', 'CANCELLED')">Hủy đơn (CANCELLED)</button>
               </div>
             </div>
@@ -184,6 +426,77 @@
       }
     }
 
+    function openSplitModal(bookingId, totalAmount) {
+      document.getElementById('split-booking-id').value = bookingId;
+      document.getElementById('split-total-amount').value = totalAmount;
+      document.getElementById('split-total-display').textContent = formatTien(totalAmount);
+      const refundInput = document.getElementById('split-refund-amount');
+      const defaultRefund = Math.floor(totalAmount / 2);
+      refundInput.value = defaultRefund;
+      refundInput.max = totalAmount - 1;
+      document.getElementById('split-note').value = '';
+      updateSplitPreview();
+      document.getElementById('split-modal').classList.add('open');
+    }
+
+    function closeSplitModal() {
+      document.getElementById('split-modal').classList.remove('open');
+    }
+
+    function updateSplitPreview() {
+      const total = parseInt(document.getElementById('split-total-amount').value) || 0;
+      const refund = parseInt(document.getElementById('split-refund-amount').value) || 0;
+      const sitterAmount = Math.max(0, total - refund);
+      document.getElementById('split-sitter-preview').textContent = formatTien(sitterAmount);
+
+      const hintEl = document.getElementById('split-amount-hint');
+      if (refund <= 0 || refund >= total) {
+        hintEl.style.color = '#ef4444';
+        hintEl.textContent = `⚠️ Số tiền hoàn phải lớn hơn 0 ₫ và nhỏ hơn ${formatTien(total)}.`;
+      } else {
+        hintEl.style.color = 'var(--text-muted)';
+        hintEl.textContent = `Chủ nuôi nhận hoàn: ${formatTien(refund)} • Sitter nhận: ${formatTien(sitterAmount)}`;
+      }
+    }
+
+    document.getElementById('split-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const bookingId = document.getElementById('split-booking-id').value;
+      const totalAmount = parseInt(document.getElementById('split-total-amount').value) || 0;
+      const refundAmount = parseInt(document.getElementById('split-refund-amount').value);
+      const note = document.getElementById('split-note').value.trim();
+
+      if (isNaN(refundAmount) || refundAmount <= 0 || refundAmount >= totalAmount) {
+        showError(`Số tiền hoàn cho chủ nuôi phải lớn hơn 0 và nhỏ hơn tổng giá trị đơn (${formatTien(totalAmount)}).`);
+        return;
+      }
+
+      if (note.length < 10 || note.length > 500) {
+        showError('Ghi chú xử lý bắt buộc từ 10 đến 500 ký tự.');
+        return;
+      }
+
+      try {
+        await apiFetch(`/admin/bookings/${bookingId}/resolve`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            resolution: 'SPLIT',
+            refundToOwnerAmount: refundAmount,
+            note: note
+          })
+        });
+        showToast('Đã giải quyết tranh chấp với phương án SPLIT thành công!', 3000, '✅');
+        closeSplitModal();
+        const card = document.getElementById(`dispute-${bookingId}`);
+        if (card) card.remove();
+        if (!document.querySelector('#list-container .card')) {
+          loadDisputes();
+        }
+      } catch (err) {
+        showError(err.message || 'Lỗi khi hòa giải tranh chấp.');
+      }
+    });
+
     function showReject(id) {
       document.getElementById(`reject-${id}`).style.display = 'block';
     }
@@ -198,7 +511,12 @@
     async function approve(id) {
       try {
         await apiFetch(`/admin/sitter-applications/${id}/approve`, { method: 'PATCH' });
-        document.getElementById(`app-${id}`).remove();
+        showToast('Đã duyệt hồ sơ người chăm sóc thành công!', 3000, '✅');
+        const card = document.getElementById(`app-${id}`);
+        if (card) card.remove();
+        if (!document.querySelector('#list-container .card')) {
+          loadApplications(currentAppStatus);
+        }
       } catch (err) {
         showError(err.message);
       }
@@ -215,7 +533,12 @@
           method: 'PATCH',
           body: JSON.stringify({ lyDo: reason })
         });
-        document.getElementById(`app-${id}`).remove();
+        showToast('Đã từ chối hồ sơ người chăm sóc!', 3000, '❌');
+        const card = document.getElementById(`app-${id}`);
+        if (card) card.remove();
+        if (!document.querySelector('#list-container .card')) {
+          loadApplications(currentAppStatus);
+        }
       } catch (err) {
         showError(err.message);
       }
@@ -250,7 +573,7 @@
                     <td style="padding:8px; color:#ef4444; font-weight:600;">${formatTien(r.amount)}</td>
                     <td style="padding:8px;">${escapeHtml(r.reason)}</td>
                     <td style="padding:8px;">
-                      ${/* safe */ r.refundAccount ? `${escapeHtml(r.refundAccount.bankName)} - <strong>${escapeHtml(r.refundAccount.accountNumber)}</strong> (${escapeHtml(r.refundAccount.accountName)})` : '<span style="color:#ca8a04;">Chờ khách nhập STK</span>'}
+                      ${/* safe */ r.payerInfoMasked ? `<strong>${escapeHtml(r.payerInfoMasked)}</strong>` : '<span style="color:#ca8a04;">Chờ khách nhập STK</span>'}
                     </td>
                     <td style="padding:8px;">
                       <div style="display:flex; gap:6px; align-items:center;">
@@ -269,19 +592,19 @@
           <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:15px; margin-bottom:25px;">
             <div style="background:var(--bg-secondary); padding:16px; border-radius:8px; border-left:4px solid #16a34a;">
               <div style="font-size:0.85rem; color:var(--text-muted);">Tổng tiền giữ đảm bảo (Escrow)</div>
-              <div style="font-size:1.5rem; font-weight:700; color:#16a34a; margin-top:6px;">${/* safe */ formatTien(overview.escrowHeldAmount)}</div>
+              <div style="font-size:1.5rem; font-weight:700; color:#16a34a; margin-top:6px;">${/* safe */ formatTien(overview.escrowCurrentlyHeld)}</div>
             </div>
             <div style="background:var(--bg-secondary); padding:16px; border-radius:8px; border-left:4px solid #3b82f6;">
               <div style="font-size:0.85rem; color:var(--text-muted);">Doanh thu hoa hồng (10%)</div>
-              <div style="font-size:1.5rem; font-weight:700; color:#2563eb; margin-top:6px;">${/* safe */ formatTien(overview.platformRevenueAmount)}</div>
+              <div style="font-size:1.5rem; font-weight:700; color:#2563eb; margin-top:6px;">${/* safe */ formatTien(overview.platformRevenue)}</div>
             </div>
             <div style="background:var(--bg-secondary); padding:16px; border-radius:8px; border-left:4px solid #ea580c;">
               <div style="font-size:0.85rem; color:var(--text-muted);">Tiền chờ hoàn cho khách</div>
               <div style="font-size:1.5rem; font-weight:700; color:#ea580c; margin-top:6px;">${/* safe */ formatTien(overview.refundPendingAmount)}</div>
             </div>
             <div style="background:var(--bg-secondary); padding:16px; border-radius:8px; border-left:4px solid #8b5cf6;">
-              <div style="font-size:0.85rem; color:var(--text-muted);">Tổng đơn đã thanh toán</div>
-              <div style="font-size:1.5rem; font-weight:700; color:#7c3aed; margin-top:6px;">${/* safe */ overview.totalPaidBookingsCount}</div>
+              <div style="font-size:0.85rem; color:var(--text-muted);">Số yêu cầu chờ hoàn</div>
+              <div style="font-size:1.5rem; font-weight:700; color:#7c3aed; margin-top:6px;">${/* safe */ overview.refundPendingCount ?? 0} đơn</div>
             </div>
           </div>
 
@@ -317,6 +640,622 @@
         loadPaymentsOverview();
       } catch (err) {
         showError(err.message || 'Lỗi khi xác nhận hoàn tiền.');
+      }
+    }
+
+    // ==========================================
+    // MODULE: RÚT TIỀN SITTER (PAYOUTS)
+    // ==========================================
+    let currentWithdrawalStatus = 'REQUESTED';
+
+    async function loadWithdrawals(status = currentWithdrawalStatus) {
+      currentWithdrawalStatus = status;
+      const subtabsContainer = document.getElementById('subtabs-container');
+      subtabsContainer.style.display = 'block';
+      subtabsContainer.innerHTML = `
+        <div class="sub-tabs">
+          <button class="btn-subtab ${/* safe */ status === 'REQUESTED' ? 'active' : ''}" onclick="loadWithdrawals('REQUESTED')">Chờ duyệt</button>
+          <button class="btn-subtab ${/* safe */ status === 'APPROVED' ? 'active' : ''}" onclick="loadWithdrawals('APPROVED')">Đã duyệt (Chờ chi)</button>
+          <button class="btn-subtab ${/* safe */ status === 'PROCESSING' ? 'active' : ''}" onclick="loadWithdrawals('PROCESSING')">Đang xử lý chi</button>
+          <button class="btn-subtab ${/* safe */ status === 'PAID' ? 'active' : ''}" onclick="loadWithdrawals('PAID')">Đã chuyển thành công</button>
+          <button class="btn-subtab ${/* safe */ status === 'REJECTED' ? 'active' : ''}" onclick="loadWithdrawals('REJECTED')">Đã từ chối</button>
+          <button class="btn-subtab ${/* safe */ status === '' ? 'active' : ''}" onclick="loadWithdrawals('')">Tất cả</button>
+        </div>
+      `;
+
+      const container = document.getElementById('list-container');
+      container.innerHTML = '<div style="padding:20px; text-align:center;">Đang tải danh sách yêu cầu rút tiền...</div>';
+
+      try {
+        const query = status ? `?status=${encodeURIComponent(status)}` : '';
+        const items = await apiFetch(`/admin/withdrawals${query}`);
+
+        if (!items || items.length === 0) {
+          container.innerHTML = '<div class="card" style="text-align:center; padding:30px; color:var(--text-muted);">Không có yêu cầu rút tiền nào trong mục này.</div>';
+          return;
+        }
+
+        const statusBadges = {
+          'REQUESTED': '<span class="status-badge" style="background:#fef3c7; color:#b45309;">Chờ duyệt</span>',
+          'APPROVED': '<span class="status-badge" style="background:#dbeafe; color:#1d4ed8;">Đã duyệt</span>',
+          'PROCESSING': '<span class="status-badge" style="background:#e0e7ff; color:#4338ca;">Đang xử lý</span>',
+          'PAID': '<span class="status-badge" style="background:#dcfce7; color:#15803d;">Thành công</span>',
+          'REJECTED': '<span class="status-badge" style="background:#fee2e2; color:#b91c1c;">Từ chối</span>',
+          'CANCELLED': '<span class="status-badge" style="background:#f3f4f6; color:#6b7280;">Hủy bởi Sitter</span>',
+          'FAILED': '<span class="status-badge" style="background:#fee2e2; color:#b91c1c;">Thất bại</span>'
+        };
+
+        const rows = items.map(w => {
+          const timeStr = new Date(w.createdAt).toLocaleString('vi-VN');
+          let actionHtml = '';
+
+          if (w.status === 'REQUESTED') {
+            actionHtml = `
+              <div style="display:flex; gap:6px;">
+                <button class="btn btn-primary btn-sm" onclick="approveWithdrawal('${/* safe */ w.withdrawalId}')">Duyệt</button>
+                <button class="btn btn-outline btn-sm" style="color:#ef4444; border-color:#ef4444;" onclick="rejectWithdrawal('${/* safe */ w.withdrawalId}')">Từ chối</button>
+              </div>
+            `;
+          } else if (w.status === 'APPROVED') {
+            actionHtml = `
+              <button class="btn btn-primary btn-sm" style="background:#2563eb;" onclick="claimProcessing('${/* safe */ w.withdrawalId}')">Nhận xử lý chi</button>
+            `;
+          } else if (w.status === 'PROCESSING') {
+            const currentUser = typeof getCurrentUser === 'function' ? getCurrentUser() : JSON.parse(localStorage.getItem('pawstay_user') || '{}');
+            const isMe = w.claimedByAdminUserId === (currentUser?.id || currentUser?.userId);
+            const claimText = isMe ? 'Bạn đang xử lý' : `Đang xử lý bởi Admin: ${escapeHtml(w.claimedByAdminUserId || '')}`;
+
+            actionHtml = `
+              <div>
+                <div style="font-size:0.75rem; color:#4338ca; margin-bottom:4px; font-weight:600;">ℹ️ ${/* safe */ claimText}</div>
+                <div style="display:flex; gap:6px;">
+                  <input type="text" id="bank-ref-${/* safe */ w.withdrawalId}" placeholder="Mã GD ngân hàng..." style="padding:4px 8px; font-size:0.85rem; border:1px solid var(--border); border-radius:4px; width:130px;" />
+                  <button class="btn btn-primary btn-sm" style="background:#16a34a; border-color:#16a34a;" onclick="confirmPaidWithdrawal('${/* safe */ w.withdrawalId}')">Xác nhận PAID</button>
+                </div>
+              </div>
+            `;
+          } else if (w.status === 'PAID') {
+            actionHtml = `<span style="font-size:0.85rem; color:#16a34a;">✅ Ref: <strong>${escapeHtml(w.bankTransactionRef || '—')}</strong></span>`;
+          } else if (w.status === 'REJECTED') {
+            actionHtml = `<span style="font-size:0.8rem; color:#ef4444;">Lý do: ${escapeHtml(w.adminNote || '—')}</span>`;
+          }
+
+          return `
+            <tr style="border-bottom:1px solid var(--border);">
+              <td style="padding:10px 8px;">
+                <code>#${/* safe */ w.withdrawalId.substring(0, 8)}</code><br/>
+                <small style="color:var(--text-muted);">${/* safe */ timeStr}</small>
+              </td>
+              <td style="padding:10px 8px;">
+                <strong>${escapeHtml(w.sitterName || w.sitterUserId)}</strong><br/>
+                <small style="color:var(--text-muted);">ID: ${/* safe */ w.sitterUserId.substring(0, 8)}...</small>
+              </td>
+              <td style="padding:10px 8px; font-weight:700; color:#16a34a; font-size:1.05rem;">
+                ${formatTien(w.amount)}
+              </td>
+              <td style="padding:10px 8px; font-size:0.85rem;">
+                <div><strong>${escapeHtml(w.bankName)}</strong></div>
+                <div>${escapeHtml(w.accountNumberMasked)}</div>
+                <div style="color:var(--text-muted);">${escapeHtml(w.accountHolderName)}</div>
+                <button class="btn btn-outline btn-sm" style="font-size:0.75rem; padding:2px 6px; margin-top:4px;" onclick="showDecryptedBank('${/* safe */ w.withdrawalId}')">👁️ Xem STK đầy đủ</button>
+              </td>
+              <td style="padding:10px 8px;">${/* safe */ statusBadges[w.status] || w.status}</td>
+              <td style="padding:10px 8px;">${/* safe */ actionHtml}</td>
+            </tr>
+          `;
+        }).join('');
+
+        container.innerHTML = `
+          <div class="card" style="padding:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+              <h3 style="margin:0;">Yêu cầu rút tiền của Người chăm sóc (${/* safe */ items.length})</h3>
+              <button class="btn btn-outline btn-sm" onclick="loadWithdrawals(currentWithdrawalStatus)">Làm mới</button>
+            </div>
+            <div style="overflow-x:auto;">
+              <table style="width:100%; border-collapse:collapse; font-size:0.9rem;">
+                <thead>
+                  <tr style="text-align:left; border-bottom:2px solid var(--border); color:var(--text-secondary);">
+                    <th style="padding:8px;">Mã yêu cầu</th>
+                    <th style="padding:8px;">Sitter</th>
+                    <th style="padding:8px;">Số tiền</th>
+                    <th style="padding:8px;">Tài khoản nhận</th>
+                    <th style="padding:8px;">Trạng thái</th>
+                    <th style="padding:8px;">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>${/* safe */ rows}</tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      } catch (err) {
+        showError(err.message || 'Lỗi khi tải danh sách rút tiền.');
+        container.innerHTML = '';
+      }
+    }
+
+    async function approveWithdrawal(id) {
+      if (!confirm('Xác nhận phê duyệt yêu cầu rút tiền này? Trạng thái sẽ chuyển sang APPROVED.')) return;
+      try {
+        await apiFetch(`/admin/withdrawals/${id}/approve`, { method: 'POST', body: JSON.stringify({}) });
+        showToast('Đã phê duyệt yêu cầu rút tiền!', 3000, '✅');
+        loadWithdrawals(currentWithdrawalStatus);
+      } catch (err) {
+        showError(err.message || 'Lỗi khi duyệt yêu cầu rút tiền.');
+      }
+    }
+
+    async function rejectWithdrawal(id) {
+      const reason = prompt('Nhập lý do từ chối yêu cầu rút tiền (số tiền sẽ được hoàn trả khả dụng cho Sitter):');
+      if (reason === null) return;
+      if (!reason.trim()) {
+        showError('Vui lòng nhập lý do từ chối.');
+        return;
+      }
+      try {
+        await apiFetch(`/admin/withdrawals/${id}/reject`, {
+          method: 'POST',
+          body: JSON.stringify({ reason: reason.trim() })
+        });
+        showToast('Đã từ chối yêu cầu rút tiền!', 3000, '❌');
+        loadWithdrawals(currentWithdrawalStatus);
+      } catch (err) {
+        showError(err.message || 'Lỗi khi từ chối yêu cầu rút tiền.');
+      }
+    }
+
+    async function claimProcessing(id) {
+      if (!confirm('Nhận xử lý chi cho yêu cầu này? Bạn sẽ được ghi nhận là Admin đang thực hiện chuyển khoản.')) return;
+      try {
+        await apiFetch(`/admin/withdrawals/${id}/claim-processing`, { method: 'POST' });
+        showToast('Đã nhận xử lý chi!', 3000, '✅');
+        loadWithdrawals(currentWithdrawalStatus);
+      } catch (err) {
+        showError(err.message || 'Lỗi khi nhận xử lý.');
+      }
+    }
+
+    async function confirmPaidWithdrawal(id) {
+      const input = document.getElementById(`bank-ref-${id}`);
+      const bankRef = input ? input.value.trim() : '';
+      if (!bankRef) {
+        showError('Vui lòng nhập mã giao dịch ngân hàng chuyển khoản thành công.');
+        return;
+      }
+      if (!confirm(`Xác nhận đã chuyển khoản thành công với Mã GD: "${bankRef}"? Số tiền sẽ được trừ chính thức khỏi sổ cái.`)) return;
+
+      try {
+        await apiFetch(`/admin/withdrawals/${id}/confirm-paid`, {
+          method: 'POST',
+          body: JSON.stringify({ bankTransactionRef: bankRef })
+        });
+        showToast('Đã xác nhận chi tiền thành công!', 3000, '✅');
+        loadWithdrawals(currentWithdrawalStatus);
+      } catch (err) {
+        showError(err.message || 'Lỗi khi xác nhận chi tiền.');
+      }
+    }
+
+    async function showDecryptedBank(id) {
+      try {
+        const data = await apiFetch(`/admin/withdrawals/${id}/decrypted-bank`);
+        document.getElementById('decrypt-bank-name').textContent = data.bankName || '—';
+        document.getElementById('decrypt-account-number').textContent = data.accountNumber || '—';
+        document.getElementById('decrypt-account-holder').textContent = data.accountHolderName || '—';
+        document.getElementById('bank-decrypt-modal').style.display = 'flex';
+      } catch (err) {
+        showError(err.message || 'Lỗi giải mã tài khoản ngân hàng.');
+      }
+    }
+
+    function closeBankDecryptModal() {
+      document.getElementById('bank-decrypt-modal').style.display = 'none';
+    }
+
+    // ==========================================
+    // MODULE: DOANH THU & ĐỐI SOÁT (REVENUE & AUDIT)
+    // ==========================================
+    let currentRevenueSubtab = 'overview';
+    let cachedTransferable = 0;
+
+    async function loadRevenueOverview(subtab = currentRevenueSubtab) {
+      currentRevenueSubtab = subtab;
+      const subtabsContainer = document.getElementById('subtabs-container');
+      subtabsContainer.style.display = 'block';
+      subtabsContainer.innerHTML = `
+        <div class="sub-tabs">
+          <button class="btn-subtab ${/* safe */ subtab === 'overview' ? 'active' : ''}" onclick="loadRevenueOverview('overview')">Tổng quan & Rút sàn</button>
+          <button class="btn-subtab ${/* safe */ subtab === 'suspense' ? 'active' : ''}" onclick="loadRevenueOverview('suspense')">Giao dịch bất thường (SUSPENSE)</button>
+          <button class="btn-subtab ${/* safe */ subtab === 'reconciliation' ? 'active' : ''}" onclick="loadRevenueOverview('reconciliation')">Đối soát sổ cái (Audit)</button>
+        </div>
+      `;
+
+      const container = document.getElementById('list-container');
+
+      if (subtab === 'overview') {
+        container.innerHTML = '<div style="padding:20px; text-align:center;">Đang tải dữ liệu doanh thu nền tảng...</div>';
+        try {
+          const rev = await apiFetch('/admin/revenue/overview');
+          cachedTransferable = rev.transferableAmount || 0;
+
+          const quotaBanner = rev.payosWarning ? `
+            <div style="background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:15px; margin-bottom:20px; color:#92400e; display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <strong>⚠️ Cảnh báo hạn mức PayOS (FREE-100)</strong>
+                <div style="font-size:0.85rem; margin-top:4px;">Đã sử dụng <strong>${/* safe */ rev.payosLinksCount}</strong> / <strong>${/* safe */ rev.payosMaxQuota}</strong> link thanh toán. Vui lòng liên hệ PayOS nâng cấp gói trả phí.</div>
+              </div>
+            </div>
+          ` : '';
+
+          const sweepsRows = (rev.recentSweeps && rev.recentSweeps.length > 0) ? rev.recentSweeps.map(s => `
+            <tr style="border-bottom:1px solid var(--border);">
+              <td style="padding:8px;"><code>#${/* safe */ s.sweepId.substring(0, 8)}</code></td>
+              <td style="padding:8px; color:var(--text-muted); font-size:0.85rem;">${new Date(s.createdAt).toLocaleString('vi-VN')}</td>
+              <td style="padding:8px; font-weight:700; color:#16a34a;">${formatTien(s.amount)}</td>
+              <td style="padding:8px;"><code>${escapeHtml(s.bankTransactionRef)}</code></td>
+              <td style="padding:8px; font-size:0.85rem;">${escapeHtml(s.note || '—')}</td>
+              <td style="padding:8px; font-size:0.85rem; color:var(--text-muted);">${escapeHtml(s.adminUserId)}</td>
+            </tr>
+          `).join('') : '<tr><td colspan="6" style="padding:15px; text-align:center; color:var(--text-muted);">Chưa có lượt rút doanh thu nào.</td></tr>';
+
+          container.innerHTML = `
+            ${/* safe */ quotaBanner}
+            <!-- Metric Cards -->
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:16px; margin-bottom:24px;">
+              <div style="background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:18px; border-left:4px solid #2563eb;">
+                <div style="font-size:0.8rem; color:var(--text-muted); text-transform:uppercase;">Doanh thu hoa hồng (10%)</div>
+                <div style="font-size:1.6rem; font-weight:700; color:#2563eb; margin:6px 0 2px;">${formatTien(rev.platformRevenue)}</div>
+                <div style="font-size:0.8rem; color:var(--text-muted);">Tổng doanh thu hoa hồng tích lũy</div>
+              </div>
+              <div style="background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:18px; border-left:4px solid #16a34a;">
+                <div style="font-size:0.8rem; color:var(--text-muted); text-transform:uppercase;">Khả dụng rút về tài khoản sàn</div>
+                <div style="font-size:1.6rem; font-weight:700; color:#16a34a; margin:6px 0 2px;">${formatTien(rev.transferableAmount)}</div>
+                <div style="font-size:0.8rem; color:var(--text-muted);">Đã trừ khoản đệm an toàn & phần đã rút</div>
+              </div>
+              <div style="background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:18px; border-left:4px solid #d97706;">
+                <div style="font-size:0.8rem; color:var(--text-muted); text-transform:uppercase;">Khoản đệm an toàn (Buffer)</div>
+                <div style="font-size:1.6rem; font-weight:700; color:#d97706; margin:6px 0 2px;">${formatTien(rev.revenueReserveBuffer)}</div>
+                <div style="font-size:0.8rem; color:var(--text-muted);">Đệm 48h đề phòng hoàn tiền/sai số phí</div>
+              </div>
+              <div style="background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:18px; border-left:4px solid #64748b;">
+                <div style="font-size:0.8rem; color:var(--text-muted); text-transform:uppercase;">Đã rút lũy kế (Swept Total)</div>
+                <div style="font-size:1.6rem; font-weight:700; color:#64748b; margin:6px 0 2px;">${formatTien(rev.sweptTotal)}</div>
+                <div style="font-size:0.8rem; color:var(--text-muted);">Tổng số tiền nền tảng đã rút</div>
+              </div>
+            </div>
+
+            <!-- Action Toolbar -->
+            <div style="display:flex; gap:12px; margin-bottom:24px;">
+              <button class="btn btn-primary" onclick="openSweepModal(${/* safe */ rev.transferableAmount}, ${/* safe */ rev.platformRevenue}, ${/* safe */ rev.revenueReserveBuffer})" ${/* safe */ rev.transferableAmount < 10000 ? 'disabled' : ''}>
+                🏦 Rút doanh thu nền tảng (Sweep)
+              </button>
+              <button class="btn btn-outline" onclick="exportMonthlyCsv()">
+                📊 Tải báo cáo doanh thu tháng (CSV)
+              </button>
+            </div>
+
+            <!-- Sweeps History Table -->
+            <div class="card" style="padding:20px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <h3 style="margin:0;">Lịch sử rút doanh thu nền tảng (Sweeps)</h3>
+                <span style="font-size:0.85rem; color:var(--text-muted);">${/* safe */ rev.recentSweeps?.length || 0} lượt</span>
+              </div>
+              <div style="overflow-x:auto;">
+                <table style="width:100%; border-collapse:collapse; font-size:0.9rem;">
+                  <thead>
+                    <tr style="text-align:left; border-bottom:2px solid var(--border); color:var(--text-secondary);">
+                      <th style="padding:8px;">Mã lượt rút</th>
+                      <th style="padding:8px;">Thời gian</th>
+                      <th style="padding:8px;">Số tiền</th>
+                      <th style="padding:8px;">Mã GD ngân hàng</th>
+                      <th style="padding:8px;">Ghi chú</th>
+                      <th style="padding:8px;">Admin thực hiện</th>
+                    </tr>
+                  </thead>
+                  <tbody>${/* safe */ sweepsRows}</tbody>
+                </table>
+              </div>
+            </div>
+          `;
+        } catch (err) {
+          showError(err.message || 'Lỗi tải tổng quan doanh thu.');
+          container.innerHTML = '';
+        }
+      } else if (subtab === 'suspense') {
+        container.innerHTML = '<div style="padding:20px; text-align:center;">Đang tải danh sách giao dịch bất thường...</div>';
+        try {
+          const items = await apiFetch('/payments/abnormal');
+          if (!items || items.length === 0) {
+            container.innerHTML = '<div class="card" style="text-align:center; padding:30px; color:var(--text-muted);">Không có giao dịch bất thường (SUSPENSE) nào đang chờ xử lý. Hệ thống an toàn!</div>';
+            return;
+          }
+
+          const rows = items.map(p => `
+            <tr style="border-bottom:1px solid var(--border);">
+              <td style="padding:10px 8px;"><strong>${/* safe */ p.orderCode}</strong></td>
+              <td style="padding:10px 8px; color:var(--text-muted); font-size:0.85rem;">${new Date(p.createdAt).toLocaleString('vi-VN')}</td>
+              <td style="padding:10px 8px; font-weight:700; color:#ea580c;">${formatTien(p.receivedAmount || p.amount)}</td>
+              <td style="padding:10px 8px; font-size:0.85rem; color:#b91c1c;">${escapeHtml(p.abnormalReason || 'Sai số tiền hoặc không xác định')}</td>
+              <td style="padding:10px 8px;">
+                <div style="display:flex; gap:6px;">
+                  <button class="btn btn-primary btn-sm" onclick="openSuspenseAssignModal('${/* safe */ p.orderCode}')">Gán vào đơn</button>
+                  <button class="btn btn-outline btn-sm" style="color:#ef4444; border-color:#ef4444;" onclick="openSuspenseRefundModal('${/* safe */ p.orderCode}')">Hoàn tiền</button>
+                  <button class="btn btn-outline btn-sm" onclick="showDecryptedSuspensePayer('${/* safe */ p.orderCode}')">👁️ STK người gửi</button>
+                </div>
+              </td>
+            </tr>
+          `).join('');
+
+          container.innerHTML = `
+            <div class="card" style="padding:20px;">
+              <h3 style="margin-top:0; margin-bottom:6px;">Giao dịch bất thường (Tài khoản SUSPENSE)</h3>
+              <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:15px;">Các khoản thanh toán chuyển sai số tiền hoặc gửi thừa tiền, tạm giữ an toàn trong tài khoản trung gian SUSPENSE chờ Admin xử lý gán hoặc hoàn trả.</p>
+              <div style="overflow-x:auto;">
+                <table style="width:100%; border-collapse:collapse; font-size:0.9rem;">
+                  <thead>
+                    <tr style="text-align:left; border-bottom:2px solid var(--border); color:var(--text-secondary);">
+                      <th style="padding:8px;">OrderCode</th>
+                      <th style="padding:8px;">Thời gian</th>
+                      <th style="padding:8px;">Số tiền nhận</th>
+                      <th style="padding:8px;">Lý do bất thường</th>
+                      <th style="padding:8px;">Thao tác xử lý</th>
+                    </tr>
+                  </thead>
+                  <tbody>${/* safe */ rows}</tbody>
+                </table>
+              </div>
+            </div>
+          `;
+        } catch (err) {
+          showError(err.message || 'Lỗi tải giao dịch bất thường.');
+          container.innerHTML = '';
+        }
+      } else if (subtab === 'reconciliation') {
+        container.innerHTML = '<div style="padding:20px; text-align:center;">Đang tải lịch sử kiểm toán đối soát sổ cái...</div>';
+        try {
+          const runs = await apiFetch('/admin/revenue/reconcile-history');
+          const latestRun = runs && runs.length > 0 ? runs[0] : null;
+
+          let latestSummaryHtml = '<p style="color:var(--text-muted); padding:10px 0;">Chưa có lượt chạy đối soát nào được ghi nhận. Bấm nút bên dưới để thực hiện kiểm toán ngay.</p>';
+          if (latestRun) {
+            const isMatch = latestRun.isBalanced;
+            const statusColor = isMatch ? '#16a34a' : '#ef4444';
+            const statusText = isMatch ? '✅ SỔ CÁI HOÀN TOÀN CÂN BẰNG' : '❌ PHÁT HIỆN LỆCH SỔ CÁI HOẶC BẤT BÌNH THƯỜNG';
+
+            latestSummaryHtml = `
+              <div style="background:var(--bg-secondary); border-radius:8px; padding:16px; border-left:4px solid ${/* safe */ statusColor}; margin-bottom:20px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <strong style="color:${/* safe */ statusColor}; font-size:1.1rem;">${/* safe */ statusText}</strong>
+                  <span style="font-size:0.85rem; color:var(--text-muted);">Lượt chạy gần nhất: ${new Date(latestRun.executedAt).toLocaleString('vi-VN')}</span>
+                </div>
+                <div style="margin-top:12px; font-size:0.9rem; line-height:1.6;">
+                  <div>• Cân bằng tiền mặt ngân hàng (Gateway Clearing): <strong>${/* safe */ latestRun.criteria1_BankBalanceMatch ? '✅ Khớp' : '❌ Lệch'}</strong> (Expected: ${formatTien(latestRun.expectedBankBalance)})</div>
+                  <div>• Đẳng thức tổng thể sổ cái (Ledger Identity): <strong>${/* safe */ latestRun.criteria2_InternalLedgerBalanced ? '✅ Cân' : '❌ Lệch'}</strong></div>
+                  <div>• Bất biến theo đơn (Per-Booking Invariants): <strong>${/* safe */ latestRun.criteria3_PerBookingInvariantsMatch ? '✅ Khớp 100%' : '❌ Vi phạm'}</strong></div>
+                  <div>• Tính hợp lệ Escrow đang giữ: <strong>${/* safe */ latestRun.criteria4_EscrowValidityMatch ? '✅ Đúng' : '❌ Lệch'}</strong></div>
+                  <div>• Tính toàn vẹn số dư ví Sitter (Reserved vs Open): <strong>${/* safe */ latestRun.criteria5_ReservedVsOpenMatch ? '✅ Khớp' : '❌ Lệch'}</strong></div>
+                  <div>• Đẳng thức doanh thu & rút sàn (Sweeps): <strong>${/* safe */ latestRun.criteria6_SweptBalanceMatch ? '✅ Khớp' : '❌ Lệch'}</strong></div>
+                  <div>• Giao dịch bất thường (Suspense Match): <strong>${/* safe */ latestRun.criteria7_SuspenseBalanceMatch ? '✅ Khớp' : '❌ Lệch'}</strong></div>
+                  <div>• Tính lũy đẳng & bù trừ sổ cái: <strong>${/* safe */ latestRun.criteria8_ZeroSumNetMatch ? '✅ Khớp' : '❌ Lệch'}</strong></div>
+                </div>
+                ${/* safe */ latestRun.issues && latestRun.issues.length > 0 ? `
+                  <div style="margin-top:10px; padding:10px; background:#fee2e2; color:#b91c1c; border-radius:6px; font-size:0.85rem;">
+                    <strong>Danh sách vấn đề phát hiện:</strong>
+                    <ul style="margin:4px 0 0 16px;">${latestRun.issues.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ul>
+                  </div>
+                ` : ''}
+              </div>
+            `;
+          }
+
+          const runRows = (runs && runs.length > 0) ? runs.map(r => `
+            <tr style="border-bottom:1px solid var(--border);">
+              <td style="padding:8px;"><code>#${/* safe */ r.runId.substring(0, 8)}</code></td>
+              <td style="padding:8px; font-size:0.85rem; color:var(--text-muted);">${new Date(r.executedAt).toLocaleString('vi-VN')}</td>
+              <td style="padding:8px;">${/* safe */ r.isBalanced ? '<span style="color:#16a34a; font-weight:600;">✅ Khớp</span>' : '<span style="color:#ef4444; font-weight:600;">❌ Lệch</span>'}</td>
+              <td style="padding:8px; font-size:0.85rem;">${/* safe */ r.reconciledBookingsCount} đơn</td>
+              <td style="padding:8px; font-size:0.85rem;">${/* safe */ r.reconciledEarningsAccountsCount} ví</td>
+              <td style="padding:8px; font-size:0.85rem; color:${/* safe */ (r.issues?.length || 0) > 0 ? '#ef4444' : '#16a34a'}; font-weight:600;">${/* safe */ r.issues?.length || 0} lỗi</td>
+            </tr>
+          `).join('') : '<tr><td colspan="6" style="padding:15px; text-align:center; color:var(--text-muted);">Chưa có lịch sử đối soát.</td></tr>';
+
+          container.innerHTML = `
+            <div class="card" style="padding:20px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                <h3 style="margin:0;">Kiểm toán & Đối soát Sổ cái kép (8 Tiêu chí)</h3>
+                <button class="btn btn-primary" onclick="runReconciliation()">🔍 Chạy kiểm toán đối soát ngay</button>
+              </div>
+              ${/* safe */ latestSummaryHtml}
+              <h4 style="margin:20px 0 10px; font-size:1rem;">Lịch sử các lượt kiểm toán</h4>
+              <div style="overflow-x:auto;">
+                <table style="width:100%; border-collapse:collapse; font-size:0.9rem;">
+                  <thead>
+                    <tr style="text-align:left; border-bottom:2px solid var(--border); color:var(--text-secondary);">
+                      <th style="padding:8px;">Mã lượt</th>
+                      <th style="padding:8px;">Thời gian</th>
+                      <th style="padding:8px;">Kết quả</th>
+                      <th style="padding:8px;">Số đơn quét</th>
+                      <th style="padding:8px;">Số ví quét</th>
+                      <th style="padding:8px;">Cảnh báo</th>
+                    </tr>
+                  </thead>
+                  <tbody>${/* safe */ runRows}</tbody>
+                </table>
+              </div>
+            </div>
+          `;
+        } catch (err) {
+          showError(err.message || 'Lỗi tải lịch sử đối soát.');
+          container.innerHTML = '';
+        }
+      }
+    }
+
+    function openSweepModal(transferable, revenue, buffer) {
+      document.getElementById('sweep-platform-revenue').textContent = formatTien(revenue);
+      document.getElementById('sweep-buffer-amount').textContent = formatTien(buffer);
+      document.getElementById('sweep-max-transferable').textContent = formatTien(transferable);
+      document.getElementById('sweep-input-amount').value = transferable > 0 ? transferable : '';
+      document.getElementById('sweep-input-amount').max = transferable;
+      document.getElementById('sweep-modal').style.display = 'flex';
+    }
+
+    function closeSweepModal() {
+      document.getElementById('sweep-modal').style.display = 'none';
+    }
+
+    async function submitSweep() {
+      const amount = parseInt(document.getElementById('sweep-input-amount').value, 10);
+      const bankRef = document.getElementById('sweep-input-ref').value.trim();
+      const note = document.getElementById('sweep-input-note').value.trim();
+
+      if (!amount || amount < 10000) {
+        showError('Số tiền rút tối thiểu là 10.000 ₫.');
+        return;
+      }
+      if (!bankRef || !note) {
+        showError('Vui lòng nhập đầy đủ mã giao dịch ngân hàng và ghi chú.');
+        return;
+      }
+
+      try {
+        await apiFetch('/admin/revenue/sweep', {
+          method: 'POST',
+          body: JSON.stringify({ amount, bankTransactionRef: bankRef, note })
+        });
+        showToast('Đã rút doanh thu nền tảng thành công!', 3000, '✅');
+        closeSweepModal();
+        loadRevenueOverview('overview');
+      } catch (err) {
+        showError(err.message || 'Lỗi khi rút doanh thu.');
+      }
+    }
+
+    function exportMonthlyCsv() {
+      const now = new Date();
+      const inputStr = prompt('Nhập tháng và năm cần xuất báo cáo (VD: 10/2026):', `${now.getMonth() + 1}/${now.getFullYear()}`);
+      if (!inputStr) return;
+      const parts = inputStr.split('/');
+      if (parts.length !== 2) {
+        showError('Định dạng không hợp lệ. Vui lòng nhập định dạng MM/YYYY.');
+        return;
+      }
+      const month = parseInt(parts[0], 10);
+      const year = parseInt(parts[1], 10);
+      if (isNaN(month) || isNaN(year) || month < 1 || month > 12) {
+        showError('Tháng hoặc năm không hợp lệ.');
+        return;
+      }
+
+      const token = localStorage.getItem('pawstay_token');
+      const url = `/api/admin/revenue/monthly-csv?year=${year}&month=${month}`;
+
+      fetch(url, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      .then(res => {
+        if (!res.ok) throw new Error('Không thể tải file CSV.');
+        return res.blob();
+      })
+      .then(blob => {
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = `BaoCao_DoanhThu_${year}_${month.toString().padStart(2, '0')}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        showToast('Đã tải xuống báo cáo doanh thu CSV!', 3000, '📊');
+      })
+      .catch(err => showError(err.message));
+    }
+
+    async function runReconciliation() {
+      if (!confirm('Khởi chạy kiểm toán đối soát toàn bộ sổ cái kép và số dư hệ thống?')) return;
+      try {
+        await apiFetch('/admin/revenue/reconcile', { method: 'POST' });
+        showToast('Đã hoàn tất lượt đối soát sổ cái!', 3000, '✅');
+        loadRevenueOverview('reconciliation');
+      } catch (err) {
+        showError(err.message || 'Lỗi khi chạy đối soát.');
+      }
+    }
+
+    function openSuspenseAssignModal(orderCode) {
+      document.getElementById('assign-order-code').value = orderCode;
+      document.getElementById('assign-booking-id').value = '';
+      document.getElementById('assign-note').value = '';
+      document.getElementById('suspense-assign-modal').style.display = 'flex';
+    }
+
+    function closeSuspenseAssignModal() {
+      document.getElementById('suspense-assign-modal').style.display = 'none';
+    }
+
+    async function submitSuspenseAssign() {
+      const orderCode = document.getElementById('assign-order-code').value;
+      const bookingId = document.getElementById('assign-booking-id').value.trim();
+      const note = document.getElementById('assign-note').value.trim();
+
+      if (!bookingId || !note) {
+        showError('Vui lòng điền mã đơn đặt lịch và lý do gán.');
+        return;
+      }
+
+      try {
+        await apiFetch(`/payments/${orderCode}/suspense/assign`, {
+          method: 'POST',
+          body: JSON.stringify({ bookingId, note })
+        });
+        showToast('Đã gán giao dịch bất thường vào đơn thành công!', 3000, '✅');
+        closeSuspenseAssignModal();
+        loadRevenueOverview('suspense');
+      } catch (err) {
+        showError(err.message || 'Lỗi khi gán giao dịch bất thường.');
+      }
+    }
+
+    function openSuspenseRefundModal(orderCode) {
+      document.getElementById('refund-order-code').value = orderCode;
+      document.getElementById('refund-reason').value = '';
+      document.getElementById('suspense-refund-modal').style.display = 'flex';
+    }
+
+    function closeSuspenseRefundModal() {
+      document.getElementById('suspense-refund-modal').style.display = 'none';
+    }
+
+    async function submitSuspenseRefund() {
+      const orderCode = document.getElementById('refund-order-code').value;
+      const reason = document.getElementById('refund-reason').value.trim();
+
+      if (!reason) {
+        showError('Vui lòng nhập lý do hoàn tiền.');
+        return;
+      }
+
+      try {
+        await apiFetch(`/payments/${orderCode}/suspense/refund`, {
+          method: 'POST',
+          body: JSON.stringify({ reason })
+        });
+        showToast('Đã tạo yêu cầu hoàn tiền cho người trả!', 3000, '✅');
+        closeSuspenseRefundModal();
+        loadRevenueOverview('suspense');
+      } catch (err) {
+        showError(err.message || 'Lỗi khi tạo yêu cầu hoàn tiền.');
+      }
+    }
+
+    async function showDecryptedSuspensePayer(orderCode) {
+      try {
+        const data = await apiFetch(`/payments/${orderCode}/decrypted-account`);
+        document.getElementById('decrypt-bank-name').textContent = data.bankName || '—';
+        document.getElementById('decrypt-account-number').textContent = data.accountNumber || '—';
+        document.getElementById('decrypt-account-holder').textContent = data.accountName || '—';
+        document.getElementById('bank-decrypt-modal').style.display = 'flex';
+      } catch (err) {
+        showError(err.message || 'Không tìm thấy thông tin tài khoản người trả.');
       }
     }
   </script>

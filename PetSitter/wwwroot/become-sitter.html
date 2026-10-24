@@ -1,11 +1,11 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Đăng ký làm Sitter - PawStay</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>">
-  <link rel="stylesheet" href="assets/style.css" />
+  <link rel="stylesheet" href="assets/style.css?v=4" />
   <style>
     .form-card { max-width: 600px; margin: 40px auto; padding: 30px; background: var(--bg-card); border-radius: var(--radius-xl); border: 1px solid var(--border); }
     .form-group { margin-bottom: 20px; }
@@ -23,9 +23,9 @@
     <div id="content">Đang tải...</div>
   </div>
 
-  <script src="assets/data.js"></script>
-  <script src="assets/api.js"></script>
-  <script src="assets/components.js"></script>
+  <script src="assets/data.js?v=4"></script>
+  <script src="assets/api.js?v=4"></script>
+  <script src="assets/components.js?v=4"></script>
   <script>
     document.addEventListener('DOMContentLoaded', async () => {
       if (!localStorage.getItem('pawstay_token')) {
@@ -40,7 +40,15 @@
         if (profile.status === 'Pending') {
           content.innerHTML = `<div class="status-box status-pending"><h3>Hồ sơ đang chờ duyệt</h3><p>Vui lòng kiên nhẫn, quản trị viên đang xem xét hồ sơ của bạn.</p></div>`;
         } else if (profile.status === 'Approved') {
-          content.innerHTML = `<div class="status-box status-approved"><h3>Hồ sơ đã được duyệt! 🎉</h3><p>Bạn đã là một Pet-sitter của PawStay. Vui lòng đăng nhập lại để cập nhật quyền hạn.</p></div>`;
+          content.innerHTML = `
+            <div class="status-box status-approved">
+              <h3>Hồ sơ đã được duyệt! 🎉</h3>
+              <p>Bạn đã là một Pet-sitter của PawStay. Vui lòng đăng xuất và đăng nhập lại để cập nhật quyền hạn hoặc truy cập trực tiếp nếu đã có quyền.</p>
+              <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+                <button class="btn btn-outline" onclick="logout()">Đăng xuất để cập nhật quyền</button>
+                <a href="sitter-dashboard.html" class="btn btn-primary">Vào Bảng điều khiển Sitter</a>
+              </div>
+            </div>`;
         } else if (profile.status === 'Rejected') {
           content.innerHTML = `
             <div class="status-box status-rejected">

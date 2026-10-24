@@ -58,5 +58,6 @@ namespace PetSitter.Models
         public const string CANCELLED = "CANCELLED";
         public const string EXPIRED = "EXPIRED";
         public const string ABNORMAL = "ABNORMAL";
+        public const string REFUND_PENDING = "REFUND_PENDING";
     }
 }

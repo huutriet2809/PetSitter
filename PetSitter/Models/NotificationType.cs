@@ -24,5 +24,12 @@ namespace PetSitter.Models
         public const string REFUND_PENDING = "REFUND_PENDING";
         public const string REFUND_COMPLETED = "REFUND_COMPLETED";
         public const string PAYMENT_ABNORMAL = "PAYMENT_ABNORMAL";
+
+        // Payouts & Banking
+        public const string WITHDRAWAL_APPROVED = "WITHDRAWAL_APPROVED";
+        public const string WITHDRAWAL_REJECTED = "WITHDRAWAL_REJECTED";
+        public const string WITHDRAWAL_PAID = "WITHDRAWAL_PAID";
+        public const string BANK_ACCOUNT_UPDATED = "BANK_ACCOUNT_UPDATED";
+        public const string RECONCILIATION_ALERT = "RECONCILIATION_ALERT";
     }
 }

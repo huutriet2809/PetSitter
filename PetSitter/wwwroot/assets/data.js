@@ -20,12 +20,12 @@ const FAQ_DATA = [
   {
     id: 2,
     cauHoi: "Chính sách hủy lịch và hoàn tiền như thế nào?",
-    traLoi: "PawStay hỗ trợ hủy lịch miễn phí 100% trước 48 giờ tính từ lúc bắt đầu dịch vụ. Nếu hủy trong vòng 24-48 giờ, bạn được hoàn 50%. Vui lòng xem chi tiết tại trang Chính sách hoàn tiền."
+    traLoi: "Chính sách hủy đơn căn cứ theo mốc 00:00 ngày bắt đầu dịch vụ: Hủy trước ≥ 48 giờ hoàn 100%; hủy từ 24 đến dưới 48 giờ hoàn 50%; hủy dưới 24 giờ hoàn 0%. Từ 00:00 ngày bắt đầu dịch vụ trở đi, chức năng hủy trực tuyến sẽ tự động khóa; trường hợp khẩn cấp vui lòng liên hệ bộ phận hỗ trợ PawStay."
   },
   {
     id: 3,
-    cauHoi: "Thú cưng của tôi có được bảo hiểm không?",
-    traLoi: "Tất cả các lượt đặt lịch hoàn tất thanh toán qua PawStay đều được bảo hiểm chăm sóc sức khỏe khẩn cấp cho thú cưng với mức hỗ trợ lên đến 5.000.000đ trong suốt thời gian lưu trú."
+    cauHoi: "Quyền lợi tài chính và an toàn của tôi được đảm bảo như thế nào?",
+    traLoi: "Toàn bộ tiền thanh toán được PawStay giữ an toàn qua cơ chế Escrow trong suốt thời gian dịch vụ. Khách hàng có thể gửi Khiếu nại (Dispute) sau khi dịch vụ kết thúc, trong thời hạn chờ xác nhận hoàn tất; Quản trị viên sẽ xem xét và phân xử theo chính sách hoàn tiền. Trong lúc dịch vụ đang diễn ra, vui lòng liên hệ hỗ trợ PawStay."
   },
   {
     id: 4,
@@ -122,15 +122,6 @@ function getCurrentUser() {
 function setLoggedIn(user, token) {
   localStorage.setItem('pawstay_user', JSON.stringify(user));
   if (token) localStorage.setItem('pawstay_token', token);
-}
-
-function logout() {
-  if (typeof window.stopNotifPolling === 'function') {
-    window.stopNotifPolling();
-  }
-  localStorage.removeItem('pawstay_user');
-  localStorage.removeItem('pawstay_token');
-  window.location.href = 'index.html';
 }
 
 function getBookingHistory() {

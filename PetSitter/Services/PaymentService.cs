@@ -113,6 +113,16 @@ namespace PetSitter.Services
             var desc = $"PS {booking.MaDatLich}";
             if (desc.Length > 25) desc = desc.Substring(0, 25);
 
+            // Kiểm tra hạn mức gói PayOS trong kỳ
+            var quota = _config.GetValue<long>("Payments:PayosPlanQuota", 100);
+            var baseline = _config.GetValue<long>("Payments:PayosPlanUsedBaseline", 5);
+            var platformAcc = await _context.PlatformAccounts.Find(p => p.AccountId == "platform_main").FirstOrDefaultAsync();
+            long linksCreated = platformAcc?.PayosLinksCreatedCount ?? 0;
+            if (baseline + linksCreated >= quota)
+            {
+                throw new BadRequestException("Hệ thống thanh toán trực tuyến hiện đang tạm thời hết hạn mức giao dịch trong kỳ. Vui lòng liên hệ bộ phận hỗ trợ hoặc thanh toán sau.");
+            }
+
             var gatewayReq = new CreatePaymentLinkRequest
             {
                 OrderCode = orderCode,
@@ -140,6 +150,24 @@ namespace PetSitter.Services
             };
 
             await _context.Payments.InsertOneAsync(payment);
+
+            // Tăng bộ đếm link đã tạo trên PlatformAccount
+            var updatedPlatformAcc = await _context.PlatformAccounts.FindOneAndUpdateAsync(
+                p => p.AccountId == "platform_main",
+                Builders<PlatformAccount>.Update
+                    .Inc(p => p.PayosLinksCreatedCount, 1)
+                    .Set(p => p.UpdatedAt, nowUtc),
+                new FindOneAndUpdateOptions<PlatformAccount> { IsUpsert = true, ReturnDocument = ReturnDocument.After }
+            );
+
+            // Cảnh báo hạn mức PayOS nếu còn ít
+            long remaining = quota - (baseline + (updatedPlatformAcc?.PayosLinksCreatedCount ?? 0));
+            long warningRemaining = _config.GetValue<long>("Payments:QuotaWarningRemaining", 15);
+            if (remaining <= warningRemaining)
+            {
+                _logger.LogWarning("CẢNH BÁO HẠN MỨC PAYOS: Số link thanh toán còn lại ({Remaining}/{Quota}) đã đạt ngưỡng cảnh báo ({WarningRemaining}).",
+                    remaining, quota, warningRemaining);
+            }
 
             return new PaymentLinkDto
             {
@@ -480,6 +508,38 @@ namespace PetSitter.Services
             };
             await _ledgerService.RecordEntryAsync(journalEntry);
 
+            // Ghi nhận phí cổng (GATEWAY_FEES) nếu có cấu hình
+            var gatewayFee = _config.GetValue<long>("Payments:GatewayFeePerTransaction", 0);
+            if (gatewayFee > 0)
+            {
+                var feeEntry = new JournalEntry
+                {
+                    EntryId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                    BookingId = payment.BookingId,
+                    TransactionId = "TX" + nowUtc.ToString("yyMMddHHmmss") + "FEE",
+                    Type = JournalType.GATEWAY_FEE,
+                    ActorUserId = "SYSTEM",
+                    CreatedAt = nowUtc,
+                    IdempotencyKey = LedgerIdempotencyKeys.GatewayFee(payment.OrderCode),
+                    Lines = new List<JournalLine>
+                    {
+                        new JournalLine
+                        {
+                            Account = LedgerAccounts.GATEWAY_FEES,
+                            Direction = LedgerDirection.DEBIT,
+                            Amount = gatewayFee
+                        },
+                        new JournalLine
+                        {
+                            Account = LedgerAccounts.GATEWAY_CLEARING,
+                            Direction = LedgerDirection.CREDIT,
+                            Amount = gatewayFee
+                        }
+                    }
+                };
+                await _ledgerService.RecordEntryAsync(feeEntry);
+            }
+
             // Gửi thông báo in-app (an toàn với DedupeKey)
             try
             {
@@ -770,6 +830,220 @@ namespace PetSitter.Services
                 r => r.RefundId == refundRequest.RefundId,
                 Builders<RefundRequest>.Update.Set(r => r.EncryptedRefundAccount, encrypted)
             );
+        }
+
+        public async Task AssignSuspensePaymentAsync(string adminUserId, long orderCode, AssignSuspenseDto dto, DateTime nowUtc)
+        {
+            var payment = await _context.Payments.Find(p => p.OrderCode == orderCode && p.IsAbnormal == true).FirstOrDefaultAsync();
+            if (payment == null)
+            {
+                throw new NotFoundException($"Không tìm thấy giao dịch bất thường (SUSPENSE) với OrderCode {orderCode}.");
+            }
+
+            var booking = await _context.Bookings.Find(b => b.BookingId == dto.BookingId.Trim()).FirstOrDefaultAsync();
+            if (booking == null)
+            {
+                throw new NotFoundException($"Không tìm thấy đơn đặt lịch {dto.BookingId}.");
+            }
+
+            if (booking.TrangThai != BookingStatus.ACCEPTED || booking.PaymentStatus != PaymentStatus.PENDING_PAYMENT)
+            {
+                throw new BadRequestException($"Đơn {booking.MaDatLich} không ở trạng thái chờ thanh toán (hiện tại: {booking.TrangThai}/{booking.PaymentStatus}).");
+            }
+
+            var expectedAmount = booking.TotalAmount > 0 ? booking.TotalAmount : (long)booking.TongTien;
+            if (expectedAmount != payment.ReceivedAmount)
+            {
+                throw new BadRequestException($"Số tiền đơn ({expectedAmount:N0} ₫) không khớp với số tiền thực nhận ({payment.ReceivedAmount:N0} ₫).");
+            }
+
+            // Chuyển booking sang HELD
+            await _context.Bookings.UpdateOneAsync(
+                b => b.BookingId == booking.BookingId && b.PaymentStatus == PaymentStatus.PENDING_PAYMENT,
+                Builders<Booking>.Update
+                    .Set(b => b.PaymentStatus, PaymentStatus.HELD)
+                    .Push(b => b.History, new InquiryHistory
+                    {
+                        HanhDong = "PAYMENT_HELD_FROM_SUSPENSE",
+                        FromStatus = booking.TrangThai,
+                        NguoiThucHien = "ADMIN",
+                        ActorUserId = adminUserId,
+                        LyDo = $"Gán từ giao dịch bất thường OrderCode {orderCode}: {dto.Note}",
+                        ThoiGian = nowUtc
+                    })
+            );
+
+            // Cập nhật Payment sang PAID hợp lệ
+            await _context.Payments.UpdateOneAsync(
+                p => p.OrderCode == orderCode,
+                Builders<Payment>.Update
+                    .Set(p => p.Status, PaymentLinkStatus.PAID)
+                    .Set(p => p.IsAbnormal, false)
+                    .Set(p => p.BookingId, booking.BookingId)
+                    .Set(p => p.PaidAt, nowUtc)
+            );
+
+            var receivedAmt = payment.ReceivedAmount ?? payment.Amount;
+
+            // Ghi sổ chuyển từ SUSPENSE -> ESCROW_HELD
+            var journalEntry = new JournalEntry
+            {
+                EntryId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                BookingId = booking.BookingId,
+                TransactionId = "TX" + nowUtc.ToString("yyMMddHHmmss") + "ASGN",
+                Type = JournalType.SUSPENSE_ASSIGN_BOOKING,
+                ActorUserId = adminUserId,
+                CreatedAt = nowUtc,
+                IdempotencyKey = LedgerIdempotencyKeys.SuspenseAssign(orderCode),
+                Lines = new List<JournalLine>
+                {
+                    new JournalLine
+                    {
+                        Account = LedgerAccounts.SUSPENSE,
+                        Direction = LedgerDirection.DEBIT,
+                        Amount = receivedAmt
+                    },
+                    new JournalLine
+                    {
+                        Account = LedgerAccounts.ESCROW_HELD,
+                        Direction = LedgerDirection.CREDIT,
+                        Amount = receivedAmt
+                    }
+                }
+            };
+            await _ledgerService.RecordEntryAsync(journalEntry);
+
+            _logger.LogInformation("[AUDIT] Admin {AdminUserId} đã gán giao dịch bất thường {OrderCode} ({Amount} ₫) vào đơn {BookingId}. Note: {Note}",
+                adminUserId, orderCode, receivedAmt, booking.BookingId, dto.Note);
+        }
+
+        public async Task RefundSuspensePaymentAsync(string adminUserId, long orderCode, RefundSuspenseDto dto, DateTime nowUtc)
+        {
+            var payment = await _context.Payments.Find(p => p.OrderCode == orderCode && p.IsAbnormal == true).FirstOrDefaultAsync();
+            if (payment == null)
+            {
+                throw new NotFoundException($"Không tìm thấy giao dịch bất thường (SUSPENSE) với OrderCode {orderCode}.");
+            }
+
+            var receivedAmt = payment.ReceivedAmount ?? payment.Amount;
+            var settlementKey = LedgerIdempotencyKeys.SuspenseRefund(orderCode);
+
+            // Kiểm tra đã có RefundRequest chưa (idempotent)
+            var existingRefund = await _context.RefundRequests.Find(r => r.SettlementKey == settlementKey).FirstOrDefaultAsync();
+            if (existingRefund != null)
+            {
+                return; // Đã xử lý
+            }
+
+            var refund = new RefundRequest
+            {
+                RefundId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                BookingId = "SUSPENSE:" + orderCode,
+                PaymentId = payment.PaymentId,
+                SettlementKey = settlementKey,
+                OwnerUserId = "SUSPENSE_PAYER",
+                Amount = receivedAmt,
+                Reason = dto.Reason.Trim(),
+                Status = RefundStatus.REFUND_PENDING,
+                AdminUserId = adminUserId,
+                AdminNote = dto.Reason.Trim(),
+                CreatedAt = nowUtc
+            };
+            await _context.RefundRequests.InsertOneAsync(refund);
+
+            // Cập nhật Payment sang REFUND_PENDING
+            await _context.Payments.UpdateOneAsync(
+                p => p.OrderCode == orderCode,
+                Builders<Payment>.Update.Set(p => p.Status, PaymentLinkStatus.REFUND_PENDING)
+            );
+
+            // Ghi sổ: DEBIT SUSPENSE, CREDIT REFUND_PENDING
+            var journalEntry = new JournalEntry
+            {
+                EntryId = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                BookingId = "SUSPENSE:" + orderCode,
+                TransactionId = "TX" + nowUtc.ToString("yyMMddHHmmss") + "SRFN",
+                Type = JournalType.SUSPENSE_REFUND_OWNER,
+                ActorUserId = adminUserId,
+                CreatedAt = nowUtc,
+                IdempotencyKey = settlementKey,
+                Lines = new List<JournalLine>
+                {
+                    new JournalLine
+                    {
+                        Account = LedgerAccounts.SUSPENSE,
+                        Direction = LedgerDirection.DEBIT,
+                        Amount = receivedAmt
+                    },
+                    new JournalLine
+                    {
+                        Account = LedgerAccounts.REFUND_PENDING,
+                        Direction = LedgerDirection.CREDIT,
+                        Amount = receivedAmt
+                    }
+                }
+            };
+            await _ledgerService.RecordEntryAsync(journalEntry);
+
+            _logger.LogInformation("[AUDIT] Admin {AdminUserId} đã tạo yêu cầu hoàn tiền cho giao dịch bất thường {OrderCode} ({Amount} ₫). Lý do: {Reason}",
+                adminUserId, orderCode, receivedAmt, dto.Reason);
+        }
+
+        public async Task<DecryptedAccountDto> GetDecryptedRefundAccountAsync(string adminUserId, string refundId, string? ipAddress, DateTime nowUtc)
+        {
+            var refund = await _context.RefundRequests.Find(r => r.RefundId == refundId).FirstOrDefaultAsync();
+            if (refund == null)
+            {
+                throw new NotFoundException("Yêu cầu hoàn tiền không tồn tại.");
+            }
+
+            // Ghi log kiểm toán (Audit log)
+            _logger.LogInformation("[AUDIT] Admin {AdminUserId} đã xem thông tin tài khoản hoàn tiền giải mã cho RefundId {RefundId} từ IP {IpAddress} lúc {NowUtc}",
+                adminUserId, refundId, ipAddress, nowUtc);
+
+            string? json = null;
+            if (!string.IsNullOrEmpty(refund.EncryptedRefundAccount))
+            {
+                try
+                {
+                    json = _protector.Unprotect(refund.EncryptedRefundAccount);
+                }
+                catch { }
+            }
+
+            if (json == null && !string.IsNullOrEmpty(refund.PaymentId))
+            {
+                var pay = await _context.Payments.Find(p => p.PaymentId == refund.PaymentId).FirstOrDefaultAsync();
+                if (pay != null && !string.IsNullOrEmpty(pay.EncryptedPayerInfo))
+                {
+                    try
+                    {
+                        json = _protector.Unprotect(pay.EncryptedPayerInfo);
+                    }
+                    catch { }
+                }
+            }
+
+            if (string.IsNullOrEmpty(json))
+            {
+                return new DecryptedAccountDto
+                {
+                    BankName = "Chưa có thông tin",
+                    AccountNumber = "Chưa cung cấp",
+                    AccountHolderName = "Chưa cung cấp"
+                };
+            }
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            return new DecryptedAccountDto
+            {
+                BankName = root.TryGetProperty("BankName", out var bn) ? bn.GetString() ?? "" : (root.TryGetProperty("bankName", out var bn2) ? bn2.GetString() ?? "" : ""),
+                BankBin = root.TryGetProperty("BankBin", out var bb) ? bb.GetString() ?? "" : (root.TryGetProperty("bankBin", out var bb2) ? bb2.GetString() ?? "" : (root.TryGetProperty("BankId", out var bi) ? bi.GetString() ?? "" : "")),
+                AccountNumber = root.TryGetProperty("AccountNumber", out var an) ? an.GetString() ?? "" : (root.TryGetProperty("accountNumber", out var an2) ? an2.GetString() ?? "" : ""),
+                AccountHolderName = root.TryGetProperty("AccountName", out var ah) ? ah.GetString() ?? "" : (root.TryGetProperty("accountName", out var ah2) ? ah2.GetString() ?? "" : (root.TryGetProperty("AccountHolderName", out var ah3) ? ah3.GetString() ?? "" : ""))
+            };
         }
     }
 }

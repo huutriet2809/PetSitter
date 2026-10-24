@@ -44,8 +44,17 @@ namespace TestPaymentFlow
             var context = new PetSitterContext(database);
 
             // Data Protection Service Provider
+            var dpKeyDir = config.GetValue<string>("Payments:DataProtection:KeyDirectory");
+            if (string.IsNullOrWhiteSpace(dpKeyDir))
+            {
+                dpKeyDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PetSitterKeys");
+            }
+            Directory.CreateDirectory(dpKeyDir);
+
             var services = new ServiceCollection();
-            services.AddDataProtection();
+            services.AddDataProtection()
+                .PersistKeysToFileSystem(new DirectoryInfo(dpKeyDir))
+                .SetApplicationName("PetSitterApp");
             var sp = services.BuildServiceProvider();
             var dpProvider = sp.GetRequiredService<IDataProtectionProvider>();
 
@@ -61,6 +70,7 @@ namespace TestPaymentFlow
             // Clean up any stale test bookings and payments from previous runs
             await context.Bookings.DeleteManyAsync(b => b.MaDatLich != null && (b.MaDatLich.Contains("LEG") || b.MaDatLich.Contains("CANP") || b.MaDatLich.Contains("RACE") || b.MaDatLich.Contains("B48_") || b.MaDatLich.Contains("B47_") || b.MaDatLich.Contains("B24_") || b.MaDatLich.Contains("B23_") || b.MaDatLich.Contains("B_SPLIT")));
             await context.Payments.DeleteManyAsync(p => p.OrderCode >= 800000000);
+            await context.WithdrawalRequests.DeleteManyAsync(w => w.IdempotencyKey != null && w.IdempotencyKey.Contains("IDEMP"));
 
             var testPrefix = "TEST_PAY_" + Guid.NewGuid().ToString("N").Substring(0, 8);
             var createdUserIds = new List<string>();
@@ -2017,6 +2027,22 @@ namespace TestPaymentFlow
                     createdBookingIds.Add(bNoPay1.BookingId);
                     createdBookingIds.Add(bNoPay2.BookingId);
 
+                    await ledgerService.RecordEntryAsync(new JournalEntry
+                    {
+                        EntryId = ObjectId.GenerateNewId().ToString(),
+                        BookingId = bNoPay1.BookingId,
+                        TransactionId = "TX_NO_PAY_1_HELD",
+                        Type = JournalType.PAYMENT_HELD,
+                        ActorUserId = "OWNER",
+                        CreatedAt = nowUtc,
+                        IdempotencyKey = $"{bNoPay1.BookingId}:PAYMENT_HELD:1",
+                        Lines = new List<JournalLine>
+                        {
+                            new JournalLine { Account = LedgerAccounts.GATEWAY_CLEARING, Direction = LedgerDirection.DEBIT, Amount = 300000 },
+                            new JournalLine { Account = LedgerAccounts.ESCROW_HELD, Direction = LedgerDirection.CREDIT, Amount = 300000 }
+                        }
+                    });
+
                     var plan1 = new SettlementPlan
                     {
                         SettlementKey = LedgerIdempotencyKeys.CancelOwner100(bNoPay1.BookingId),
@@ -2060,6 +2086,12 @@ namespace TestPaymentFlow
                             .Set(b => b.PaymentStatus, PaymentStatus.REFUND_PENDING)
                             .Set(b => b.Settlement, plan1)
                             .Set(b => b.ClaimedAt, nowUtc)
+                    );
+                    await context.Bookings.UpdateOneAsync(
+                        b => b.BookingId == bNoPay2.BookingId,
+                        Builders<Booking>.Update
+                            .Set(b => b.TrangThai, BookingStatus.CANCELLED)
+                            .Set(b => b.PaymentStatus, PaymentStatus.CANCELLED)
                     );
 
                     // Xóa RefundRequest của bNoPay1
@@ -2220,6 +2252,23 @@ namespace TestPaymentFlow
                     var entryCount3 = await context.JournalEntries.CountDocumentsAsync(j => j.BookingId == bInterrupted.BookingId);
                     var refCount3 = await context.RefundRequests.CountDocumentsAsync(r => r.BookingId == bInterrupted.BookingId);
                     AssertTrue(entryCount3 == 1 && refCount3 == 1, "Gọi lại lần 3 vẫn giữ nguyên tính bất biến idempotent (1 bút toán, 1 RefundRequest)");
+
+                    // Bù bút toán PAYMENT_HELD cho bInterrupted sau khi test xong để bảo toàn bất biến ESCROW_HELD toàn cục
+                    await ledgerService.RecordEntryAsync(new JournalEntry
+                    {
+                        EntryId = ObjectId.GenerateNewId().ToString(),
+                        BookingId = bInterrupted.BookingId,
+                        TransactionId = "TX_INTERRUPTED_HELD",
+                        Type = JournalType.PAYMENT_HELD,
+                        ActorUserId = "OWNER",
+                        CreatedAt = nowUtc.AddHours(-1),
+                        IdempotencyKey = $"{bInterrupted.BookingId}:PAYMENT_HELD:1",
+                        Lines = new List<JournalLine>
+                        {
+                            new JournalLine { Account = LedgerAccounts.GATEWAY_CLEARING, Direction = LedgerDirection.DEBIT, Amount = 500000 },
+                            new JournalLine { Account = LedgerAccounts.ESCROW_HELD, Direction = LedgerDirection.CREDIT, Amount = 500000 }
+                        }
+                    });
                 }
 
                 // =========================================================================
@@ -2349,6 +2398,20 @@ namespace TestPaymentFlow
                     AssertTrue(legacyBooking != null && legacyBooking.TotalAmount == 500000,
                         "Sitter cũ sau migration tạo và nhận đơn thành công qua dịch vụ chính IsPrimary");
                 }
+
+                // =========================================================================
+                // TEST SUITE PROMPT 5B: RÚT TIỀN, DOANH THU & ĐỐI SOÁT
+                // =========================================================================
+                await Test5BPayoutsFlow.RunAsync(
+                    context,
+                    config,
+                    dpProvider,
+                    fakeGateway,
+                    ledgerService,
+                    AssertTrue,
+                    createdUserIds,
+                    createdBookingIds
+                );
             }
             finally
             {
@@ -2369,6 +2432,8 @@ namespace TestPaymentFlow
                 {
                     await context.Users.DeleteManyAsync(u => createdUserIds.Contains(u.UserId));
                     await context.Notifications.DeleteManyAsync(n => createdUserIds.Contains(n.UserId));
+                    await context.WithdrawalRequests.DeleteManyAsync(w => createdUserIds.Contains(w.SitterUserId));
+                    await context.EarningsAccounts.DeleteManyAsync(e => createdUserIds.Contains(e.UserId));
                 }
                 if (createdSitterIds.Any())
                 {
@@ -2376,6 +2441,14 @@ namespace TestPaymentFlow
                     await context.SitterServices.DeleteManyAsync(s => createdSitterIds.Contains(s.SitterId));
                     await context.SitterAvailabilities.DeleteManyAsync(s => createdSitterIds.Contains(s.SitterId));
                 }
+                // Dọn các sweep và reconciliation run test
+                await context.RevenueSweeps.DeleteManyAsync(s => s.BankTransactionRef != null && (s.BankTransactionRef.Contains("TEST5B") || s.BankTransactionRef.Contains("SWP_") || s.BankTransactionRef.Contains("INJECT")));
+                await context.ReconciliationRuns.DeleteManyAsync(r => r.RunId != null);
+                // Reset platform account swept total for testing cleanliness
+                await context.PlatformAccounts.UpdateOneAsync(
+                    p => p.AccountId == "platform_main",
+                    Builders<PlatformAccount>.Update.Set(p => p.SweptTotal, 0).Set(p => p.Version, 1)
+                );
                 Console.WriteLine("Đã dọn dẹp sạch toàn bộ dữ liệu test trong PetSitterDb.");
             }
 
