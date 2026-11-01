@@ -1,0 +1,99 @@
+/* =====================================================
+   PAGE-SPECIFIC STYLES: BECOME SITTER
+   ===================================================== */
+.form-card {
+  max-width: 600px;
+  margin: 40px auto;
+  padding: 30px;
+  background: var(--bg-card);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border);
+}
+
+.page-title {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+input[type="text"],
+input[type="number"],
+textarea {
+  width: 100%;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  outline: none;
+  font-family: var(--font-main);
+  transition: border-color var(--transition);
+}
+
+input:focus,
+textarea:focus {
+  border-color: var(--accent);
+}
+
+.status-box {
+  padding: 20px;
+  border-radius: var(--radius-md);
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.status-pending {
+  background: rgba(234, 179, 8, 0.1);
+  border: 1px solid #eab308;
+  color: #eab308;
+}
+
+.status-approved {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid #22c55e;
+  color: #22c55e;
+}
+
+.status-rejected {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid #ef4444;
+  color: #ef4444;
+}
+
+.approved-actions {
+  margin-top: 15px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.form-divider {
+  margin: 20px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.error-message {
+  color: #ef4444;
+  margin-bottom: 12px;
+}
+
+.submit-btn-full {
+  width: 100%;
+}
+
+.hidden {
+  display: none !important;
+}
+

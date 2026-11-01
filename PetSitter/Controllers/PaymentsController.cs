@@ -190,6 +190,20 @@ namespace PetSitter.Controllers
         }
 
         /// <summary>
+        /// Danh sách giao dịch bất thường (SUSPENSE) phân trang và lọc trạng thái (Admin)
+        /// </summary>
+        [HttpGet("admin/payments/suspense")]
+        [Authorize(Roles = "ADMIN,Admin")]
+        public async Task<IActionResult> GetSuspensePayments(
+            [FromQuery] string? status = null,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20)
+        {
+            var result = await _paymentService.GetSuspensePaymentsAsync(status, page, pageSize);
+            return Ok(result);
+        }
+
+        /// <summary>
         /// Gán giao dịch bất thường (SUSPENSE) vào đơn đặt lịch hợp lệ (Admin)
         /// </summary>
         [HttpPost("admin/payments/suspense/{orderCode}/assign")]

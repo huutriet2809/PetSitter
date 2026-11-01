@@ -1,0 +1,240 @@
+/* =====================================================
+   PAGE-SPECIFIC STYLES: ABOUT PAGE (v2)
+   ===================================================== */
+.about-wrapper {
+  padding: 60px 24px 100px;
+  max-width: 1050px;
+  margin: 0 auto;
+}
+
+.about-hero {
+  text-align: center;
+  margin-bottom: 60px;
+}
+
+/* Split Section: Story & Vision */
+.about-split {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 48px;
+  align-items: center;
+  margin-bottom: 80px;
+}
+
+@media (max-width: 850px) {
+  .about-split {
+    grid-template-columns: 1fr;
+    gap: 36px;
+  }
+}
+
+.about-content h2 {
+  font-size: 1.6rem;
+  font-weight: 800;
+  margin-bottom: 18px;
+  color: var(--text-primary);
+  position: relative;
+}
+
+.about-content h2::after {
+  content: '';
+  position: absolute;
+  left: 0; bottom: -4px;
+  width: 40px; height: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+.about-content p {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.65;
+  margin-bottom: 20px;
+}
+
+.about-content strong {
+  color: var(--text-primary);
+}
+
+/* Vision / Mission Box */
+.vision-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 40px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+}
+
+.vision-box::before {
+  content: '“';
+  position: absolute;
+  top: -10px; left: 16px;
+  font-size: 6rem;
+  color: var(--accent);
+  opacity: 0.15;
+  font-family: serif;
+  line-height: 1;
+}
+
+.vision-item {
+  margin-bottom: 28px;
+  position: relative;
+  z-index: 1;
+}
+
+.vision-item:last-child {
+  margin-bottom: 0;
+}
+
+.vision-item-spacer {
+  margin-top: 32px;
+}
+
+.vision-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 6px;
+}
+
+.vision-text {
+  font-size: 0.92rem;
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+/* Values Grid */
+.values-section {
+  margin-bottom: 80px;
+  text-align: center;
+}
+
+.section-title-compact {
+  margin-bottom: 8px;
+}
+
+.values-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  margin-top: 40px;
+}
+
+@media (max-width: 768px) {
+  .values-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.value-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 32px 24px;
+  text-align: center;
+}
+
+.value-icon {
+  font-size: 2.2rem;
+  margin-bottom: 16px;
+}
+
+.value-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.value-desc {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* Team Section */
+.team-section {
+  text-align: center;
+}
+
+.team-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 28px;
+  margin-top: 44px;
+}
+
+.team-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 30px 24px;
+  width: calc(33.333% - 20px);
+  min-width: 270px;
+  transition: all var(--transition);
+  box-shadow: var(--shadow-card);
+  text-align: center;
+}
+
+.team-card:hover {
+  border-color: var(--border-accent);
+  transform: translateY(-6px);
+}
+
+.team-avatar {
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: rgba(15,15,18,0.7);
+  margin: 0 auto 16px;
+  border: 3px solid var(--border-accent);
+}
+
+.avatar-tl {
+  background: linear-gradient(135deg, #e8b4b8, #e8b4b899);
+}
+
+.avatar-ht {
+  background: linear-gradient(135deg, #a8c5da, #a8c5da99);
+}
+
+.avatar-nl {
+  background: linear-gradient(135deg, #b8d8b8, #b8d8b899);
+}
+
+.avatar-bn {
+  background: linear-gradient(135deg, #d4b8e0, #d4b8e099);
+}
+
+.avatar-tt {
+  background: linear-gradient(135deg, #f0d4a8, #f0d4a899);
+}
+
+.team-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0;
+}
+
+@media (max-width: 900px) {
+  .team-card {
+    width: calc(50% - 15px);
+  }
+}
+
+@media (max-width: 600px) {
+  .team-card {
+    width: 100%;
+  }
+}
+

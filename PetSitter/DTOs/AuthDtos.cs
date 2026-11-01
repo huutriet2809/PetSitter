@@ -58,6 +58,24 @@ namespace PetSitter.DTOs
         [EmailAddress]
         public string Email { get; set; } = string.Empty;
     }
+
+    public class AdminUserDto
+    {
+        public string UserId { get; set; } = string.Empty;
+        public string FullName { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string? Phone { get; set; }
+        public string Role { get; set; } = "USER";
+        public bool IsActive { get; set; } = true;
+        public DateTime? LockoutEndUtc { get; set; }
+        public int FailedLoginAttempts { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
+
+    public class UpdateUserStatusDto
+    {
+        public bool IsActive { get; set; }
+    }
     
     public class ResetPasswordDto
     {

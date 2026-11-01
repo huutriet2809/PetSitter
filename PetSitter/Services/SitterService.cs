@@ -275,7 +275,9 @@ namespace PetSitter.Services
         public async Task<StatsDto> GetStatsAsync()
         {
             var sitters = (int)await _context.SitterProfiles.CountDocumentsAsync(s => s.Status == "Approved" && s.IsVerified == true);
-            var users = (int)await _context.Users.CountDocumentsAsync(_ => true);
+            // Loại trừ tài khoản quản trị (ADMIN) và tài khoản bị vô hiệu hóa (IsActive == false).
+            // Điều kiện u.IsActive != false an toàn với document cũ chưa có field IsActive.
+            var users = (int)await _context.Users.CountDocumentsAsync(u => u.Role != "ADMIN" && u.IsActive != false);
             var bookings = (int)await _context.Bookings.CountDocumentsAsync(b => b.TrangThai == BookingStatus.COMPLETED);
 
             return new StatsDto

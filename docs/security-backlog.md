@@ -29,7 +29,9 @@ Tài liệu này ghi nhận các hạng mục cải tiến bảo mật kỹ thu�
 - Kiểm tra `IsActive == true` tại:
   1. `AuthController.Login`: Chặn đăng nhập nếu `!user.IsActive` (HTTP 403 Forbidden).
   2. `TokenService.RotateRefreshTokenAsync`: Nếu `!user.IsActive`, từ chối refresh token ngay lập tức, thu hồi toàn bộ token liên quan và trả về 401/403.
-  3. Khi Admin khóa tài khoản (`IsActive = false`), lập tức gọi `TokenService.RevokeAllUserTokensAsync(userId)` để hủy toàn bộ phiên làm việc trên các thiết bị.
+  3. `OnTokenValidated` (JwtBearer): Xác thực tức thời mỗi request API. Sử dụng `IMemoryCache` (TTL = 30s) để giảm tải truy vấn MongoDB. Khi Admin khóa tài khoản, cache key được xóa ngay lập tức (`InvalidateCache`) để chặn access token cũ tức thì.
+  4. **Lưu ý kiến trúc đa máy chủ (Multi-instance Architecture)**: Bộ nhớ đệm `IMemoryCache` cho `IsActive` (30 giây) hiện tại là **per-instance** (cục bộ trong bộ nhớ tiến trình của từng máy chủ). Trong trường hợp scale ngang nhiều instance backend phía sau Load Balancer, nếu Admin khóa tài khoản ở một instance, các instance khác có thể trễ tối đa 30 giây để nhận biết nếu không có cơ chế invalidate phân tán. Khi mở rộng sang hạ tầng đa cụm/đa node, cần tích hợp Redis Cache hoặc Pub/Sub message broker (Redis Pub/Sub / RabbitMQ) để phát sự kiện xóa cache đồng bộ trên tất cả các instance.
+  5. Khi Admin khóa tài khoản (`IsActive = false`), lập tức gọi `TokenService.RevokeAllUserTokensAsync(userId)` để hủy toàn bộ phiên làm việc trên các thiết bị.
 
 ---
 

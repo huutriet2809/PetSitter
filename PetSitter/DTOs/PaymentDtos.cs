@@ -164,4 +164,27 @@ namespace PetSitter.DTOs
         [JsonPropertyName("virtualAccountNumber")]
         public string? VirtualAccountNumber { get; set; }
     }
+
+    public class SuspensePaymentDto
+    {
+        public string PaymentId { get; set; } = null!;
+        public string BookingId { get; set; } = null!;
+        public long OrderCode { get; set; }
+        public long Amount { get; set; }
+        public long? ReceivedAmount { get; set; }
+        public string Status { get; set; } = null!;
+        public bool IsAbnormal { get; set; }
+        public string? AbnormalReason { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime? PaidAt { get; set; }
+    }
+
+    public class SuspensePaymentsPagedResult
+    {
+        public long Total { get; set; }
+        public int Page { get; set; }
+        public int PageSize { get; set; }
+        public int TotalPages { get; set; }
+        public List<SuspensePaymentDto> Data { get; set; } = new();
+    }
 }

@@ -1,38 +1,28 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Quản lý tin nhắn | PawStay Admin</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="fonts/fonts.css">
     <link rel="stylesheet" href="assets/style.css?v=4">
-    <style>
-        .admin-layout { display: flex; min-height: calc(100vh - 60px); }
-        .sidebar { width: 250px; background: white; border-right: 1px solid var(--border); padding: 20px 0; }
-        .sidebar-menu { list-style: none; padding: 0; margin: 0; }
-        .sidebar-menu li a { display: block; padding: 12px 20px; color: var(--text-primary); text-decoration: none; font-weight: 500; border-left: 4px solid transparent; }
-        .sidebar-menu li a:hover, .sidebar-menu li a.active { background: var(--bg-secondary); border-left-color: var(--accent); color: var(--accent); }
-        .main-content { flex: 1; padding: 30px; background: var(--bg-secondary); }
-        .dashboard-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
-        
-        .message-card { background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: var(--shadow-sm); border: 1px solid var(--border); }
-        .message-card.unread { border-left: 4px solid var(--accent); }
-        .message-header { display: flex; justify-content: space-between; margin-bottom: 15px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
-        .message-title { font-weight: 600; font-size: 1.1rem; }
-        .message-meta { color: var(--text-secondary); font-size: 0.9rem; }
-        .message-body { font-size: 0.95rem; line-height: 1.5; color: var(--text-primary); white-space: pre-wrap; }
-        .message-actions { margin-top: 15px; display: flex; gap: 10px; justify-content: flex-end; }
-        
-        .filters { display: flex; gap: 10px; margin-bottom: 20px; }
-        .filters select { padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; }
-    </style>
+    <link rel="stylesheet" href="css/admin-messages.css?v=4">
 </head>
 <body>
     <div class="admin-layout">
         <aside class="sidebar">
+            <div class="sidebar-brand">🐾 PawStay Admin</div>
             <ul class="sidebar-menu" id="admin-menu">
-                <li><a href="admin.html">Quản trị</a></li>
-                <li><a href="admin-messages.html" class="active">Tin nhắn</a></li>
+                <li><a href="admin.html#applications" id="menu-applications">Quản trị</a></li>
+                <li><a href="admin.html#users" id="menu-users">Người dùng</a></li>
+                <li><a href="admin.html#payments" id="menu-payments">Thanh toán</a></li>
+                <li><a href="admin.html#refunds" id="menu-refunds">Hoàn tiền</a></li>
+                <li><a href="admin.html#withdrawals" id="menu-withdrawals">Rút tiền</a></li>
+                <li><a href="admin.html#revenue" id="menu-revenue">Doanh thu</a></li>
+                <li><a href="admin.html#reconcile" id="menu-reconcile">Đối soát</a></li>
+                <li><a href="admin.html#suspense" id="menu-suspense">Giao dịch SUSPENSE</a></li>
+                <li><a href="admin.html#disputes" id="menu-disputes">Đơn khiếu nại</a></li>
+                <li><a href="admin-messages.html" id="menu-messages" class="active">Tin nhắn</a></li>
             </ul>
         </aside>
         
@@ -50,7 +40,7 @@
             </div>
             
             <div id="messages-container">
-                <div style="text-align:center; padding:50px;">Đang tải...</div>
+                <div class="loading-state">Đang tải...</div>
             </div>
         </main>
     </div>
@@ -58,75 +48,6 @@
     <script src="assets/data.js?v=4"></script>
     <script src="assets/api.js?v=4"></script>
     <script src="assets/components.js?v=4"></script>
-    <script>
-        document.addEventListener('DOMContentLoaded', async () => {
-            const user = await getMe();
-            if (!user || user.role !== 'ADMIN') {
-                window.location.href = 'index.html';
-                return;
-            }
-
-            await loadMessages();
-
-            document.getElementById('read-filter').addEventListener('change', loadMessages);
-        });
-
-        async function loadMessages() {
-            const container = document.getElementById('messages-container');
-            const isRead = document.getElementById('read-filter').value;
-            
-            try {
-                let url = '/admin/messages';
-                if (isRead !== '') url += `?isRead=${isRead}`;
-                
-                const messages = await apiFetch(url);
-                
-                if (messages.length === 0) {
-                    container.innerHTML = '<div style="text-align:center; padding:30px; background:white; border-radius:12px;">Không có tin nhắn nào.</div>';
-                    return;
-                }
-
-                container.innerHTML = messages.map(msg => `
-                    <div class="message-card ${/* safe */ msg.isRead ? '' : 'unread'}" id="msg-${/* safe */ msg.id}">
-                        <div class="message-header">
-                            <div>
-                                <div class="message-title">${escapeHtml(msg.subject)}</div>
-                                <div class="message-meta">${escapeHtml(msg.name)} &lt;${escapeHtml(msg.email)}&gt;</div>
-                            </div>
-                            <div style="text-align: right;">
-                                <div class="message-meta">${new Date(msg.createdAt).toLocaleString('vi-VN')}</div>
-                                ${/* safe */ !msg.isRead ? '<span style="color:var(--accent); font-weight:600; font-size:0.85rem;">Mới</span>' : ''}
-                            </div>
-                        </div>
-                        <div class="message-body">${escapeHtml(msg.message)}</div>
-                        <div class="message-actions">
-                            <a href="mailto:${escapeHtml(msg.email)}" class="btn btn-outline" style="padding: 6px 12px;">Trả lời qua Email</a>
-                            ${/* safe */ !msg.isRead ? `<button onclick="markAsRead('${/* safe */ msg.id}')" class="btn btn-primary" style="padding: 6px 12px;">Đánh dấu đã đọc</button>` : ''}
-                        </div>
-                    </div>
-                `).join('');
-            } catch (error) {
-                container.innerHTML = `<div style="color:red; padding:20px;">Lỗi: ${escapeHtml(error.message)}</div>`;
-            }
-        }
-
-        async function markAsRead(id) {
-            try {
-                await apiFetch(`/admin/messages/${id}/read`, { method: 'PATCH' });
-                await loadMessages();
-            } catch (err) {
-                alert(err.message);
-            }
-        }
-
-        function escapeHtml(unsafe) {
-            return (unsafe || '').toString()
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .replace(/"/g, "&quot;")
-                .replace(/'/g, "&#039;");
-        }
-    </script>
+    <script src="js/admin-messages.js?v=4"></script>
 </body>
 </html>

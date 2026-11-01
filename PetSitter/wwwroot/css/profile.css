@@ -1,0 +1,84 @@
+.profile-container {
+  max-width: 800px;
+  margin: 100px auto;
+  padding: 24px;
+}
+
+.profile-title {
+  margin-bottom: 24px;
+}
+
+.card {
+  background: var(--bg-card);
+  padding: 32px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  margin-bottom: 24px;
+}
+
+.card-title {
+  margin-bottom: 20px;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+input {
+  width: 100%;
+  padding: 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+}
+
+input:disabled {
+  opacity: 0.6;
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.error {
+  color: #ff5252;
+  font-size: 0.85rem;
+  margin-top: 4px;
+  display: none;
+}
+
+.error.show {
+  display: block;
+}
+
+.security-card {
+  border-left: 4px solid #ef4444;
+}
+
+.security-card-title {
+  margin-bottom: 12px;
+  color: #ef4444;
+}
+
+.security-desc {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+.btn-danger-outline {
+  color: #ef4444;
+  border-color: #ef4444;
+}
+
+.btn-danger-outline:hover {
+  background: #ef4444;
+  color: white;
+}

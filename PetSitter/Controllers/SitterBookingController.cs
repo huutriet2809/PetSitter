@@ -21,6 +21,7 @@ namespace PetSitter.Controllers
         private readonly IBookingService _bookingService;
         private readonly INotificationService _notificationService;
         private readonly IPaymentService? _paymentService;
+        private readonly IEmailService? _emailService;
         private readonly ILogger<SitterBookingController> _logger;
 
         public SitterBookingController(
@@ -28,12 +29,14 @@ namespace PetSitter.Controllers
             IBookingService bookingService,
             INotificationService notificationService,
             ILogger<SitterBookingController> logger,
-            IPaymentService? paymentService = null)
+            IPaymentService? paymentService = null,
+            IEmailService? emailService = null)
         {
             _context = context;
             _bookingService = bookingService;
             _notificationService = notificationService;
             _paymentService = paymentService;
+            _emailService = emailService;
             _logger = logger;
         }
 
@@ -165,6 +168,27 @@ namespace PetSitter.Controllers
                 }
             }
 
+            if (_emailService != null && !string.IsNullOrEmpty(updatedBooking.OwnerId))
+            {
+                try
+                {
+                    var ownerUser = await _context.Users.Find(u => u.UserId == updatedBooking.OwnerId).FirstOrDefaultAsync();
+                    if (ownerUser != null && !string.IsNullOrWhiteSpace(ownerUser.Email))
+                    {
+                        await _emailService.SendBookingAcceptedAsync(
+                            ownerUser.Email,
+                            ownerUser.FullName ?? "Quý khách",
+                            updatedBooking,
+                            paymentDeadline
+                        );
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Lỗi khi gửi email BOOKING_ACCEPTED cho chủ nuôi {OwnerId}", updatedBooking.OwnerId);
+                }
+            }
+
             // Kiểm tra trùng ngày với đơn ACCEPTED khác (không chặn, chỉ cảnh báo)
             var hasOverlap = await _context.Bookings.Find(b =>
                 b.SitterId == sitterProfile.SitterId &&
@@ -247,6 +271,27 @@ namespace PetSitter.Controllers
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Lỗi khi gửi thông báo BOOKING_REJECTED cho chủ nuôi {OwnerId}", result.OwnerId);
+                }
+            }
+
+            if (_emailService != null && !string.IsNullOrEmpty(result.OwnerId))
+            {
+                try
+                {
+                    var ownerUser = await _context.Users.Find(u => u.UserId == result.OwnerId).FirstOrDefaultAsync();
+                    if (ownerUser != null && !string.IsNullOrWhiteSpace(ownerUser.Email))
+                    {
+                        await _emailService.SendBookingRejectedAsync(
+                            ownerUser.Email,
+                            ownerUser.FullName ?? "Quý khách",
+                            result,
+                            dto.LyDo.Trim()
+                        );
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Lỗi khi gửi email BOOKING_REJECTED cho chủ nuôi {OwnerId}", result.OwnerId);
                 }
             }
 

@@ -132,6 +132,11 @@ namespace PetSitter.DTOs
         public string Note { get; set; } = string.Empty;
 
         public long? RefundToOwnerAmount { get; set; }
+        public long? PayToSitterAmount { get; set; }
+        public long? PlatformFeeAmount { get; set; }
+
+        public bool RecordSitterViolation { get; set; } = false;
+        public string? SitterViolationReason { get; set; }
     }
 
     public class RejectBookingDto

@@ -22,6 +22,7 @@ namespace PetSitter.Services
         private readonly INotificationService? _notificationService;
         private readonly ILedgerService? _ledgerService;
         private readonly IPaymentGateway? _paymentGateway;
+        private readonly IEmailService? _emailService;
         private readonly ILogger<BookingService>? _logger;
 
         // Ghi chú kiến trúc: _lastReconcileTimes lưu trữ throttle đối soát trong bộ nhớ tiến trình (ConcurrentDictionary).
@@ -35,7 +36,8 @@ namespace PetSitter.Services
             INotificationService? notificationService = null,
             ILedgerService? ledgerService = null,
             IPaymentGateway? paymentGateway = null,
-            ILogger<BookingService>? logger = null)
+            ILogger<BookingService>? logger = null,
+            IEmailService? emailService = null)
         {
             _context = context;
             _configuration = configuration;
@@ -43,6 +45,7 @@ namespace PetSitter.Services
             _ledgerService = ledgerService;
             _paymentGateway = paymentGateway;
             _logger = logger;
+            _emailService = emailService;
         }
 
         public BookingService(
@@ -50,7 +53,7 @@ namespace PetSitter.Services
             IConfiguration configuration,
             INotificationService? notificationService,
             ILogger<BookingService>? logger)
-            : this(context, configuration, notificationService, null, null, logger)
+            : this(context, configuration, notificationService, null, null, logger, null)
         {
         }
 
@@ -173,6 +176,22 @@ namespace PetSitter.Services
             try
             {
                 await _context.RefundRequests.InsertOneAsync(refundReq);
+
+                if (_emailService != null)
+                {
+                    try
+                    {
+                        var owner = await _context.Users.Find(u => u.UserId == booking.OwnerId).FirstOrDefaultAsync();
+                        if (owner != null && !string.IsNullOrEmpty(owner.Email))
+                        {
+                            await _emailService.SendRefundNoticeAsync(owner.Email, owner.FullName, booking, plan.RefundAmount, reason);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogWarning(ex, "Lỗi gửi email thông báo hoàn tiền cho đơn {BookingId}", booking.BookingId);
+                    }
+                }
             }
             catch (MongoWriteException ex) when (ex.WriteError?.Category == ServerErrorCategory.DuplicateKey)
             {
@@ -264,6 +283,30 @@ namespace PetSitter.Services
                         $"{claimedBooking.BookingId}:{NotificationType.EARNINGS_CREDITED}:{sitterUserId}",
                         targetRole: "SITTER"
                     );
+                }
+
+                if (_emailService != null)
+                {
+                    try
+                    {
+                        var owner = await _context.Users.Find(u => u.UserId == claimedBooking.OwnerId).FirstOrDefaultAsync();
+                        var sitterUser = await _context.Users.Find(u => u.UserId == sitterUserId).FirstOrDefaultAsync();
+                        if (owner != null && !string.IsNullOrEmpty(owner.Email))
+                        {
+                            await _emailService.SendBookingCompletedAsync(
+                                owner.Email,
+                                owner.FullName,
+                                sitterUser?.Email ?? string.Empty,
+                                sitterUser?.FullName ?? string.Empty,
+                                claimedBooking,
+                                isAuto: actionSource == "AUTO_COMPLETED"
+                            );
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogWarning(ex, "Lỗi gửi email hoàn tất cho đơn {BookingId}", claimedBooking.BookingId);
+                    }
                 }
             }
             catch (Exception ex)
@@ -1248,6 +1291,34 @@ namespace PetSitter.Services
                 }
             }
 
+            if (_emailService != null)
+            {
+                try
+                {
+                    var ownerUser = await _context.Users.Find(u => u.UserId == currentUserId).FirstOrDefaultAsync();
+                    User? sitterUser = null;
+                    if (sitterProfile != null && !string.IsNullOrEmpty(sitterProfile.UserId))
+                    {
+                        sitterUser = await _context.Users.Find(u => u.UserId == sitterProfile.UserId).FirstOrDefaultAsync();
+                    }
+
+                    if (ownerUser != null && !string.IsNullOrWhiteSpace(ownerUser.Email))
+                    {
+                        await _emailService.SendBookingCreatedAsync(
+                            ownerUser.Email,
+                            ownerUser.FullName ?? "Quý khách",
+                            sitterUser?.Email ?? string.Empty,
+                            sitterUser?.FullName ?? "Chăm sóc viên",
+                            booking
+                        );
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "Lỗi khi gửi email BOOKING_CREATED cho đơn {BookingId}", booking.BookingId);
+                }
+            }
+
             return await MapToDtoAsync(booking);
         }
 
@@ -1976,10 +2047,23 @@ namespace PetSitter.Services
                 throw new BadRequestException("Lý do khiếu nại phải từ 10 đến 500 ký tự.");
 
             var nowUtc = DateTime.UtcNow;
+            var vnToday = GetVnToday();
+
+            // Cho phép khiếu nại trong 2 trường hợp:
+            // 1. Đang COMPLETION_PENDING và còn trong hạn CompletionDeadline
+            // 2. Đang ACCEPTED nhưng đã qua NgayKetThuc mà Sitter chưa bấm hoàn tất
+            var isCompletionPending = Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.COMPLETION_PENDING)
+                                    & Builders<Booking>.Filter.Gt(b => b.CompletionDeadline, nowUtc);
+
+            var isOverdueAccepted = Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.ACCEPTED)
+                                  & Builders<Booking>.Filter.Lt(b => b.NgayKetThuc, vnToday);
+
             var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, bookingId)
                        & Builders<Booking>.Filter.Eq(b => b.OwnerId, currentUserId)
-                       & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.COMPLETION_PENDING)
-                       & Builders<Booking>.Filter.Gt(b => b.CompletionDeadline, nowUtc);
+                       & (isCompletionPending | isOverdueAccepted);
+
+            var existingBefore = await _context.Bookings.Find(b => b.BookingId == bookingId && b.OwnerId == currentUserId).FirstOrDefaultAsync();
+            var fromStatus = existingBefore?.TrangThai ?? BookingStatus.COMPLETION_PENDING;
 
             var update = Builders<Booking>.Update
                 .Set(b => b.TrangThai, BookingStatus.DISPUTED)
@@ -1988,7 +2072,7 @@ namespace PetSitter.Services
                 .Push(b => b.History, new InquiryHistory
                 {
                     HanhDong = "DISPUTED",
-                    FromStatus = BookingStatus.COMPLETION_PENDING,
+                    FromStatus = fromStatus,
                     NguoiThucHien = "OWNER",
                     ActorUserId = currentUserId,
                     LyDo = trimmedReason,
@@ -2083,16 +2167,7 @@ namespace PetSitter.Services
 
             if (booking.TrangThai != BookingStatus.DISPUTED)
             {
-                if (booking.ResolvedByAdmin == true && booking.Settlement != null)
-                {
-                    await ExecuteSettlementPlanAsync(booking.Settlement, booking.BookingId, nowUtc, adminUserId);
-                    if (booking.Settlement.RefundAmount > 0)
-                    {
-                        await CreateOrGetRefundRequestAsync(booking, booking.Settlement, nowUtc, $"ADMIN_RESOLVED_{dto.Resolution}", trimmedNote);
-                    }
-                    return await MapToDtoAsync(booking, adminUserId, role: "ADMIN");
-                }
-                throw new BadRequestException("Đơn không ở trạng thái tranh chấp (DISPUTED).");
+                throw new ConflictException("Đơn không ở trạng thái tranh chấp (DISPUTED) hoặc đã được quản trị viên khác xử lý.");
             }
 
             // Kiểm tra xung đột lợi ích: Admin không được xử lý đơn mà chính mình là Owner hoặc Sitter
@@ -2124,11 +2199,18 @@ namespace PetSitter.Services
             }
 
             Booking result;
+            long auditRefund = 0;
+            long auditSitter = 0;
+            long auditCommission = 0;
 
             if (booking.PaymentStatus == PaymentStatus.HELD && totalAmount > 0)
             {
                 if (dto.Resolution == BookingStatus.CANCELLED)
                 {
+                    auditRefund = totalAmount;
+                    auditSitter = 0;
+                    auditCommission = 0;
+
                     var plan = new SettlementPlan
                     {
                         SettlementKey = LedgerIdempotencyKeys.AdminCancel(booking.BookingId),
@@ -2179,9 +2261,35 @@ namespace PetSitter.Services
                 {
                     var refundAmount = dto.RefundToOwnerAmount!.Value;
                     var remainderForSitter = totalAmount - refundAmount;
-                    var bps = booking.CommissionBps > 0 ? booking.CommissionBps : 1000;
-                    var commission = (remainderForSitter * bps) / 10000;
-                    var netSitter = remainderForSitter - commission;
+                    var bps = booking.CommissionBps > 0 ? booking.CommissionBps : _configuration.GetValue<int>("Payments:CommissionBps", 1000);
+                    
+                    // Server dùng số TỰ TÍNH theo CommissionBps làm số chính thức, không thu thêm
+                    var calculatedCommission = (remainderForSitter * bps) / 10000;
+                    var expectedNetSitter = remainderForSitter - calculatedCommission;
+
+                    if (dto.PlatformFeeAmount.HasValue && dto.PlatformFeeAmount.Value != calculatedCommission)
+                    {
+                        throw new BadRequestException($"Phí sàn phải tuân thủ đúng tỷ lệ quy định ({bps / 100.0}% tương đương {calculatedCommission:N0} ₫). Giá trị gửi lên ({dto.PlatformFeeAmount.Value:N0} ₫) không hợp lệ và không được thu thêm.");
+                    }
+
+                    if (dto.PayToSitterAmount.HasValue && dto.PayToSitterAmount.Value != expectedNetSitter)
+                    {
+                        throw new BadRequestException($"Số tiền trả Sitter phải bằng đúng số tiền còn lại sau khi trừ hoàn tiền và phí sàn ({expectedNetSitter:N0} ₫).");
+                    }
+
+                    long commission = calculatedCommission;
+                    long netSitter = expectedNetSitter;
+
+                    // Kiểm tra bảo toàn số học tuyệt đối với tổng tiền ESCROW_HELD của đơn:
+                    long totalSplit = refundAmount + netSitter + commission;
+                    if (totalSplit != totalAmount)
+                    {
+                        throw new BadRequestException($"Tổng tiền chia (Hoàn {refundAmount:N0} ₫ + Sitter {netSitter:N0} ₫ + Sàn {commission:N0} ₫ = {totalSplit:N0} ₫) phải bằng đúng số tiền tạm giữ ({totalAmount:N0} ₫). Lệch {Math.Abs(totalAmount - totalSplit):N0} ₫.");
+                    }
+
+                    auditRefund = refundAmount;
+                    auditSitter = netSitter;
+                    auditCommission = commission;
 
                     var plan = new SettlementPlan
                     {
@@ -2230,6 +2338,11 @@ namespace PetSitter.Services
                 }
                 else // COMPLETED
                 {
+                    var bps = booking.CommissionBps > 0 ? booking.CommissionBps : 1000;
+                    auditCommission = (totalAmount * bps) / 10000;
+                    auditSitter = totalAmount - auditCommission;
+                    auditRefund = 0;
+
                     var filter = Builders<Booking>.Filter.Eq(b => b.BookingId, bookingId)
                                & Builders<Booking>.Filter.Eq(b => b.TrangThai, BookingStatus.DISPUTED);
 
@@ -2254,6 +2367,7 @@ namespace PetSitter.Services
 
                     // Giải ngân toàn bộ cho Sitter + hoa hồng nền tảng
                     await ReleaseEscrowToSitterAndPlatformAsync(result, nowUtc, "ADMIN_RESOLVED_COMPLETED");
+                    result = await _context.Bookings.Find(b => b.BookingId == bookingId).FirstOrDefaultAsync() ?? result;
                 }
             }
             else
@@ -2325,6 +2439,40 @@ namespace PetSitter.Services
                     _logger?.LogWarning(ex, "Lỗi khi gửi thông báo BOOKING_RESOLVED cho đơn {BookingId}", result.BookingId);
                 }
             }
+
+            // Ghi nhận vi phạm Sitter nếu Admin yêu cầu
+            if (dto.RecordSitterViolation && !string.IsNullOrWhiteSpace(result.SitterId))
+            {
+                try
+                {
+                    var violationReason = !string.IsNullOrWhiteSpace(dto.SitterViolationReason)
+                        ? dto.SitterViolationReason.Trim()
+                        : trimmedNote;
+
+                    var violationRecord = new SitterViolationRecord
+                    {
+                        BookingId = result.BookingId,
+                        Reason = violationReason,
+                        AdminUserId = adminUserId,
+                        CreatedAt = nowUtc
+                    };
+
+                    var sitterUpdate = Builders<SitterProfile>.Update
+                        .Inc(s => s.ViolationCount, 1)
+                        .Push(s => s.Violations, violationRecord);
+
+                    await _context.SitterProfiles.UpdateOneAsync(s => s.SitterId == result.SitterId, sitterUpdate);
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogError(ex, "Lỗi khi ghi nhận vi phạm Sitter {SitterId} cho đơn {BookingId}", result.SitterId, result.BookingId);
+                }
+            }
+
+            // Ghi Audit Log chi tiết hành động của Admin
+            _logger?.LogInformation(
+                "[AUDIT] Admin {AdminUserId} đã giải quyết tranh chấp cho đơn {BookingId} lúc {TimeUtc:u}: Hướng xử lý={Resolution}, Tổng tiền={TotalAmount:N0} ₫, Hoàn trả Chủ nuôi={RefundAmount:N0} ₫, Trả Sitter={SitterAmount:N0} ₫, Hoa hồng sàn={CommissionAmount:N0} ₫, Ghi nhận vi phạm Sitter={RecordViolation}, Ghi chú={Note}",
+                adminUserId, result.BookingId, nowUtc, dto.Resolution, totalAmount, auditRefund, auditSitter, auditCommission, dto.RecordSitterViolation, trimmedNote);
 
             return await MapToDtoAsync(result, adminUserId, role: "ADMIN");
         }

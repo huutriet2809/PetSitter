@@ -50,15 +50,22 @@ namespace PetSitter.Controllers
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
-            var userDto = await _userService.AuthenticateAsync(loginDto);
-            if (userDto == null)
-                return Unauthorized(new { Message = "Email hoặc mật khẩu không đúng." });
+            try
+            {
+                var userDto = await _userService.AuthenticateAsync(loginDto);
+                if (userDto == null)
+                    return Unauthorized(new { message = "Email hoặc mật khẩu không đúng." });
 
-            var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
-            var rawRefreshToken = await _tokenService.CreateRefreshTokenAsync(userDto.UserId, ip);
-            SetRefreshTokenCookie(rawRefreshToken, DateTime.UtcNow.AddDays(7));
+                var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+                var rawRefreshToken = await _tokenService.CreateRefreshTokenAsync(userDto.UserId, ip);
+                SetRefreshTokenCookie(rawRefreshToken, DateTime.UtcNow.AddDays(7));
 
-            return Ok(userDto);
+                return Ok(userDto);
+            }
+            catch (ForbiddenException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
         }
 
         [HttpPost("register")]
@@ -117,6 +124,10 @@ namespace PetSitter.Controllers
 
             // Thất bại (hết hạn, reuse attack hoặc không hợp lệ): xóa cookie
             ClearRefreshTokenCookie();
+            if (result.Message != null && (result.Message.Contains("vô hiệu hóa") || result.Message.Contains("bị khóa")))
+            {
+                return StatusCode(403, new { message = result.Message });
+            }
             return Unauthorized(new { message = result.Message ?? "Phiên đăng nhập không hợp lệ hoặc đã hết hạn." });
         }
 
@@ -130,6 +141,18 @@ namespace PetSitter.Controllers
 
             ClearRefreshTokenCookie();
             return Ok(new { message = "Đã đăng xuất thành công." });
+        }
+
+        [Authorize]
+        [HttpPost("logout-all")]
+        public async Task<IActionResult> LogoutAll()
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            await _tokenService.RevokeAllUserTokensAsync(userId);
+            ClearRefreshTokenCookie();
+            return Ok(new { message = "Đã đăng xuất khỏi tất cả thiết bị thành công." });
         }
 
         [Authorize]

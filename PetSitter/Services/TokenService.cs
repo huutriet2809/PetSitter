@@ -27,17 +27,11 @@ namespace PetSitter.Services
         }
 
         /// <summary>
-        /// Tạo Access Token có thời hạn 15 phút.
-        /// GHI CHÚ BẢO MẬT: Sau khi đổi mật khẩu hoặc đổi Role, access token cũ vẫn có thể sống tối đa 15 phút
-        /// vì JWT là stateless, không kiểm tra CSDL ở từng request API thông thường.
+        /// Tạo Access Token có thời hạn 15 phút, ký bằng active key hiện tại kèm kid trong header.
         /// </summary>
         public string GenerateAccessToken(User user)
         {
-            var secret = _config["JwtSettings:Secret"];
-            if (string.IsNullOrEmpty(secret))
-                throw new InvalidOperationException("CRITICAL: JwtSettings:Secret is not configured!");
-
-            var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
+            var securityKey = PetSitter.Helpers.JwtKeyHelper.GetActiveSigningKey(_config);
             var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
 
             var claims = new[]
@@ -119,6 +113,11 @@ namespace PetSitter.Services
                         var user = await _context.Users.Find(u => u.UserId == existing.UserId).FirstOrDefaultAsync();
                         if (user != null)
                         {
+                            if (!user.IsActive)
+                            {
+                                await RevokeAllUserTokensAsync(user.UserId);
+                                return RotateResult.Fail(RotateStatus.Invalid, "Tài khoản của bạn đã bị vô hiệu hóa. Vui lòng liên hệ quản trị viên.");
+                            }
                             return RotateResult.Grace(GenerateAccessToken(user), user.Role);
                         }
                     }
@@ -172,6 +171,12 @@ namespace PetSitter.Services
                 var user = await _context.Users.Find(u => u.UserId == oldToken.UserId).FirstOrDefaultAsync();
                 if (user == null)
                     return RotateResult.Fail(RotateStatus.Invalid, "Tài khoản không tồn tại hoặc đã bị xóa.");
+
+                if (!user.IsActive)
+                {
+                    await RevokeAllUserTokensAsync(user.UserId);
+                    return RotateResult.Fail(RotateStatus.Invalid, "Tài khoản của bạn đã bị vô hiệu hóa. Vui lòng liên hệ quản trị viên.");
+                }
 
                 var newAccessToken = GenerateAccessToken(user);
                 return RotateResult.Ok(newAccessToken, newRawToken, user.Role);
@@ -241,7 +246,7 @@ namespace PetSitter.Services
                 .Replace("=", "");
         }
 
-        private static string HashToken(string token)
+        internal static string HashToken(string token)
         {
             using var sha = SHA256.Create();
             var bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(token));

@@ -19,6 +19,7 @@ namespace PetSitter.Services
         private readonly IPaymentGateway _gateway;
         private readonly ILedgerService _ledgerService;
         private readonly INotificationService _notificationService;
+        private readonly IEmailService? _emailService;
         private readonly IDataProtector _protector;
         private readonly IConfiguration _config;
         private readonly ILogger<PaymentService> _logger;
@@ -30,12 +31,14 @@ namespace PetSitter.Services
             INotificationService notificationService,
             IDataProtectionProvider protectionProvider,
             IConfiguration config,
-            ILogger<PaymentService> logger)
+            ILogger<PaymentService> logger,
+            IEmailService? emailService = null)
         {
             _context = context;
             _gateway = gateway;
             _ledgerService = ledgerService;
             _notificationService = notificationService;
+            _emailService = emailService;
             _protector = protectionProvider.CreateProtector("PetSitter.Payments.PayerInfo.v1");
             _config = config;
             _logger = logger;
@@ -568,6 +571,20 @@ namespace PetSitter.Services
                         targetRole: "SITTER"
                     );
                 }
+
+                if (_emailService != null && !string.IsNullOrEmpty(booking.OwnerId))
+                {
+                    var ownerUser = await _context.Users.Find(u => u.UserId == booking.OwnerId).FirstOrDefaultAsync();
+                    if (ownerUser != null && !string.IsNullOrWhiteSpace(ownerUser.Email))
+                    {
+                        await _emailService.SendPaymentSuccessAsync(
+                            ownerUser.Email,
+                            ownerUser.FullName ?? "Quý khách",
+                            booking,
+                            amount
+                        );
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -1043,6 +1060,51 @@ namespace PetSitter.Services
                 BankBin = root.TryGetProperty("BankBin", out var bb) ? bb.GetString() ?? "" : (root.TryGetProperty("bankBin", out var bb2) ? bb2.GetString() ?? "" : (root.TryGetProperty("BankId", out var bi) ? bi.GetString() ?? "" : "")),
                 AccountNumber = root.TryGetProperty("AccountNumber", out var an) ? an.GetString() ?? "" : (root.TryGetProperty("accountNumber", out var an2) ? an2.GetString() ?? "" : ""),
                 AccountHolderName = root.TryGetProperty("AccountName", out var ah) ? ah.GetString() ?? "" : (root.TryGetProperty("accountName", out var ah2) ? ah2.GetString() ?? "" : (root.TryGetProperty("AccountHolderName", out var ah3) ? ah3.GetString() ?? "" : ""))
+            };
+        }
+
+        public async Task<SuspensePaymentsPagedResult> GetSuspensePaymentsAsync(string? status, int page, int pageSize)
+        {
+            page = Math.Max(1, page);
+            pageSize = Math.Clamp(pageSize, 1, 100);
+
+            var filterBuilder = Builders<Payment>.Filter;
+            // Giao dịch SUSPENSE: IsAbnormal == true hoặc Status == ABNORMAL
+            var filter = filterBuilder.Eq(p => p.IsAbnormal, true) | filterBuilder.Eq(p => p.Status, PaymentLinkStatus.ABNORMAL);
+
+            if (!string.IsNullOrWhiteSpace(status) && !string.Equals(status, "ALL", StringComparison.OrdinalIgnoreCase))
+            {
+                filter &= filterBuilder.Eq(p => p.Status, status.Trim().ToUpper());
+            }
+
+            var total = await _context.Payments.CountDocumentsAsync(filter);
+            var items = await _context.Payments.Find(filter)
+                .SortByDescending(p => p.CreatedAt)
+                .Skip((page - 1) * pageSize)
+                .Limit(pageSize)
+                .ToListAsync();
+
+            var dtos = items.Select(p => new SuspensePaymentDto
+            {
+                PaymentId = p.PaymentId,
+                BookingId = p.BookingId,
+                OrderCode = p.OrderCode,
+                Amount = p.Amount,
+                ReceivedAmount = p.ReceivedAmount,
+                Status = p.Status,
+                IsAbnormal = p.IsAbnormal,
+                AbnormalReason = p.AbnormalReason,
+                CreatedAt = p.CreatedAt,
+                PaidAt = p.PaidAt
+            }).ToList();
+
+            return new SuspensePaymentsPagedResult
+            {
+                Total = total,
+                Page = page,
+                PageSize = pageSize,
+                TotalPages = (int)Math.Ceiling((double)total / pageSize),
+                Data = dtos
             };
         }
     }

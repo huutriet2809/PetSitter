@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="vi">
 <head>
   <meta charset="UTF-8">
@@ -6,23 +6,13 @@
   <title>Sửa hồ sơ Sitter | PawStay</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>">
   <link rel="stylesheet" href="assets/style.css?v=4">
-  <style>
-    .container { max-width: 800px; margin: 100px auto; padding: 24px; }
-    .card { background: var(--bg-card); padding: 32px; border-radius: var(--radius-lg); border: 1px solid var(--border); }
-    .form-group { margin-bottom: 20px; }
-    label { display: block; margin-bottom: 8px; font-weight: 600; font-size: 0.9rem; }
-    input[type="text"], input[type="number"], textarea, select { width: 100%; padding: 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg-primary); font-family: inherit; }
-    .checkbox-group { display: flex; gap: 12px; flex-wrap: wrap; }
-    .checkbox-item { display: flex; align-items: center; gap: 8px; cursor: pointer; }
-    .btn-block { width: 100%; margin-top: 24px; }
-    .header-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
-  </style>
+  <link rel="stylesheet" href="css/sitter-edit.css?v=4">
 </head>
 <body>
   <div class="container" id="main-content">
     <div class="header-actions">
       <h1>Hồ sơ Sitter</h1>
-      <a id="view-profile-btn" href="sitter-profile.html" target="_blank" class="btn btn-outline" style="display:none;">Xem trang hồ sơ</a>
+      <a id="view-profile-btn" href="sitter-profile.html" target="_blank" class="btn btn-outline hidden">Xem trang hồ sơ</a>
     </div>
 
     <div class="card">
@@ -63,7 +53,7 @@
           <select id="primary-service-select" required>
             <option value="">-- Chọn dịch vụ chính --</option>
           </select>
-          <small style="color:var(--text-muted); display:block; margin-top:4px;">
+          <small class="text-muted-sub">
             Giá của dịch vụ chính sẽ áp dụng theo "Giá một ngày" ở trên.
           </small>
         </div>
@@ -81,112 +71,6 @@
   <script src="assets/data.js?v=4"></script>
   <script src="assets/api.js?v=4"></script>
   <script src="assets/components.js?v=4"></script>
-  <script>
-    const user = getCurrentUser();
-    if (!user || user.role !== 'SITTER') {
-      document.body.innerHTML = '<div style="text-align:center; padding:100px;"><h2>Bạn không có quyền truy cập</h2><br><a href="index.html" class="btn btn-primary">Về trang chủ</a></div>';
-    } else {
-      init();
-    }
-
-    async function init() {
-      try {
-        const services = await apiFetch('/services');
-        const srvContainer = document.getElementById('services-container');
-        srvContainer.innerHTML = services.map(s => 
-          `<label class="checkbox-item"><input type="checkbox" name="dichvu" value="${/* safe */ s.id}"> ${escapeHtml(s.ten)}</label>`
-        ).join('');
-
-        const primarySelect = document.getElementById('primary-service-select');
-        primarySelect.innerHTML = '<option value="">-- Chọn dịch vụ chính --</option>' + services.map(s =>
-          `<option value="${/* safe */ s.id}">${escapeHtml(s.ten)}</option>`
-        ).join('');
-
-        const profile = await apiFetch('/sitter/profile');
-        if (profile) {
-          document.getElementById('bio').value = profile.bio || '';
-          
-          let basePrice = 100000;
-          if (profile.dichVu && profile.dichVu.length > 0) {
-              const primaryDichVu = profile.dichVu.find(d => d.isPrimary) || profile.dichVu[0];
-              basePrice = primaryDichVu.gia;
-          }
-          document.getElementById('gia').value = basePrice;
-          
-          if (profile.khuVuc) document.getElementById('khuvuc').value = profile.khuVuc;
-          document.getElementById('tags').value = (profile.tags || []).join(', ');
-
-          const pets = (profile.tags || []).filter(t => ['Chó', 'Mèo', 'Khác'].includes(t));
-          document.querySelectorAll('input[name="pet"]').forEach(cb => {
-            if (pets.includes(cb.value)) cb.checked = true;
-          });
-
-          // Đánh dấu các dịch vụ đã chọn và chọn dịch vụ chính
-          const primarySrv = (profile.dichVu || []).find(d => d.isPrimary);
-          if (primarySrv && primarySrv.serviceId) {
-            primarySelect.value = primarySrv.serviceId;
-          } else if (profile.dichVu && profile.dichVu.length > 0) {
-            const matched = services.find(s => s.ten === profile.dichVu[0].ten);
-            if (matched) primarySelect.value = matched.id;
-          }
-
-          document.querySelectorAll('input[name="dichvu"]').forEach(cb => {
-             const srv = profile.dichVu.find(d => d.ten === cb.parentElement.textContent.trim());
-             if (srv) cb.checked = true;
-          });
-
-          const btnView = document.getElementById('view-profile-btn');
-          btnView.href = `sitter-profile.html?id=${profile.sitterId}`;
-          btnView.style.display = 'inline-flex';
-        }
-      } catch (err) {
-        console.error(err);
-      }
-    }
-
-    document.getElementById('sitter-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const btn = document.getElementById('btn-submit');
-      btn.textContent = 'Đang lưu...';
-      btn.disabled = true;
-
-      const primarySrvId = document.getElementById('primary-service-select').value;
-      if (!primarySrvId) {
-        showToast('Vui lòng chọn dịch vụ trông giữ chính!', 3000, '⚠️');
-        btn.textContent = 'Lưu thay đổi';
-        btn.disabled = false;
-        return;
-      }
-
-      const petChecked = Array.from(document.querySelectorAll('input[name="pet"]:checked')).map(cb => cb.value);
-      const srvChecked = Array.from(document.querySelectorAll('input[name="dichvu"]:checked')).map(cb => cb.value);
-      if (!srvChecked.includes(primarySrvId)) {
-        srvChecked.push(primarySrvId);
-      }
-
-      const tagsInput = document.getElementById('tags').value.split(',').map(t => t.trim()).filter(t => t);
-      const allTags = [...new Set([...petChecked, ...tagsInput])];
-
-      const payload = {
-        bio: document.getElementById('bio').value,
-        giaMoiNgay: parseInt(document.getElementById('gia').value),
-        khuVuc: document.getElementById('khuvuc').value,
-        loaiPetNhan: petChecked,
-        tags: allTags,
-        dichVuBoSung: srvChecked,
-        primaryServiceId: primarySrvId
-      };
-
-      try {
-        await apiFetch('/sitter/profile', { method: 'PUT', body: JSON.stringify(payload) });
-        showToast('Lưu hồ sơ thành công!', 3000, '✅');
-      } catch (err) {
-        showToast(err.message, 3000, '❌');
-      } finally {
-        btn.textContent = 'Lưu thay đổi';
-        btn.disabled = false;
-      }
-    });
-  </script>
+  <script src="js/sitter-edit.js?v=4"></script>
 </body>
 </html>

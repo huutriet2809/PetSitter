@@ -1,4 +1,9 @@
 {
+  "name": "petsitter",
+  "version": "1.0.0",
+  "scripts": {
+    "test": "node tests/photo-url-validator.test.js"
+  },
   "devDependencies": {
     "eslint": "^10.12.0"
   }

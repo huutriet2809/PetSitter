@@ -1,0 +1,149 @@
+/* PawStay Admin Users Styles */
+.user-filter-card {
+    margin-bottom: 20px;
+    padding: 16px;
+}
+
+.user-filter-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.user-search-input {
+    flex: 1;
+    min-width: 200px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+.user-select {
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+.users-table-wrap {
+    overflow-x: auto;
+}
+
+.users-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+}
+
+.users-table-head-row {
+    border-bottom: 2px solid var(--border);
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+}
+
+.users-table th {
+    padding: 10px 12px;
+}
+
+.users-table-row {
+    border-bottom: 1px solid var(--border);
+}
+
+.users-table td {
+    padding: 12px;
+}
+
+.user-name-bold {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.user-meta-sub {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.user-phone-cell {
+    font-size: 0.9rem;
+}
+
+.user-role-badge {
+    font-size: 0.8rem;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+}
+
+.badge-user-active {
+    background: rgba(34, 197, 94, 0.15);
+    color: #16a34a;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.badge-user-locked {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.badge-user-temp-locked {
+    background: rgba(245, 158, 11, 0.15);
+    color: #d97706;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.user-self-label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.user-action-cell {
+    text-align: right;
+}
+
+.btn-lock-user {
+    color: #ef4444;
+    border-color: #ef4444;
+}
+
+.btn-unlock-user {
+    background: #16a34a;
+    border-color: #16a34a;
+    color: #fff;
+}
+
+.user-pagination-wrap {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 20px;
+    align-items: center;
+}
+
+.user-page-info {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.btn-page-disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+

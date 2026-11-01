@@ -63,12 +63,12 @@ function formatTien(so) {
 // Hàm render sao rating (trả về HTML string)
 function renderSao(rating, size) {
   const diem = parseFloat(rating) || 0;
-  const fs = size || '0.85rem';
-  let html = `<span class="stars" style="font-size:${/* safe */ fs}">`;
+  const sizeClass = (size === '1rem' || size === '1.1rem' || size === '1.2rem') ? ' stars-lg' : (size === '0.75rem' ? ' stars-sm' : '');
+  let html = `<span class="stars${/* safe */ sizeClass}">`;
   for (let i = 1; i <= 5; i++) {
     if (i <= Math.floor(diem)) html += '★';
     else if (i - diem < 1 && i - diem > 0) html += '½';
-    else html += '<span style="opacity:0.25">★</span>';
+    else html += '<span class="stars-empty">★</span>';
   }
   html += '</span>';
   return html;

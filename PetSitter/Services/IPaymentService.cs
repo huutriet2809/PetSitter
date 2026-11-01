@@ -15,6 +15,7 @@ namespace PetSitter.Services
         Task UpdateRefundAccountAsync(string ownerUserId, string bookingId, UpdateRefundAccountDto dto);
 
         // 5B: SUSPENSE handling & Decrypted refund accounts
+        Task<SuspensePaymentsPagedResult> GetSuspensePaymentsAsync(string? status, int page, int pageSize);
         Task AssignSuspensePaymentAsync(string adminUserId, long orderCode, AssignSuspenseDto dto, DateTime nowUtc);
         Task RefundSuspensePaymentAsync(string adminUserId, long orderCode, RefundSuspenseDto dto, DateTime nowUtc);
         Task<DecryptedAccountDto> GetDecryptedRefundAccountAsync(string adminUserId, string refundId, string? ipAddress, DateTime nowUtc);

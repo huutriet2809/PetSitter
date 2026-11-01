@@ -46,6 +46,10 @@ namespace PetSitter.Models
 
         public int TotalReviews { get; set; } = 0;
 
+        // Quản lý vi phạm của Sitter
+        public int ViolationCount { get; set; } = 0;
+        public List<SitterViolationRecord> Violations { get; set; } = new List<SitterViolationRecord>();
+
         // Tài khoản ngân hàng nhận tiền rút của Sitter
         public SitterBankAccount? BankAccount { get; set; }
 
@@ -65,6 +69,14 @@ namespace PetSitter.Models
         public string AccountHolderName { get; set; } = null!; // Tên chủ tài khoản
         public bool NameMatchesRegisteredName { get; set; } = true; // Khớp với FullName đăng ký
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow; // Thời điểm cập nhật (để tính cooldown 24h)
+    }
+
+    public class SitterViolationRecord
+    {
+        public string BookingId { get; set; } = string.Empty;
+        public string Reason { get; set; } = string.Empty;
+        public string AdminUserId { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
 }
 

@@ -1,0 +1,218 @@
+/* =====================================================
+   ADMIN WITHDRAWALS MODULE (withdrawals.css)
+   Phase: C2 - Round 4C-2
+   ===================================================== */
+
+/* Status Badges */
+.status-badge.status-requested {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.status-badge.status-approved {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.status-badge.status-processing {
+  background: #e0e7ff;
+  color: #4338ca;
+}
+
+.status-badge.status-paid {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.status-badge.status-rejected {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.status-badge.status-cancelled {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.status-badge.status-failed {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+/* Card & Table Layout */
+.withdrawals-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.withdrawals-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.withdrawals-title {
+  margin: 0;
+}
+
+.withdrawals-empty {
+  text-align: center;
+  padding: 30px;
+  color: var(--text-muted);
+}
+
+.withdrawals-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.withdrawals-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.withdrawals-thead-row {
+  text-align: left;
+  border-bottom: 2px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.withdrawals-th {
+  padding: 8px;
+}
+
+.withdrawals-tr {
+  border-bottom: 1px solid var(--border);
+}
+
+.withdrawals-td {
+  padding: 10px 8px;
+}
+
+.withdrawals-td-amount {
+  padding: 10px 8px;
+  font-weight: 700;
+  color: #16a34a;
+  font-size: 1.05rem;
+}
+
+.withdrawals-td-bank {
+  padding: 10px 8px;
+  font-size: 0.85rem;
+}
+
+/* Actions & Processing Form */
+.withdrawals-action-group {
+  display: flex;
+  gap: 6px;
+}
+
+.withdrawals-action-group.align-center {
+  align-items: center;
+}
+
+.withdrawals-btn-reject {
+  color: #ef4444;
+  border-color: #ef4444;
+}
+
+.withdrawals-btn-claim {
+  background: #2563eb;
+  border-color: #2563eb;
+}
+
+.withdrawals-btn-paid {
+  background: #16a34a;
+  border-color: #16a34a;
+}
+
+.withdrawals-btn-unclaim {
+  color: #64748b;
+  font-size: 0.75rem;
+  padding: 4px 6px;
+}
+
+.withdrawals-btn-decrypt {
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  margin-top: 4px;
+}
+
+.withdrawals-ref-input {
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  width: 130px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.withdrawals-claim-info {
+  font-size: 0.75rem;
+  color: #4338ca;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.withdrawals-paid-text {
+  font-size: 0.85rem;
+  color: #16a34a;
+}
+
+.withdrawals-rejected-text {
+  font-size: 0.8rem;
+  color: #ef4444;
+}
+
+/* Modal Xem STK giải mã */
+.bank-decrypt-warning {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  padding: 10px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  margin-bottom: 15px;
+}
+
+.bank-decrypt-card {
+  background: var(--bg-secondary);
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.bank-decrypt-group {
+  margin-bottom: 10px;
+}
+
+.bank-decrypt-group:last-child {
+  margin-bottom: 0;
+}
+
+.bank-decrypt-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.bank-decrypt-name {
+  font-size: 1.05rem;
+}
+
+.bank-decrypt-number {
+  font-size: 1.3rem;
+  letter-spacing: 1px;
+  color: #1d4ed8;
+}
+
+.bank-decrypt-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 15px;
+}
+

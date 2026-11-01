@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.IdentityModel.Tokens;
 using MongoDB.Driver;
 using PetSitter.Data;
@@ -89,6 +90,16 @@ builder.Services.AddScoped<IPetService, PetService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IWithdrawalService, WithdrawalService>();
 builder.Services.AddScoped<IRevenueService, RevenueService>();
+builder.Services.AddScoped<IBankStatementParser, BankStatementParser>();
+builder.Services.AddScoped<IBankReconciliationService, BankReconciliationService>();
+
+// Email Transactional (Queue + Service + BackgroundWorker)
+builder.Services.AddSingleton<IEmailQueue, EmailQueue>();
+builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddHostedService<PetSitter.BackgroundServices.EmailBackgroundService>();
+
+// Đăng ký BackgroundService bảo trì định kỳ đơn đặt lịch (Auto-expire, Auto-complete, Overdue reminder, Reconcile)
+builder.Services.AddHostedService<PetSitter.BackgroundServices.BookingMaintenanceBackgroundService>();
 
 // Data Protection cho mã hóa PayerInfo & tài khoản ngân hàng (lưu thư mục cố định ngoài repo, đọc từ Security:DataProtectionKeyPath)
 var dpKeyDir = builder.Configuration["Security:DataProtectionKeyPath"]
@@ -144,14 +155,12 @@ else
 builder.Services.AddScoped<ILedgerService, LedgerService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 
-// Configure JWT Authentication
-var jwtSettings = builder.Configuration.GetSection("JwtSettings");
-var secretKey = jwtSettings.GetValue<string>("Secret");
+// Add MemoryCache for short caching (e.g. user active status, CIDR lookups)
+builder.Services.AddMemoryCache();
 
-if (string.IsNullOrWhiteSpace(secretKey) || secretKey.StartsWith("YOUR_") || secretKey.Length < 32)
-{
-    throw new InvalidOperationException("Lỗi cấu hình: Khóa bí mật 'JwtSettings:Secret' bị rỗng, đang dùng giá trị mẫu hoặc ngắn hơn 32 ký tự. Vui lòng thiết lập bằng lệnh: dotnet user-secrets set \"JwtSettings:Secret\" \"<khoa_bi_mat_toi_thieu_32_ky_tu>\"");
-}
+// Configure JWT Authentication & Key Rotation
+var jwtSettings = builder.Configuration.GetSection("JwtSettings");
+var allValidationKeys = PetSitter.Helpers.JwtKeyHelper.GetAllValidationKeys(builder.Configuration);
 
 builder.Services.AddAuthentication(options =>
 {
@@ -168,8 +177,73 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuerSigningKey = true,
         ValidIssuer = jwtSettings.GetValue<string>("Issuer"),
         ValidAudience = jwtSettings.GetValue<string>("Audience"),
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey!)),
+        IssuerSigningKeys = allValidationKeys,
+        IssuerSigningKeyResolver = (tokenString, securityToken, kid, validationParameters) =>
+        {
+            if (!string.IsNullOrEmpty(kid))
+            {
+                var match = validationParameters.IssuerSigningKeys?.FirstOrDefault(k => k.KeyId == kid);
+                if (match != null) return new[] { match };
+            }
+            return validationParameters.IssuerSigningKeys ?? Enumerable.Empty<SecurityKey>();
+        },
         ClockSkew = TimeSpan.FromSeconds(5) // ClockSkew nhỏ theo yêu cầu
+    };
+
+    options.Events = new JwtBearerEvents
+    {
+        OnTokenValidated = async context =>
+        {
+            var userId = context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                      ?? context.Principal?.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
+
+            if (string.IsNullOrEmpty(userId))
+            {
+                context.Fail("Token thiếu định danh người dùng.");
+                return;
+            }
+
+            var cache = context.HttpContext.RequestServices.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>();
+            var cacheKey = $"user_active_status_{userId}";
+
+            if (!cache.TryGetValue(cacheKey, out bool isActive))
+            {
+                try
+                {
+                    var dbContext = context.HttpContext.RequestServices.GetRequiredService<PetSitterContext>();
+                    var user = await dbContext.Users.Find(u => u.UserId == userId).FirstOrDefaultAsync();
+
+                    if (user == null)
+                    {
+                        context.Fail("Tài khoản của bạn không tồn tại hoặc đã bị xóa.");
+                        return;
+                    }
+
+                    isActive = user.IsActive != false;
+                    cache.Set(cacheKey, isActive, TimeSpan.FromSeconds(30));
+                }
+                catch (Exception ex)
+                {
+                    // Giới hạn tần suất log tối đa 1 log / 10 giây để chống spam/nghẽn I/O khi DB sập
+                    const string dbErrorThrottleKey = "last_db_error_log_token_validation";
+                    if (!cache.TryGetValue(dbErrorThrottleKey, out _))
+                    {
+                        var logger = context.HttpContext.RequestServices.GetService<ILogger<Program>>();
+                        logger?.LogError(ex, "LỖI BẢO MẬT: Không thể xác thực trạng thái tài khoản {UserId} do lỗi kết nối CSDL tạm thời. Áp dụng chiến lược Fail-Closed (log gộp 1 lần / 10s).", userId);
+                        cache.Set(dbErrorThrottleKey, true, TimeSpan.FromSeconds(10));
+                    }
+
+                    // Chiến lược Fail-Closed: Từ chối truy cập khi CSDL lỗi để ngăn chặn tài khoản bị khóa xâm nhập
+                    context.Fail("Hệ thống tạm thời không thể xác thực tài khoản. Vui lòng thử lại sau.");
+                    return;
+                }
+            }
+
+            if (!isActive)
+            {
+                context.Fail("Tài khoản của bạn đã bị khóa hoặc ngừng hoạt động.");
+            }
+        }
     };
 });
 
@@ -245,7 +319,19 @@ builder.Services.AddRateLimiter(options =>
         });
     });
 
-    // 5. Global limiter: 100 request/phút/user (fallback IP), ngoại lệ hoàn toàn cho PayOS Webhook
+    // 5. csp-report: 30 request/phút/IP để thu thập báo cáo CSP không gây quá tải log
+    options.AddPolicy("csp-report", httpContext =>
+    {
+        var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown_ip";
+        return RateLimitPartition.GetFixedWindowLimiter(ip, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 30,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        });
+    });
+
+    // 6. Global limiter: 100 request/phút/user (fallback IP), ngoại lệ hoàn toàn cho PayOS Webhook
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
     {
         if (httpContext.Request.Path.StartsWithSegments("/api/payments/payos/webhook", StringComparison.OrdinalIgnoreCase))
@@ -306,38 +392,71 @@ using (var scope = app.Services.CreateScope())
 // Global Exception Handler (bắt mọi unhandled exception, không lộ stack trace ra ngoài)
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
-// 1. Security Headers & CSP Report-Only (đặt ngay sau ExceptionHandler để mọi response kể cả lỗi 500 từ downstream middleware/handlers đều có đủ security headers)
+// 1. Security Headers & CSP (Report-Only hoặc Enforce theo cấu hình CspSettings:EnforceMode)
+var cspEnforceMode = app.Configuration.GetValue<bool>("CspSettings:EnforceMode");
+var cspPolicy = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; report-uri /api/csp-report; report-to csp-endpoint;";
+
 app.Use(async (context, next) =>
 {
     context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
     context.Response.Headers.Append("X-Frame-Options", "DENY");
     context.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
     context.Response.Headers.Append("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
-    context.Response.Headers.Append("Content-Security-Policy-Report-Only", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' https:; connect-src 'self';");
-    await next();
-});
+    context.Response.Headers.Append("Reporting-Endpoints", "csp-endpoint=\"/api/csp-report\"");
 
-// 2. ForwardedHeaders: chỉ bật khi cấu hình proxy tin cậy (KnownProxies/KnownNetworks từ config), Development không bật
-if (!app.Environment.IsDevelopment())
-{
-    var knownProxiesConfig = app.Configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>();
-    if (knownProxiesConfig != null && knownProxiesConfig.Length > 0)
+    if (cspEnforceMode)
     {
-        var fOptions = new ForwardedHeadersOptions
-        {
-            ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto
-        };
-        foreach (var proxy in knownProxiesConfig)
-        {
-            if (System.Net.IPAddress.TryParse(proxy, out var ip))
-                fOptions.KnownProxies.Add(ip);
-        }
-        app.UseForwardedHeaders(fOptions);
+        context.Response.Headers.Append("Content-Security-Policy", cspPolicy);
     }
     else
     {
-        app.Logger.LogWarning("CẢNH BÁO BẢO MẬT: Môi trường Production/Non-Development chưa cấu hình ForwardedHeaders:KnownProxies. ForwardedHeaders middleware sẽ không được kích hoạt để tránh giả mạo IP.");
+        context.Response.Headers.Append("Content-Security-Policy-Report-Only", cspPolicy);
     }
+
+    await next();
+});
+
+// 2. ForwardedHeaders: cấu hình an toàn với KnownProxies và KnownNetworks (CIDR), mặc định an toàn xóa sạch nguồn lạ
+var knownProxiesConfig = app.Configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>();
+var knownNetworksConfig = app.Configuration.GetSection("ForwardedHeaders:KnownNetworks").Get<string[]>();
+
+var hasProxies = knownProxiesConfig != null && knownProxiesConfig.Any(p => !string.IsNullOrWhiteSpace(p));
+var hasNetworks = knownNetworksConfig != null && knownNetworksConfig.Any(n => !string.IsNullOrWhiteSpace(n));
+
+if (hasProxies || hasNetworks)
+{
+    var fOptions = new ForwardedHeadersOptions
+    {
+        ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto
+    };
+
+    // Mặc định an toàn: xóa sạch proxy và mạng ngầm định để không tin nguồn lạ
+    fOptions.KnownProxies.Clear();
+    fOptions.KnownNetworks.Clear();
+
+    if (knownProxiesConfig != null)
+    {
+        foreach (var proxy in knownProxiesConfig)
+        {
+            if (System.Net.IPAddress.TryParse(proxy?.Trim(), out var ip))
+                fOptions.KnownProxies.Add(ip);
+        }
+    }
+
+    if (knownNetworksConfig != null)
+    {
+        var parsedNetworks = PetSitter.Helpers.CidrNetworkHelper.ParseCidrNetworks(knownNetworksConfig, app.Logger);
+        foreach (var net in parsedNetworks)
+        {
+            fOptions.KnownNetworks.Add(net);
+        }
+    }
+
+    app.UseForwardedHeaders(fOptions);
+}
+else if (!app.Environment.IsDevelopment())
+{
+    app.Logger.LogWarning("CẢNH BÁO BẢO MẬT: Môi trường Production/Non-Development chưa cấu hình ForwardedHeaders (KnownProxies / KnownNetworks). Middleware không được bật để tránh giả mạo IP.");
 }
 
 // 3. HSTS & HttpsRedirection (chỉ ở Production) / Swagger (chỉ ở Development)

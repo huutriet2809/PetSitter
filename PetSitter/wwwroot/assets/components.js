@@ -14,9 +14,6 @@ function getCurrentPage() {
 }
 
 function safeEscape(str) {
-  if (typeof window !== 'undefined' && typeof window.escapeHtml === 'function') {
-    return window.escapeHtml(str);
-  }
   if (str == null) return '';
   return String(str)
     .replace(/&/g, '&amp;')
@@ -201,7 +198,7 @@ function renderNavbar() {
              }).join('')}
            </div>
            <div class="account-menu-divider"></div>
-           <button type="button" onclick="logout()" class="account-menu-item account-menu-logout" role="menuitem">
+           <button type="button" data-action="logout" class="account-menu-item account-menu-logout" role="menuitem">
              <span>🚪 Đăng xuất</span>
            </button>
          </div>
@@ -237,7 +234,7 @@ function renderNavbar() {
            }).join('')}
          </div>
          <div class="mobile-nav-divider"></div>
-         <button type="button" onclick="logout()" class="btn btn-outline mobile-logout-btn">
+         <button type="button" data-action="logout" class="btn btn-outline mobile-logout-btn">
            🚪 Đăng xuất
          </button>
        </div>`
@@ -824,9 +821,9 @@ function renderFooter() {
             <li><a href="privacy.html">Chính sách bảo mật</a></li>
           </ul>
           <!-- Hotline -->
-          <div style="margin-top:16px;">
-            <p style="font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;">Hotline hỗ trợ (7 ngày/tuần)</p>
-            <a href="tel:02363123456" style="font-size:1rem;font-weight:700;color:var(--accent);">0236 312 3456</a>
+          <div class="footer-hotline-wrap">
+            <p class="footer-hotline-label">Hotline hỗ trợ (7 ngày/tuần)</p>
+            <a href="tel:02363123456" class="footer-hotline-link">0236 312 3456</a>
           </div>
         </div>
 
@@ -1024,6 +1021,15 @@ document.addEventListener('DOMContentLoaded', function() {
   renderToast();
   initScrollAnimations();
   initStatsCounters();
+
+  // Event Delegation cho nút Logout (CSP Clean)
+  document.addEventListener('click', function(e) {
+    const logoutBtn = e.target.closest('[data-action="logout"]');
+    if (logoutBtn) {
+      e.preventDefault();
+      logout();
+    }
+  });
 
   // Kiểm tra và hiển thị toast từ trang trước (nếu có)
   const toastOnLoad = localStorage.getItem('pawstay_toast_on_load');

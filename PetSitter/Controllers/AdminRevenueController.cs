@@ -15,10 +15,14 @@ namespace PetSitter.Controllers
     public class AdminRevenueController : ControllerBase
     {
         private readonly IRevenueService _revenueService;
+        private readonly IBankReconciliationService _bankReconciliationService;
 
-        public AdminRevenueController(IRevenueService revenueService)
+        public AdminRevenueController(
+            IRevenueService revenueService,
+            IBankReconciliationService bankReconciliationService)
         {
             _revenueService = revenueService;
+            _bankReconciliationService = bankReconciliationService;
         }
 
         [HttpGet("revenue/overview")]
@@ -117,18 +121,33 @@ namespace PetSitter.Controllers
                 return BadRequest(new { message = "Chỉ chấp nhận tệp định dạng bảng tính CSV (.csv)." });
             }
 
-            using var reader = new System.IO.StreamReader(file.OpenReadStream(), Encoding.UTF8);
-            var content = await reader.ReadToEndAsync();
-            var lines = content.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+            var adminUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "ADMIN";
+            using var stream = file.OpenReadStream();
+
+            var result = await _bankReconciliationService.ReconcileStatementAsync(stream, file.FileName, file.Length, adminUserId);
 
             return Ok(new
             {
                 success = true,
-                fileName = file.FileName,
-                fileSizeBytes = file.Length,
-                totalLines = lines.Length,
-                message = $"Tải lên tệp sao kê thành công ({lines.Length} dòng). Sẵn sàng đối chiếu."
+                message = $"Đối soát hoàn tất. Phân loại {result.TotalBankRows} dòng sao kê: {result.MatchedCount} khớp, {result.AmountMismatchCount} lệch tiền, {result.MissingInLedgerCount} thiếu trên sổ cái, {result.MissingInBankCount} thiếu tại ngân hàng.",
+                data = result
             });
+        }
+
+        [HttpGet("reconciliation/bank-runs")]
+        public async Task<IActionResult> GetBankReconciliationHistory([FromQuery] int limit = 20)
+        {
+            if (limit <= 0 || limit > 100) limit = 20;
+            var history = await _bankReconciliationService.GetReconciliationHistoryAsync(limit);
+            return Ok(history);
+        }
+
+        [HttpGet("reconciliation/bank-runs/{runId}")]
+        public async Task<IActionResult> GetBankReconciliationDetails(string runId)
+        {
+            var details = await _bankReconciliationService.GetReconciliationDetailsAsync(runId);
+            if (details == null) return NotFound(new { message = "Không tìm thấy phiên đối soát ngân hàng này." });
+            return Ok(details);
         }
     }
 }

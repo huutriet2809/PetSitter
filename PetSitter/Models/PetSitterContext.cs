@@ -11,6 +11,8 @@ namespace PetSitter.Models
             _database = database;
         }
 
+        public IMongoDatabase Database => _database;
+
         public IMongoCollection<User> Users => _database.GetCollection<User>("Users");
         public IMongoCollection<SitterProfile> SitterProfiles => _database.GetCollection<SitterProfile>("SitterProfiles");
         public IMongoCollection<Service> Services => _database.GetCollection<Service>("Services");
@@ -35,6 +37,8 @@ namespace PetSitter.Models
         public IMongoCollection<PlatformAccount> PlatformAccounts => _database.GetCollection<PlatformAccount>("PlatformAccounts");
         public IMongoCollection<RevenueSweep> RevenueSweeps => _database.GetCollection<RevenueSweep>("RevenueSweeps");
         public IMongoCollection<ReconciliationRun> ReconciliationRuns => _database.GetCollection<ReconciliationRun>("ReconciliationRuns");
+        public IMongoCollection<BankReconciliationRun> BankReconciliationRuns => _database.GetCollection<BankReconciliationRun>("BankReconciliationRuns");
+        public IMongoCollection<EmailLog> EmailLogs => _database.GetCollection<EmailLog>("EmailLogs");
 
         public IMongoCollection<T> GetCollection<T>(string name)
         {
