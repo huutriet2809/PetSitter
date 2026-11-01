@@ -1,0 +1,1138 @@
+{
+  "timestamp": "2026-11-01T13:49:53.547Z",
+  "baseUrl": "http://localhost:5138",
+  "summary": {
+    "totalPages": 29,
+    "pass": 28,
+    "skipped": 0,
+    "fail": 0,
+    "violation": 1,
+    "totalViolationEvents": 77,
+    "totalConsoleErrors": 9
+  },
+  "pageResults": [
+    {
+      "page": "index.html",
+      "httpStatus": 200,
+      "consoleErrors": 1,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "about.html",
+      "httpStatus": 200,
+      "consoleErrors": 0,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "contact.html",
+      "httpStatus": 200,
+      "consoleErrors": 1,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "faq.html",
+      "httpStatus": 200,
+      "consoleErrors": 1,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "how-it-works.html",
+      "httpStatus": 200,
+      "consoleErrors": 0,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "privacy.html",
+      "httpStatus": 200,
+      "consoleErrors": 1,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "terms.html",
+      "httpStatus": 200,
+      "consoleErrors": 1,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "refund-policy.html",
+      "httpStatus": 200,
+      "consoleErrors": 1,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "404.html",
+      "httpStatus": 200,
+      "consoleErrors": 1,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "login.html",
+      "httpStatus": 200,
+      "consoleErrors": 0,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "signup.html",
+      "httpStatus": 200,
+      "consoleErrors": 0,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "forgot-password.html",
+      "httpStatus": 200,
+      "consoleErrors": 1,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "reset-password.html",
+      "httpStatus": 200,
+      "consoleErrors": 1,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "profile.html",
+      "httpStatus": 200,
+      "consoleErrors": 0,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "sitters.html",
+      "httpStatus": 200,
+      "consoleErrors": 0,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "sitter-profile.html",
+      "httpStatus": 200,
+      "consoleErrors": 0,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "my-pets.html",
+      "httpStatus": 200,
+      "consoleErrors": 0,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "stay-updates.html",
+      "httpStatus": 200,
+      "consoleErrors": 0,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "booking.html",
+      "httpStatus": 200,
+      "consoleErrors": 0,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "payment.html",
+      "httpStatus": 200,
+      "consoleErrors": 0,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "confirmation.html",
+      "httpStatus": 200,
+      "consoleErrors": 0,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "my-bookings.html",
+      "httpStatus": 200,
+      "consoleErrors": 0,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "become-sitter.html",
+      "httpStatus": 200,
+      "consoleErrors": 0,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "owner-dashboard.html",
+      "httpStatus": 200,
+      "consoleErrors": 0,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "sitter-dashboard.html",
+      "httpStatus": 200,
+      "consoleErrors": 0,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "sitter-edit.html",
+      "httpStatus": 200,
+      "consoleErrors": 0,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "sitter-calendar.html",
+      "httpStatus": 200,
+      "consoleErrors": 0,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "admin-messages.html",
+      "httpStatus": 200,
+      "consoleErrors": 0,
+      "cspViolations": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "page": "admin.html",
+      "httpStatus": 200,
+      "consoleErrors": 0,
+      "cspViolations": 77,
+      "status": "❌ VIOLATION (77)"
+    }
+  ],
+  "consoleErrorsDetail": [
+    {
+      "page": "index.html",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "url": "http://localhost:5138/css/assets/images/hero_pets.png",
+      "lineNumber": 0,
+      "columnNumber": 0
+    },
+    {
+      "page": "contact.html",
+      "text": "Maximum call stack size exceeded",
+      "url": "http://localhost:5138/contact.html",
+      "lineNumber": 0,
+      "columnNumber": 0
+    },
+    {
+      "page": "faq.html",
+      "text": "Maximum call stack size exceeded",
+      "url": "http://localhost:5138/faq.html",
+      "lineNumber": 0,
+      "columnNumber": 0
+    },
+    {
+      "page": "privacy.html",
+      "text": "Maximum call stack size exceeded",
+      "url": "http://localhost:5138/privacy.html",
+      "lineNumber": 0,
+      "columnNumber": 0
+    },
+    {
+      "page": "terms.html",
+      "text": "Maximum call stack size exceeded",
+      "url": "http://localhost:5138/terms.html",
+      "lineNumber": 0,
+      "columnNumber": 0
+    },
+    {
+      "page": "refund-policy.html",
+      "text": "Maximum call stack size exceeded",
+      "url": "http://localhost:5138/refund-policy.html",
+      "lineNumber": 0,
+      "columnNumber": 0
+    },
+    {
+      "page": "404.html",
+      "text": "Maximum call stack size exceeded",
+      "url": "http://localhost:5138/404.html",
+      "lineNumber": 0,
+      "columnNumber": 0
+    },
+    {
+      "page": "forgot-password.html",
+      "text": "Maximum call stack size exceeded",
+      "url": "http://localhost:5138/forgot-password.html",
+      "lineNumber": 0,
+      "columnNumber": 0
+    },
+    {
+      "page": "reset-password.html",
+      "text": "Maximum call stack size exceeded",
+      "url": "http://localhost:5138/reset-password.html",
+      "lineNumber": 0,
+      "columnNumber": 0
+    }
+  ],
+  "adminTabResults": [
+    {
+      "tabId": "applications",
+      "tabName": "Quản trị Sitter (Applications)",
+      "phase": "Đợt 4B (Đã xong)",
+      "opened": "✅ Mở được",
+      "cspViolations": 0,
+      "consoleErrors": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "tabId": "users",
+      "tabName": "Người dùng (Users)",
+      "phase": "Đợt 4B (Đã xong)",
+      "opened": "✅ Mở được",
+      "cspViolations": 0,
+      "consoleErrors": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "tabId": "payments",
+      "tabName": "Thanh toán & Tạm giữ (Payments)",
+      "phase": "Đợt 4C-1 (Đang làm)",
+      "opened": "✅ Mở được",
+      "cspViolations": 0,
+      "consoleErrors": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "tabId": "refunds",
+      "tabName": "Yêu cầu Hoàn tiền (Refunds)",
+      "phase": "Đợt 4C-1 (Đang làm)",
+      "opened": "✅ Mở được",
+      "cspViolations": 0,
+      "consoleErrors": 0,
+      "status": "✅ PASS"
+    },
+    {
+      "tabId": "withdrawals",
+      "tabName": "Rút tiền Sitter (Withdrawals)",
+      "phase": "Đợt 4C-2",
+      "opened": "✅ Mở được",
+      "cspViolations": 16,
+      "consoleErrors": 0,
+      "status": "⚠️ VIOLATION (16)"
+    },
+    {
+      "tabId": "revenue",
+      "tabName": "Doanh thu Nền tảng (Revenue)",
+      "phase": "Đợt 4C-3",
+      "opened": "✅ Mở được",
+      "cspViolations": 76,
+      "consoleErrors": 1,
+      "status": "⚠️ VIOLATION (76)"
+    },
+    {
+      "tabId": "reconcile",
+      "tabName": "Đối soát & Kiểm toán Sổ cái (Reconcile)",
+      "phase": "Đợt 4D",
+      "opened": "✅ Mở được",
+      "cspViolations": 8,
+      "consoleErrors": 2,
+      "status": "⚠️ VIOLATION (8)"
+    },
+    {
+      "tabId": "suspense",
+      "tabName": "Giao dịch bất thường (Suspense)",
+      "phase": "Đợt 4D",
+      "opened": "✅ Mở được",
+      "cspViolations": 26,
+      "consoleErrors": 0,
+      "status": "⚠️ VIOLATION (26)"
+    },
+    {
+      "tabId": "disputes",
+      "tabName": "Khiếu nại & Tranh chấp (Disputes)",
+      "phase": "Đợt 4D",
+      "opened": "✅ Mở được",
+      "cspViolations": 0,
+      "consoleErrors": 0,
+      "status": "✅ PASS"
+    }
+  ],
+  "allViolationsDetail": [
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 37,
+      "columnNumber": 57,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "script-src-attr",
+      "effectiveDirective": "script-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "",
+      "lineNumber": 0,
+      "columnNumber": 0,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 54,
+      "columnNumber": 141,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 55,
+      "columnNumber": 90,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 57,
+      "columnNumber": 83,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 59,
+      "columnNumber": 108,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 61,
+      "columnNumber": 71,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 63,
+      "columnNumber": 133,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 65,
+      "columnNumber": 69,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 67,
+      "columnNumber": 114,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 69,
+      "columnNumber": 72,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 73,
+      "columnNumber": 44,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 74,
+      "columnNumber": 79,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 74,
+      "columnNumber": 142,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 75,
+      "columnNumber": 334,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "script-src-attr",
+      "effectiveDirective": "script-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "",
+      "lineNumber": 0,
+      "columnNumber": 0,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 76,
+      "columnNumber": 108,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 79,
+      "columnNumber": 154,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 80,
+      "columnNumber": 119,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 84,
+      "columnNumber": 305,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 87,
+      "columnNumber": 44,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 88,
+      "columnNumber": 79,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 88,
+      "columnNumber": 154,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 89,
+      "columnNumber": 324,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 92,
+      "columnNumber": 74,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "script-src-attr",
+      "effectiveDirective": "script-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "",
+      "lineNumber": 0,
+      "columnNumber": 0,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 94,
+      "columnNumber": 109,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "script-src-attr",
+      "effectiveDirective": "script-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "",
+      "lineNumber": 0,
+      "columnNumber": 0,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 109,
+      "columnNumber": 155,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 112,
+      "columnNumber": 119,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 113,
+      "columnNumber": 44,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 114,
+      "columnNumber": 69,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 115,
+      "columnNumber": 71,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 117,
+      "columnNumber": 44,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 118,
+      "columnNumber": 69,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 119,
+      "columnNumber": 110,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 122,
+      "columnNumber": 69,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 123,
+      "columnNumber": 76,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 126,
+      "columnNumber": 79,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "script-src-attr",
+      "effectiveDirective": "script-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "",
+      "lineNumber": 0,
+      "columnNumber": 0,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "script-src-attr",
+      "effectiveDirective": "script-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "",
+      "lineNumber": 0,
+      "columnNumber": 0,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "script-src-attr",
+      "effectiveDirective": "script-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "",
+      "lineNumber": 0,
+      "columnNumber": 0,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 142,
+      "columnNumber": 159,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 143,
+      "columnNumber": 90,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 147,
+      "columnNumber": 90,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 149,
+      "columnNumber": 71,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 151,
+      "columnNumber": 140,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 153,
+      "columnNumber": 92,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 156,
+      "columnNumber": 44,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 157,
+      "columnNumber": 98,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 158,
+      "columnNumber": 236,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 160,
+      "columnNumber": 44,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 161,
+      "columnNumber": 98,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 162,
+      "columnNumber": 240,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 164,
+      "columnNumber": 44,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 165,
+      "columnNumber": 98,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 166,
+      "columnNumber": 256,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 168,
+      "columnNumber": 74,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "script-src-attr",
+      "effectiveDirective": "script-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "",
+      "lineNumber": 0,
+      "columnNumber": 0,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "script-src-attr",
+      "effectiveDirective": "script-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "",
+      "lineNumber": 0,
+      "columnNumber": 0,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "script-src-attr",
+      "effectiveDirective": "script-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "",
+      "lineNumber": 0,
+      "columnNumber": 0,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 187,
+      "columnNumber": 44,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 188,
+      "columnNumber": 98,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 189,
+      "columnNumber": 236,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 191,
+      "columnNumber": 44,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 192,
+      "columnNumber": 98,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 193,
+      "columnNumber": 262,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 195,
+      "columnNumber": 74,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "script-src-attr",
+      "effectiveDirective": "script-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "",
+      "lineNumber": 0,
+      "columnNumber": 0,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "script-src-attr",
+      "effectiveDirective": "script-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "",
+      "lineNumber": 0,
+      "columnNumber": 0,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "script-src-attr",
+      "effectiveDirective": "script-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "",
+      "lineNumber": 0,
+      "columnNumber": 0,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 214,
+      "columnNumber": 44,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 215,
+      "columnNumber": 98,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 216,
+      "columnNumber": 301,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 218,
+      "columnNumber": 74,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "script-src-attr",
+      "effectiveDirective": "script-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "",
+      "lineNumber": 0,
+      "columnNumber": 0,
+      "sample": ""
+    },
+    {
+      "page": "admin.html",
+      "violatedDirective": "style-src-attr",
+      "effectiveDirective": "style-src-attr",
+      "blockedURI": "inline",
+      "sourceFile": "http://localhost:5138/admin.html",
+      "lineNumber": 220,
+      "columnNumber": 141,
+      "sample": ""
+    }
+  ]
+}

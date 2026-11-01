@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <!-- ===== SEO ===== -->
+  <title>Liên hệ | PawStay Đà Nẵng</title>
+  <meta name="description" content="Liên hệ với PawStay Đà Nẵng để được tư vấn dịch vụ gửi thú cưng và nhận hỗ trợ kỹ thuật 24/7." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>" />
+  
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="assets/style.css?v=4" />
+  <link rel="stylesheet" href="css/contact.css?v=1" />
+</head>
+<body>
+
+  <!-- ===================== MAIN LAYOUT ===================== -->
+  <main class="contact-wrapper">
+    
+    <!-- Hero Header -->
+    <section class="contact-hero">
+      <p class="section-label">Liên lạc với chúng tôi</p>
+      <h1 class="section-title">Kết nối với PawStay</h1>
+      <div class="section-divider"></div>
+      <p class="contact-hero-desc">
+        Mọi ý kiến đóng góp, thắc mắc về dịch vụ hoặc yêu cầu hỗ trợ khẩn cấp, xin vui lòng gửi tin nhắn hoặc gọi điện trực tiếp.
+      </p>
+    </section>
+
+    <!-- Content Grid -->
+    <div class="contact-grid">
+      
+      <!-- Column 1: Info Card -->
+      <section class="contact-info-card animate-in">
+        <h2 class="contact-info-title">
+          <span>📞</span> Thông tin liên hệ
+        </h2>
+
+        <!-- Address -->
+        <div class="info-item">
+          <div class="info-icon" aria-hidden="true">📍</div>
+          <div class="info-content">
+            <h3>Địa chỉ văn phòng</h3>
+            <p>120 Trần Phú, Quận Hải Châu, Đà Nẵng, Việt Nam.</p>
+          </div>
+        </div>
+
+        <!-- Phone -->
+        <div class="info-item">
+          <div class="info-icon" aria-hidden="true">☎️</div>
+          <div class="info-content">
+            <h3>Số điện thoại</h3>
+            <p>0236 312 3456 <span class="work-hours-badge">(Giờ làm việc)</span></p>
+            <p class="hotline-badge">Hotline cứu hộ: 0905 123 456 (24/7)</p>
+          </div>
+        </div>
+
+        <!-- Email -->
+        <div class="info-item">
+          <div class="info-icon" aria-hidden="true">📨</div>
+          <div class="info-content">
+            <h3>Hộp thư điện tử</h3>
+            <p>support@pawstay.vn</p>
+          </div>
+        </div>
+
+        <!-- Styled visual map card -->
+        <div class="map-card" role="img" aria-label="Bản đồ chỉ dẫn tới văn phòng PawStay tại Hải Châu, Đà Nẵng">
+          <div class="map-grid-bg"></div>
+          <div class="map-marker">
+            <div class="marker-pin">📍</div>
+            <div class="marker-pulse"></div>
+          </div>
+          <div class="map-details">
+            <strong>PawStay Đà Nẵng</strong><br/>
+            120 Trần Phú, Hải Châu, Đà Nẵng
+          </div>
+        </div>
+      </section>
+
+      <!-- Column 2: Form Card -->
+      <section class="contact-form-card animate-in">
+        <h2 class="form-title">✉️ Gửi tin nhắn cho chúng tôi</h2>
+        
+        <form id="contact-form">
+          <div class="form-group">
+            <label for="contact-name">Họ và tên <span class="required">*</span></label>
+            <input type="text" id="contact-name" placeholder="Nhập họ tên của bạn..." required />
+          </div>
+
+          <div class="form-group">
+            <label for="contact-email">Địa chỉ Email <span class="required">*</span></label>
+            <input type="email" id="contact-email" placeholder="Nhập địa chỉ email liên hệ..." required />
+          </div>
+
+          <div class="form-group">
+            <label for="contact-subject">Tiêu đề <span class="required">*</span></label>
+            <input type="text" id="contact-subject" placeholder="Nhập tiêu đề..." required />
+          </div>
+
+          <!-- Honeypot -->
+          <div class="form-group honeypot-field" aria-hidden="true">
+            <label for="contact-website">Website</label>
+            <input type="text" id="contact-website" tabindex="-1" autocomplete="off" />
+          </div>
+
+          <div class="form-group">
+            <label for="contact-message">Nội dung tin nhắn <span class="required">*</span></label>
+            <textarea id="contact-message" placeholder="Nhập thắc mắc hoặc nội dung cần liên hệ..." required></textarea>
+          </div>
+
+          <button type="submit" class="btn btn-primary submit-btn">
+            📨 Gửi tin nhắn ngay
+          </button>
+        </form>
+      </section>
+
+    </div>
+
+  </main>
+
+  <!-- ===================== JAVASCRIPT ===================== -->
+  <script src="assets/api.js?v=4"></script>
+  <script src="assets/components.js?v=4"></script>
+  <script src="js/contact.js?v=1" defer></script>
+</body>
+</html>

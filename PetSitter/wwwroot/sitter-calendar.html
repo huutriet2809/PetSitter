@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lịch rảnh Sitter | PawStay</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>">
+  <link rel="stylesheet" href="assets/style.css?v=4">
+  <link rel="stylesheet" href="css/sitter-calendar.css?v=4">
+</head>
+<body>
+  <div class="container">
+    <h1 class="cal-title">Lịch rảnh của tôi</h1>
+
+    <div class="card">
+      <div class="calendar-header">
+        <button class="btn btn-outline btn-sm" data-action="prev-month">Tháng trước</button>
+        <h3 id="current-month">Tháng --, ----</h3>
+        <button class="btn btn-outline btn-sm" data-action="next-month">Tháng sau</button>
+      </div>
+
+      <div class="calendar-grid">
+        <div class="day-name">CN</div><div class="day-name">T2</div><div class="day-name">T3</div>
+        <div class="day-name">T4</div><div class="day-name">T5</div><div class="day-name">T6</div><div class="day-name">T7</div>
+      </div>
+      <div class="calendar-grid" id="calendar-days">
+        <!-- Rendered via JS -->
+      </div>
+
+      <div class="legend">
+        <div class="legend-item"><div class="dot dot-available"></div> Rảnh</div>
+        <div class="legend-item"><div class="dot dot-busy"></div> Bận (Chưa đánh dấu)</div>
+        <div class="legend-item"><div class="dot dot-booked"></div> Đã được đặt (Booked)</div>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-primary btn-block" data-action="mark-available">Đánh dấu Rảnh</button>
+        <button class="btn btn-outline btn-block" data-action="mark-busy">Đánh dấu Bận</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/api.js?v=4"></script>
+  <script src="assets/data.js?v=4"></script>
+  <script src="assets/components.js?v=4"></script>
+  <script src="js/sitter-calendar.js?v=4"></script>
+</body>
+</html>

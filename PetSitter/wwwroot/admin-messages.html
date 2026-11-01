@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản lý tin nhắn | PawStay Admin</title>
+    <link rel="stylesheet" href="fonts/fonts.css">
+    <link rel="stylesheet" href="assets/style.css?v=4">
+    <link rel="stylesheet" href="css/admin-messages.css?v=4">
+</head>
+<body>
+    <div class="admin-layout">
+        <aside class="sidebar">
+            <div class="sidebar-brand">🐾 PawStay Admin</div>
+            <ul class="sidebar-menu" id="admin-menu">
+                <li><a href="admin.html#applications" id="menu-applications">Quản trị</a></li>
+                <li><a href="admin.html#users" id="menu-users">Người dùng</a></li>
+                <li><a href="admin.html#payments" id="menu-payments">Thanh toán</a></li>
+                <li><a href="admin.html#refunds" id="menu-refunds">Hoàn tiền</a></li>
+                <li><a href="admin.html#withdrawals" id="menu-withdrawals">Rút tiền</a></li>
+                <li><a href="admin.html#revenue" id="menu-revenue">Doanh thu</a></li>
+                <li><a href="admin.html#reconcile" id="menu-reconcile">Đối soát</a></li>
+                <li><a href="admin.html#suspense" id="menu-suspense">Giao dịch SUSPENSE</a></li>
+                <li><a href="admin.html#disputes" id="menu-disputes">Đơn khiếu nại</a></li>
+                <li><a href="admin-messages.html" id="menu-messages" class="active">Tin nhắn</a></li>
+            </ul>
+        </aside>
+        
+        <main class="main-content">
+            <div class="dashboard-header">
+                <h2>Quản lý tin nhắn liên hệ</h2>
+            </div>
+            
+            <div class="filters">
+                <select id="read-filter">
+                    <option value="">Tất cả tin nhắn</option>
+                    <option value="false">Chưa đọc</option>
+                    <option value="true">Đã đọc</option>
+                </select>
+            </div>
+            
+            <div id="messages-container">
+                <div class="loading-state">Đang tải...</div>
+            </div>
+        </main>
+    </div>
+
+    <script src="assets/data.js?v=4"></script>
+    <script src="assets/api.js?v=4"></script>
+    <script src="assets/components.js?v=4"></script>
+    <script src="js/admin-messages.js?v=4"></script>
+</body>
+</html>

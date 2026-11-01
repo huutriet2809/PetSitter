@@ -1,0 +1,90 @@
+/* =====================================================
+   PAGE-SPECIFIC STYLES: SITTER EDIT PROFILE
+   ===================================================== */
+.container {
+  max-width: 800px;
+  margin: 100px auto;
+  padding: 24px;
+}
+
+.card {
+  background: var(--bg-card);
+  padding: 32px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+input[type="text"],
+input[type="number"],
+textarea,
+select {
+  width: 100%;
+  padding: 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: inherit;
+  outline: none;
+  transition: border-color var(--transition);
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--accent);
+}
+
+.checkbox-group {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.btn-block {
+  width: 100%;
+  margin-top: 24px;
+}
+
+.header-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.text-muted-sub {
+  color: var(--text-muted);
+  display: block;
+  margin-top: 4px;
+  font-size: 0.85rem;
+}
+
+.no-permission-box {
+  text-align: center;
+  padding: 100px 20px;
+}
+
+.hidden {
+  display: none !important;
+}
+

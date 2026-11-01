@@ -1,0 +1,141 @@
+/* =====================================================
+   ADMIN PAYMENTS & REFUNDS MODULE (payments.css)
+   Phase: C2 - Round 4C-1
+   ===================================================== */
+
+/* Grid 4 the KPI tai chinh */
+.payments-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+  margin-bottom: 25px;
+}
+
+.payments-kpi-card {
+  background: var(--bg-secondary);
+  padding: 16px;
+  border-radius: 8px;
+}
+
+.payments-kpi-card.kpi-escrow {
+  border-left: 4px solid #16a34a;
+}
+
+.payments-kpi-card.kpi-revenue {
+  border-left: 4px solid #3b82f6;
+}
+
+.payments-kpi-card.kpi-refund {
+  border-left: 4px solid #ea580c;
+}
+
+.payments-kpi-card.kpi-refund-count {
+  border-left: 4px solid #8b5cf6;
+}
+
+.payments-kpi-label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.payments-kpi-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-top: 6px;
+}
+
+.payments-kpi-value.val-escrow {
+  color: #16a34a;
+}
+
+.payments-kpi-value.val-revenue {
+  color: #2563eb;
+}
+
+.payments-kpi-value.val-refund {
+  color: #ea580c;
+}
+
+.payments-kpi-value.val-refund-count {
+  color: #7c3aed;
+}
+
+/* Card Hang doi hoan tien (Refund Queue) */
+.refund-queue-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.refund-queue-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.refund-queue-title {
+  margin: 0;
+}
+
+.refund-empty-text {
+  color: var(--text-muted);
+  margin-top: 10px;
+}
+
+/* Bang Refund Queue */
+.refund-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.refund-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 15px;
+  font-size: 0.9rem;
+}
+
+.refund-thead-row {
+  text-align: left;
+  border-bottom: 2px solid var(--border);
+}
+
+.refund-th {
+  padding: 8px;
+}
+
+.refund-tr {
+  border-bottom: 1px solid var(--border);
+}
+
+.refund-td {
+  padding: 8px;
+}
+
+.refund-td-amount {
+  padding: 8px;
+  color: #ef4444;
+  font-weight: 600;
+}
+
+.refund-waiting-text {
+  color: #ca8a04;
+}
+
+.refund-action-wrap {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.refund-ref-input {
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  width: 140px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+

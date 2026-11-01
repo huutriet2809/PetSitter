@@ -1,0 +1,412 @@
+/* =====================================================
+   PAGE-SPECIFIC STYLES: MY BOOKINGS
+   ===================================================== */
+.history-container {
+  max-width: 860px;
+  margin: 40px auto;
+  padding: 20px;
+}
+
+.history-title {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-bottom: 24px;
+}
+
+.booking-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 20px;
+  margin-bottom: 18px;
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition);
+}
+
+.booking-highlight {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-glow) !important;
+}
+
+.booking-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+  margin-bottom: 15px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.header-status-wrap {
+  text-align: right;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.booking-grid-info {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+}
+
+@media (max-width: 600px) {
+  .booking-grid-info {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
+.booking-actions {
+  margin-top: 15px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Status Badges */
+.status-badge {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  display: inline-block;
+}
+
+.status-pending { background: rgba(234, 179, 8, 0.1); color: #eab308; }
+.status-accepted { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+.status-completion-pending { background: rgba(168, 85, 247, 0.1); color: #a855f7; }
+.status-completed { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
+.status-disputed { background: rgba(249, 115, 22, 0.1); color: #ea580c; }
+.status-cancelled, .status-rejected { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+.status-expired { background: rgba(107, 114, 128, 0.1); color: #6b7280; }
+
+/* Payment Badges */
+.payment-badge {
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  display: inline-block;
+}
+.badge-pending-pay {
+  background: rgba(234, 179, 8, 0.15);
+  color: #ca8a04;
+  border: 1px solid #ca8a04;
+}
+.badge-held {
+  background: rgba(22, 163, 74, 0.15);
+  color: #16a34a;
+  border: 1px solid #16a34a;
+}
+.badge-refund-pending {
+  background: rgba(249, 115, 22, 0.15);
+  color: #ea580c;
+  border: 1px solid #ea580c;
+}
+.badge-refunded {
+  background: rgba(100, 116, 139, 0.15);
+  color: #64748b;
+  border: 1px solid #64748b;
+}
+.badge-partially-refunded {
+  background: rgba(59, 130, 246, 0.15);
+  color: #2563eb;
+  border: 1px solid #2563eb;
+}
+.badge-expired {
+  background: rgba(239, 68, 68, 0.15);
+  color: #dc2626;
+  border: 1px solid #dc2626;
+}
+.badge-released {
+  background: rgba(22, 163, 74, 0.15);
+  color: #16a34a;
+  border: 1px solid #16a34a;
+}
+
+/* Notices in card */
+.booking-notice {
+  grid-column: 1 / -1;
+  margin-top: 10px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+.booking-notice-green {
+  background: rgba(34, 197, 94, 0.08);
+  color: #15803d;
+  border: 1px solid rgba(34, 197, 94, 0.2);
+}
+.booking-notice-purple {
+  background: rgba(168, 85, 247, 0.08);
+  color: #7e22ce;
+  border: 1px solid rgba(168, 85, 247, 0.2);
+}
+.booking-notice-amber {
+  background: rgba(245, 158, 11, 0.08);
+  color: #b45309;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+.booking-notice-blue {
+  background: rgba(59, 130, 246, 0.08);
+  color: #1d4ed8;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+.booking-notice-orange {
+  background: rgba(249, 115, 22, 0.08);
+  color: #c2410c;
+  border: 1px solid rgba(249, 115, 22, 0.2);
+}
+.booking-notice-link {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+/* Specific buttons */
+.btn-danger-outline {
+  color: #ef4444 !important;
+  border-color: #ef4444 !important;
+}
+.btn-danger-outline:hover {
+  background: rgba(239, 68, 68, 0.1) !important;
+}
+
+.btn-warning-outline {
+  color: #ea580c !important;
+  border-color: #ea580c !important;
+}
+.btn-warning-outline:hover {
+  background: rgba(234, 88, 12, 0.1) !important;
+}
+
+.btn-success {
+  background: #16a34a !important;
+  border-color: #16a34a !important;
+  color: #fff !important;
+}
+.btn-success:hover {
+  background: #15803d !important;
+}
+
+/* Modals */
+.modal-form-group {
+  margin-bottom: 16px;
+}
+.modal-form-group-sm {
+  margin-bottom: 14px;
+}
+
+.modal-label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+.modal-label-sm {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+}
+
+.modal-select,
+.modal-input,
+.modal-textarea {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-main);
+  font-size: 0.92rem;
+  outline: none;
+  transition: border-color var(--transition);
+}
+
+.modal-select:focus,
+.modal-input:focus,
+.modal-textarea:focus {
+  border-color: var(--accent);
+}
+
+.modal-textarea {
+  height: 100px;
+  resize: vertical;
+}
+.modal-textarea-lg {
+  height: 120px;
+}
+.modal-textarea-sm {
+  height: 80px;
+}
+
+.modal-submit-btn {
+  width: 100%;
+}
+.modal-submit-dispute {
+  background: #ea580c !important;
+  border-color: #ea580c !important;
+}
+.modal-submit-dispute:hover {
+  background: #c2410c !important;
+}
+
+.modal-submit-cancel {
+  background: #ef4444 !important;
+  border-color: #ef4444 !important;
+}
+.modal-submit-cancel:hover {
+  background: #dc2626 !important;
+}
+
+.modal-cancel-summary {
+  background: var(--bg-secondary);
+  padding: 12px 14px;
+  border-radius: 6px;
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+}
+.modal-cancel-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  font-size: 0.9rem;
+}
+.modal-cancel-row:last-child {
+  margin-bottom: 0;
+}
+.modal-cancel-row strong {
+  color: var(--text-primary);
+}
+
+/* Policy Box Styles */
+.policy-box {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  font-size: 0.88rem;
+}
+.policy-box-disabled {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: #ef4444;
+}
+.policy-box-unpaid {
+  background: rgba(59, 130, 246, 0.08);
+  border-color: #3b82f6;
+}
+.policy-box-full {
+  background: rgba(34, 197, 94, 0.08);
+  border-color: #22c55e;
+}
+.policy-box-half {
+  background: rgba(249, 115, 22, 0.08);
+  border-color: #ea580c;
+}
+.policy-box-zero {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: #ef4444;
+}
+
+.policy-title-red {
+  color: #dc2626;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.policy-title-blue {
+  color: #2563eb;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.policy-title-green {
+  color: #15803d;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.policy-title-orange {
+  color: #c2410c;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.policy-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  font-size: 0.92rem;
+}
+.policy-row:last-child {
+  margin-bottom: 0;
+}
+
+.policy-note {
+  margin: 8px 0 0;
+  font-size: 0.83rem;
+  color: var(--text-muted);
+}
+.policy-note-red {
+  margin: 8px 0 0;
+  font-size: 0.83rem;
+  color: #dc2626;
+}
+
+.policy-link-red {
+  color: #dc2626;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.text-green { color: #16a34a !important; }
+.text-orange { color: #ea580c !important; }
+.text-red { color: #ef4444 !important; }
+.text-danger { color: #dc2626 !important; }
+.text-muted { color: var(--text-muted) !important; }
+
+.font-lg { font-size: 1.05rem !important; }
+
+.modal-actions-right {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.required-star {
+  color: #ef4444;
+}
+
+.expiry-hint {
+  font-size: 0.85rem;
+  color: #eab308;
+}
+
+.reject-reason {
+  color: #ef4444;
+  margin-top: 5px;
+}
+
+.reviewed-badge {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+#error-msg {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  padding: 10px 14px;
+  border-radius: 6px;
+  display: none;
+  margin-bottom: 20px;
+}
+

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nhật ký chăm thú | PawStay</title>
+    <link rel="stylesheet" href="fonts/fonts.css">
+    <link rel="stylesheet" href="assets/style.css?v=4">
+    <link rel="stylesheet" href="css/stay-updates.css?v=1">
+</head>
+<body>
+    <div class="updates-container">
+        <h1 class="page-title">Nhật ký chăm sóc</h1>
+        
+        <div id="alert-message"></div>
+
+        <div id="post-form-container" class="hidden">
+            <div class="post-form">
+                <h3>Đăng cập nhật mới</h3>
+                <textarea id="note-input" class="form-textarea" rows="3" placeholder="Thú cưng đang làm gì thế?..." maxlength="500"></textarea>
+                
+                <div class="upload-area">
+                    <input type="file" id="photo-input" multiple accept=".jpg,.jpeg,.png,.webp" class="hidden">
+                    <button type="button" class="btn btn-outline" id="btn-add-photos">📸 Thêm ảnh</button>
+                    <span class="upload-hint">Tối đa 3 ảnh (≤ 2MB/ảnh)</span>
+                </div>
+                
+                <div class="preview-grid" id="preview-container"></div>
+                
+                <button type="button" class="btn btn-primary" id="btn-submit">Đăng tải</button>
+            </div>
+        </div>
+
+        <div class="timeline" id="timeline-container">
+            <div class="loading-text">Đang tải nhật ký...</div>
+        </div>
+    </div>
+
+    <div class="viewer" id="photo-viewer">
+        <span class="viewer-close" id="btn-close-viewer">×</span>
+        <img id="viewer-img" src="" alt="View">
+    </div>
+
+    <script src="assets/data.js?v=4"></script>
+    <script src="assets/api.js?v=4"></script>
+    <script src="assets/components.js?v=4"></script>
+    <script src="js/stay-updates.js?v=1" defer></script>
+</body>
+</html>

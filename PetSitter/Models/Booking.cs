@@ -1,48 +1,130 @@
-using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
+using System;
+using System.Collections.Generic;
 
 namespace PetSitter.Models
 {
+    public class BookingPet
+    {
+        public string TenPet { get; set; } = string.Empty;
+        public string LoaiPet { get; set; } = string.Empty;
+        public string KichCo { get; set; } = string.Empty;
+    }
+
+    public class PricingItemSnapshot
+    {
+        public string ItemType { get; set; } = "BASE"; // "BASE_SERVICE" or "ADDON"
+        public string? Type { get => ItemType; set => ItemType = value ?? "BASE"; }
+        public string ServiceId { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public long UnitPrice { get; set; }
+        public int Quantity { get; set; }
+        public bool IsDaily { get; set; }
+        public long TotalAmount { get; set; }
+        public long Total { get => TotalAmount; set => TotalAmount = value; }
+    }
+
+    public class BookingAddon
+    {
+        public string ServiceId { get; set; } = string.Empty;
+        public string Ten { get; set; } = string.Empty;
+        [BsonRepresentation(BsonType.Decimal128)]
+        public decimal DonGia { get; set; }
+        public bool IsDaily { get; set; }
+        [BsonRepresentation(BsonType.Decimal128)]
+        public decimal ThanhTien { get; set; }
+    }
+
+    public class InquiryHistory
+    {
+        public string HanhDong { get; set; } = string.Empty;
+        public string? FromStatus { get; set; }
+        public string NguoiThucHien { get; set; } = string.Empty; // OWNER, SITTER, SYSTEM
+        public string? ActorUserId { get; set; }
+        public string? LyDo { get; set; }
+        public DateTime ThoiGian { get; set; } = DateTime.UtcNow;
+    }
+
+    [BsonIgnoreExtraElements]
     public class Booking
     {
-        [Key]
-        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-        public int BookingId { get; set; }
+        [BsonId]
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string BookingId { get; set; } = string.Empty;
 
-        public int OwnerId { get; set; }
-        public int SitterId { get; set; }
-        public int PetId { get; set; }
-        public int SitterServiceId { get; set; }
+        public string MaDatLich { get; set; } = string.Empty;
 
-        public DateTime StartDatetime { get; set; }
-        public DateTime EndDatetime { get; set; }
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string OwnerId { get; set; } = string.Empty;
+        
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string SitterId { get; set; } = string.Empty;
 
-        [Column(TypeName = "decimal(12, 2)")]
-        public decimal TotalPrice { get; set; }
+        public string SitterUserId { get; set; } = string.Empty;
 
-        [Required]
-        [MaxLength(20)]
-        public string Status { get; set; } = "PENDING"; // PENDING, CONFIRMED, CANCELLED, COMPLETED, REJECTED
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string? PetId { get; set; }
 
-        [MaxLength(1000)]
-        public string? Note { get; set; }
+        public DateTime NgayBatDau { get; set; }
+        public DateTime NgayKetThuc { get; set; }
+        public int SoNgay { get; set; }
+        public string? GhiChu { get; set; }
 
+        public BookingPet Pet { get; set; } = new BookingPet();
+        public List<BookingAddon> Addons { get; set; } = new List<BookingAddon>();
+        public List<PricingItemSnapshot> PriceBreakdown { get; set; } = new List<PricingItemSnapshot>();
+
+        [BsonRepresentation(BsonType.Decimal128)]
+        public decimal GiaSitter { get; set; }
+        [BsonRepresentation(BsonType.Decimal128)]
+        public decimal TongAddons { get; set; }
+        [BsonRepresentation(BsonType.Decimal128)]
+        public decimal TongTien { get; set; } // Chi phí ước tính
+
+        public string TrangThai { get; set; } = BookingStatus.PENDING;
+        public bool IsActive { get; set; } = true;
+        public DateTime? ExpiresAt { get; set; }
+        public string? LyDoTuChoi { get; set; }
+
+        // Financial Snapshot & Payment (Prompt 5A)
+        public string PaymentStatus { get; set; } = Models.PaymentStatus.NONE;
+        public DateTime? PaymentDeadline { get; set; }
+        public long TotalAmount { get; set; }
+        public int CommissionBps { get; set; } = 1000; // 1000 bps = 10%
+        public long CommissionAmount { get; set; }
+        public long SitterAmount { get; set; }
+
+        public DateTime? SitterCompletedAt { get; set; }
+        public DateTime? CompletionDeadline { get; set; }
+        public DateTime? OwnerConfirmedAt { get; set; }
+        public bool? AutoCompleted { get; set; }
+        public string? DisputeReason { get; set; }
+        public string? AdminResolutionNote { get; set; }
+        public bool? ResolvedByAdmin { get; set; }
+
+        public DateTime? UpdatedAt { get; set; }
+        public DateTime? EscrowReleasedAt { get; set; }
+
+        // Kế hoạch tất toán sổ cái (Settlement Plan) cho luồng chính và đối soát
+        public SettlementPlan? Settlement { get; set; }
+        public DateTime? ClaimedAt { get; set; }
+
+        public List<InquiryHistory> History { get; set; } = new List<InquiryHistory>();
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    }
 
-        // Navigation properties
-        [ForeignKey("OwnerId")]
-        public User? Owner { get; set; }
-
-        [ForeignKey("SitterId")]
-        public SitterProfile? Sitter { get; set; }
-
-        [ForeignKey("PetId")]
-        public Pet? Pet { get; set; }
-
-        [ForeignKey("SitterServiceId")]
-        public SitterService? SitterService { get; set; }
-
-        public Payment? Payment { get; set; }
-        public Review? Review { get; set; }
+    public class SettlementPlan
+    {
+        public string SettlementKey { get; set; } = string.Empty;
+        public string SettlementType { get; set; } = string.Empty; // ESCROW_RELEASE, CANCEL_OWNER_100, CANCEL_OWNER_50, CANCEL_OWNER_0, CANCEL_SITTER, ADMIN_CANCEL, DISPUTE_SPLIT, LATE_PAYMENT_REFUND
+        public long TotalAmount { get; set; }
+        public long RefundAmount { get; set; }
+        public long CommissionAmount { get; set; }
+        public long SitterAmount { get; set; }
+        public string SitterUserId { get; set; } = string.Empty;
+        public DateTime ClaimedAt { get; set; } = DateTime.UtcNow;
+        public DateTime? AvailableAt { get; set; }
     }
 }
+

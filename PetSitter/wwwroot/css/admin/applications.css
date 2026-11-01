@@ -1,0 +1,50 @@
+/* PawStay Admin Sitter Applications Styles */
+.reject-container {
+    margin-top: 10px;
+    display: none;
+}
+
+.reject-container input {
+    width: 100%;
+    padding: 8px;
+    margin-bottom: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border-radius: 4px;
+}
+
+.app-title {
+    display: inline-block;
+    margin-right: 8px;
+    margin-top: 0;
+    margin-bottom: 4px;
+}
+
+.badge-app-approved {
+    background: rgba(34, 197, 94, 0.15);
+    color: #16a34a;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.85rem;
+}
+
+.badge-app-rejected {
+    background: rgba(239, 68, 68, 0.15);
+    color: #dc2626;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.85rem;
+}
+
+.reject-reason-text {
+    color: #ef4444;
+    margin-top: 8px;
+}
+
+.reject-actions-row {
+    display: flex;
+    gap: 8px;
+}

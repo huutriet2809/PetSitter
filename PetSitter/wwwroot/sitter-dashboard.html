@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sitter Dashboard - PawStay</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>">
+  <link rel="stylesheet" href="assets/style.css?v=4">
+  <link rel="stylesheet" href="css/sitter-dashboard.css?v=4">
+</head>
+<body>
+  <div class="dashboard-container">
+    <div class="dashboard-header-bar">
+      <h1>Sitter Dashboard</h1>
+      <div class="header-links">
+        <a href="sitter-edit.html" class="btn btn-outline">Hồ sơ Sitter</a>
+        <a href="sitter-calendar.html" class="btn btn-primary">Lịch rảnh</a>
+      </div>
+    </div>
+    <div class="tabs">
+      <div class="tab active" data-tab="PENDING">Chờ xác nhận</div>
+      <div class="tab" data-tab="ACCEPTED">Đang/Sắp thực hiện</div>
+      <div class="tab" data-tab="COMPLETION_PENDING">Chờ chủ duyệt</div>
+      <div class="tab" data-tab="COMPLETED">Đã hoàn thành</div>
+      <div class="tab" data-tab="DISPUTED">Tranh chấp</div>
+      <div class="tab" data-tab="">Tất cả</div>
+      <div class="tab" data-tab="earnings" id="tab-earnings">💰 Thu nhập & Ví</div>
+    </div>
+    
+    <div id="error-msg"></div>
+    <div id="booking-list">Đang tải...</div>
+  </div>
+
+  <script src="assets/data.js?v=4"></script>
+  <script src="assets/api.js?v=4"></script>
+  <script src="assets/components.js?v=4"></script>
+  <script src="js/sitter-dashboard.js?v=4"></script>
+</body>
+</html>

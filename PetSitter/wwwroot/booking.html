@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  
+  <!-- ===== SEO ===== -->
+  <title>Đặt lịch gửi thú cưng | PawStay Đà Nẵng</title>
+  <meta name="description" content="Đặt lịch gửi thú cưng dễ dàng với pet-sitter chuyên nghiệp tại Đà Nẵng. Giá cả minh bạch, dịch vụ bổ sung đa dạng, thanh toán an toàn." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>" />
+  
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="assets/style.css?v=4" />
+  <link rel="stylesheet" href="css/booking.css?v=4" />
+</head>
+<body>
+
+  <!-- ===================== MAIN LAYOUT ===================== -->
+  <div class="booking-wrapper">
+    <!-- Breadcrumb -->
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <a href="index.html">Trang chủ</a>
+      <span class="breadcrumb-sep">›</span>
+      <a href="sitters.html">Danh sách sitter</a>
+      <span class="breadcrumb-sep">›</span>
+      <span>Đặt lịch</span>
+    </nav>
+
+    <!-- Content Area (rendered dynamically if sitter chosen) -->
+    <div id="booking-content-container">
+      
+      <!-- Loading State / Placeholder -->
+      <div class="booking-loading-placeholder">
+        <span class="booking-loading-icon">🐾</span>
+        <p class="booking-loading-text">Đang tải dữ liệu chuyến đi...</p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ===================== JAVASCRIPT ===================== -->
+  <script src="assets/data.js?v=4"></script>
+  <script src="assets/api.js?v=4"></script>
+  <script src="assets/components.js?v=4"></script>
+  <script src="js/booking.js?v=4"></script>
+</body>
+</html>

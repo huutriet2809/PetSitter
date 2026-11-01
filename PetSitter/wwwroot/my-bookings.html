@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lịch sử đặt lịch - PawStay</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>">
+  <link rel="stylesheet" href="assets/style.css?v=4" />
+  <link rel="stylesheet" href="css/my-bookings.css?v=4" />
+</head>
+<body>
+  <div class="history-container">
+    <h1 class="history-title">Lịch sử đặt lịch của tôi</h1>
+    <div id="error-msg"></div>
+    <div id="booking-list">Đang tải...</div>
+  </div>
+
+  <!-- Modal Đánh giá -->
+  <div class="modal" id="review-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">Viết đánh giá</h3>
+        <button class="modal-close" data-action="close-review-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="review-form">
+          <input type="hidden" id="review-booking-id" />
+          <div class="modal-form-group">
+            <label class="modal-label">Đánh giá (1-5 sao)</label>
+            <select id="review-rating" class="modal-select">
+              <option value="5">5 - Rất hài lòng</option>
+              <option value="4">4 - Hài lòng</option>
+              <option value="3">3 - Bình thường</option>
+              <option value="2">2 - Không hài lòng</option>
+              <option value="1">1 - Tệ</option>
+            </select>
+          </div>
+          <div class="modal-form-group">
+            <label class="modal-label">Nhận xét (Tối đa 500 ký tự)</label>
+            <textarea id="review-comment" class="modal-textarea"></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary modal-submit-btn">Gửi đánh giá</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Khiếu nại / Báo vấn đề -->
+  <div class="modal" id="dispute-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">Báo vấn đề / Khiếu nại chuyến đi</h3>
+        <button class="modal-close" data-action="close-dispute-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="dispute-form">
+          <input type="hidden" id="dispute-booking-id" />
+          <div class="modal-form-group">
+            <label class="modal-label">Lý do khiếu nại (10 đến 500 ký tự) <span class="required-star">*</span></label>
+            <textarea id="dispute-reason" required minlength="10" maxlength="500" placeholder="Mô tả cụ thể vấn đề phát sinh cần Admin can thiệp giải quyết..." class="modal-textarea modal-textarea-lg"></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary modal-submit-btn modal-submit-dispute">Gửi khiếu nại tới Admin</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Nhập tài khoản ngân hàng nhận tiền hoàn -->
+  <div class="modal" id="refund-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">Thông tin nhận tiền hoàn</h3>
+        <button class="modal-close" data-action="close-refund-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="refund-account-form">
+          <input type="hidden" id="refund-booking-id" />
+          <div class="modal-form-group-sm">
+            <label class="modal-label-sm">Ngân hàng <span class="required-star">*</span></label>
+            <input type="text" id="refund-bank" required placeholder="VD: Vietcombank, MB Bank, Techcombank..." class="modal-input" />
+          </div>
+          <div class="modal-form-group-sm">
+            <label class="modal-label-sm">Số tài khoản <span class="required-star">*</span></label>
+            <input type="text" id="refund-account-num" required placeholder="Nhập số tài khoản ngân hàng" class="modal-input" />
+          </div>
+          <div class="modal-form-group">
+            <label class="modal-label-sm">Tên chủ tài khoản <span class="required-star">*</span></label>
+            <input type="text" id="refund-account-name" required placeholder="VD: NGUYEN VAN A" class="modal-input" />
+          </div>
+          <button type="submit" class="btn btn-primary modal-submit-btn">Lưu thông tin nhận hoàn</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Hủy chuyến đi cho Chủ nuôi (Owner) -->
+  <div class="modal" id="cancel-booking-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">Xác nhận hủy chuyến đi</h3>
+        <button class="modal-close" data-action="close-cancel-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="cancel-booking-form">
+          <input type="hidden" id="cancel-booking-id" />
+          
+          <div class="modal-cancel-summary">
+            <div class="modal-cancel-row">
+              <span>Mã đơn đặt lịch:</span>
+              <strong id="cancel-booking-code">—</strong>
+            </div>
+            <div class="modal-cancel-row">
+              <span>Ngày bắt đầu chăm sóc:</span>
+              <strong id="cancel-start-date">—</strong>
+            </div>
+            <div class="modal-cancel-row">
+              <span>Tổng giá trị đơn:</span>
+              <strong id="cancel-total-amount">0 ₫</strong>
+            </div>
+          </div>
+
+          <div id="cancel-policy-box" class="policy-box">
+            <!-- Nội dung chính sách hoàn tiền 48h/24h sẽ được render tại đây -->
+          </div>
+
+          <div class="modal-form-group">
+            <label class="modal-label-sm">Lý do hủy chuyến (Tùy chọn, tối đa 500 ký tự)</label>
+            <textarea id="cancel-booking-reason" maxlength="500" placeholder="Cho người chăm sóc biết lý do bạn hủy chuyến..." class="modal-textarea modal-textarea-sm"></textarea>
+          </div>
+
+          <div class="modal-actions-right">
+            <button type="button" class="btn btn-outline" data-action="close-cancel-modal">Giữ chuyến</button>
+            <button type="submit" class="btn btn-primary modal-submit-cancel" id="btn-submit-cancel">Xác nhận hủy chuyến</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/data.js?v=4"></script>
+  <script src="assets/api.js?v=4"></script>
+  <script src="assets/components.js?v=4"></script>
+  <script src="js/my-bookings.js?v=4"></script>
+</body>
+</html>

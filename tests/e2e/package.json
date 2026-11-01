@@ -1,0 +1,13 @@
+{
+  "name": "petsitter-e2e-csp-tests",
+  "version": "1.0.0",
+  "description": "Playwright E2E CSP Audit Test Suite for PawStay",
+  "main": "csp-audit.js",
+  "scripts": {
+    "test": "node csp-audit.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.40.0"
+  }
+}
+

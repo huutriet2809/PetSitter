@@ -1,13 +1,16 @@
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PetSitter.Models
 {
+    [BsonIgnoreExtraElements]
     public class User
     {
-        [Key]
-        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-        public int UserId { get; set; }
+        [BsonId]
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string UserId { get; set; } = string.Empty;
 
         [Required]
         [MaxLength(100)]
@@ -26,7 +29,17 @@ namespace PetSitter.Models
 
         [Required]
         [MaxLength(20)]
-        public string Role { get; set; } = "USER"; // USER, SITTER, ADMIN
+        public string Role { get; set; } = "USER";
+        public string? AvatarUrl { get; set; }
+        // USER, SITTER, ADMIN
+
+        [BsonDefaultValue(true)]
+        public bool IsActive { get; set; } = true;
+
+        [BsonDefaultValue(0)]
+        public int FailedLoginAttempts { get; set; } = 0;
+
+        public DateTime? LockoutEndUtc { get; set; }
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sửa hồ sơ Sitter | PawStay</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>">
+  <link rel="stylesheet" href="assets/style.css?v=4">
+  <link rel="stylesheet" href="css/sitter-edit.css?v=4">
+</head>
+<body>
+  <div class="container" id="main-content">
+    <div class="header-actions">
+      <h1>Hồ sơ Sitter</h1>
+      <a id="view-profile-btn" href="sitter-profile.html" target="_blank" class="btn btn-outline hidden">Xem trang hồ sơ</a>
+    </div>
+
+    <div class="card">
+      <form id="sitter-form">
+        <div class="form-group">
+          <label>Tiểu sử (Bio) *</label>
+          <textarea id="bio" required maxlength="1000" rows="5"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Giá một ngày (VNĐ) *</label>
+          <input type="number" id="gia" required min="10000" max="10000000" step="1000" />
+        </div>
+        <div class="form-group">
+          <label>Khu vực hoạt động *</label>
+          <select id="khuvuc" required>
+            <option value="Hải Châu">Hải Châu</option>
+            <option value="Thanh Khê">Thanh Khê</option>
+            <option value="Sơn Trà">Sơn Trà</option>
+            <option value="Ngũ Hành Sơn">Ngũ Hành Sơn</option>
+            <option value="Cẩm Lệ">Cẩm Lệ</option>
+            <option value="Liên Chiểu">Liên Chiểu</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Loại thú cưng nhận chăm sóc</label>
+          <div class="checkbox-group">
+            <label class="checkbox-item"><input type="checkbox" name="pet" value="Chó"> Chó</label>
+            <label class="checkbox-item"><input type="checkbox" name="pet" value="Mèo"> Mèo</label>
+            <label class="checkbox-item"><input type="checkbox" name="pet" value="Khác"> Khác</label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Tags (Cách nhau bằng dấu phẩy)</label>
+          <input type="text" id="tags" placeholder="Nhà có sân vườn, Yêu mèo..." />
+        </div>
+        <div class="form-group">
+          <label>Dịch vụ trông giữ chính (bắt buộc nhận đặt lịch) *</label>
+          <select id="primary-service-select" required>
+            <option value="">-- Chọn dịch vụ chính --</option>
+          </select>
+          <small class="text-muted-sub">
+            Giá của dịch vụ chính sẽ áp dụng theo "Giá một ngày" ở trên.
+          </small>
+        </div>
+        <div class="form-group">
+          <label>Dịch vụ bổ sung</label>
+          <div id="services-container" class="checkbox-group">
+            <!-- Render từ API -->
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" id="btn-submit">Lưu thay đổi</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="assets/data.js?v=4"></script>
+  <script src="assets/api.js?v=4"></script>
+  <script src="assets/components.js?v=4"></script>
+  <script src="js/sitter-edit.js?v=4"></script>
+</body>
+</html>

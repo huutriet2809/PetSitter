@@ -1,3 +1,5 @@
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -5,11 +7,12 @@ namespace PetSitter.Models
 {
     public class SitterProfile
     {
-        [Key]
-        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-        public int SitterId { get; set; }
+        [BsonId]
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string SitterId { get; set; }
 
-        public int UserId { get; set; }
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string UserId { get; set; }
 
         [MaxLength(1000)]
         public string? Bio { get; set; }
@@ -33,7 +36,22 @@ namespace PetSitter.Models
         [Column(TypeName = "decimal(3, 2)")]
         public decimal Rating { get; set; } = 0;
 
+        public string Status { get; set; } = "Pending"; // Pending, Approved, Rejected
+        public string? LyDoTuChoi { get; set; }
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime? ReviewedAt { get; set; }
+        
+        public List<string> Tags { get; set; } = new List<string>();
+        public List<string> LoaiPetNhan { get; set; } = new List<string>();
+
         public int TotalReviews { get; set; } = 0;
+
+        // Quản lý vi phạm của Sitter
+        public int ViolationCount { get; set; } = 0;
+        public List<SitterViolationRecord> Violations { get; set; } = new List<SitterViolationRecord>();
+
+        // Tài khoản ngân hàng nhận tiền rút của Sitter
+        public SitterBankAccount? BankAccount { get; set; }
 
         // Navigation properties
         [ForeignKey("UserId")]
@@ -41,4 +59,24 @@ namespace PetSitter.Models
         public ICollection<SitterService> SitterServices { get; set; } = new List<SitterService>();
         public ICollection<SitterAvailability> SitterAvailabilities { get; set; } = new List<SitterAvailability>();
     }
+
+    public class SitterBankAccount
+    {
+        public string BankBin { get; set; } = null!; // Mã BIN / ngân hàng (VD: 970436, VCB, MB...)
+        public string BankName { get; set; } = null!; // Tên ngân hàng
+        public string EncryptedAccountNumber { get; set; } = null!; // Số tài khoản đã mã hóa Data Protection
+        public string MaskedAccountNumber { get; set; } = null!; // ****1234
+        public string AccountHolderName { get; set; } = null!; // Tên chủ tài khoản
+        public bool NameMatchesRegisteredName { get; set; } = true; // Khớp với FullName đăng ký
+        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow; // Thời điểm cập nhật (để tính cooldown 24h)
+    }
+
+    public class SitterViolationRecord
+    {
+        public string BookingId { get; set; } = string.Empty;
+        public string Reason { get; set; } = string.Empty;
+        public string AdminUserId { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    }
 }
+

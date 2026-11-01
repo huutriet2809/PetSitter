@@ -1,3 +1,5 @@
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -5,13 +7,16 @@ namespace PetSitter.Models
 {
     public class Review
     {
-        [Key]
-        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
-        public int ReviewId { get; set; }
+        [BsonId]
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string ReviewId { get; set; }
 
-        public int BookingId { get; set; }
-        public int OwnerId { get; set; }
-        public int SitterId { get; set; }
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string BookingId { get; set; }
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string OwnerId { get; set; }
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string SitterId { get; set; }
 
         public int Rating { get; set; }
 
@@ -31,3 +36,4 @@ namespace PetSitter.Models
         public SitterProfile? Sitter { get; set; }
     }
 }
+

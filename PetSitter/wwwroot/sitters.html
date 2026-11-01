@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tìm Pet-sitter | PawStay Đà Nẵng</title>
+  <meta name="description" content="Tìm pet-sitter uy tín tại Đà Nẵng: Hải Châu, Sơn Trà, Thanh Khê... Tất cả đã xác minh CCCD. Giá từ 150,000đ/ngày." />
+  <meta property="og:title"       content="Tìm Pet-sitter tại Đà Nẵng | PawStay" />
+  <meta property="og:description" content="Hơn 60 sitter đã xác minh tại Đà Nẵng. Giá từ 140,000đ/ngày." />
+  <meta property="og:type"        content="website" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>">
+  <link rel="stylesheet" href="assets/style.css?v=4" />
+  <link rel="stylesheet" href="css/sitters.css?v=1" />
+</head>
+<body>
+
+  <!-- Navbar được inject bởi components.js -->
+
+  <!-- ===================== PAGE HEADER ===================== -->
+  <div class="page-header">
+    <div class="container">
+      <p class="section-label">Danh sách pet-sitter</p>
+      <h1>Tìm người trông thú cưng<br />phù hợp với bạn</h1>
+      <p>Tất cả sitter đã được xác minh danh tính · Đặt lịch nhanh trong 3 phút</p>
+    </div>
+  </div>
+
+  <!-- ===================== FILTER BAR ===================== -->
+  <div class="filter-bar">
+    <div class="filter-inner">
+      <span class="filter-label">Khu vực:</span>
+      <!-- Nút filter, data-area = giá trị lọc, "all" = tất cả -->
+      <button class="filter-btn active" data-area="all" id="filter-all">Tất cả</button>
+      <button class="filter-btn" data-area="Hải Châu">Hải Châu</button>
+      <button class="filter-btn" data-area="Sơn Trà">Sơn Trà</button>
+      <button class="filter-btn" data-area="Thanh Khê">Thanh Khê</button>
+      <button class="filter-btn" data-area="Liên Chiểu">Liên Chiểu</button>
+      <button class="filter-btn" data-area="Ngũ Hành Sơn">Ngũ Hành Sơn</button>
+      <button class="filter-btn" data-area="Cẩm Lệ">Cẩm Lệ</button>
+      <span class="results-count" id="results-count"></span>
+    </div>
+  </div>
+
+  <!-- ===================== SITTER GRID ===================== -->
+  <section class="sitters-section">
+    <div class="sitters-grid" id="sitters-grid">
+      <!-- Các card sitter sẽ được render bởi JavaScript -->
+    </div>
+  </section>
+
+  <!-- Footer và Toast được inject bởi components.js -->
+
+  <!-- ===================== JAVASCRIPT ===================== -->
+  <script src="assets/data.js?v=4"></script>
+  <script src="assets/api.js?v=4"></script>
+  <script src="assets/components.js?v=4"></script>
+  <script src="js/sitters.js?v=1" defer></script>
+</body>
+</html>

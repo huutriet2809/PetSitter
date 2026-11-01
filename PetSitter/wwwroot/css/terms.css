@@ -1,0 +1,27 @@
+.static-page {
+    max-width: 800px;
+    margin: 40px auto;
+    padding: 40px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: var(--shadow-sm);
+}
+
+.static-page h1 {
+    margin-bottom: 20px;
+    font-size: 2rem;
+}
+
+.static-page h2 {
+    margin-top: 30px;
+    margin-bottom: 15px;
+    font-size: 1.3rem;
+}
+
+.static-page p,
+.static-page ul {
+    margin-bottom: 15px;
+    line-height: 1.6;
+    color: var(--text-primary);
+}
+

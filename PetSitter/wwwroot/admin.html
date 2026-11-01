@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin - Duyệt Sitter</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>">
+    <link rel="stylesheet" href="fonts/fonts.css">
+  <link rel="stylesheet" href="assets/style.css?v=4" />
+  <link rel="stylesheet" href="css/admin/core.css?v=4" />
+  <link rel="stylesheet" href="css/admin/applications.css?v=4" />
+  <link rel="stylesheet" href="css/admin/users.css?v=4" />
+  <link rel="stylesheet" href="css/admin/payments.css?v=4" />
+  <link rel="stylesheet" href="css/admin/withdrawals.css?v=4" />
+  <link rel="stylesheet" href="css/admin/revenue.css?v=4" />
+  <link rel="stylesheet" href="css/admin/reconcile.css?v=4" />
+  <link rel="stylesheet" href="css/admin/suspense.css?v=4" />
+  <link rel="stylesheet" href="css/admin/disputes.css?v=4" />
+</head>
+<body>
+  <div class="admin-layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand">🐾 PawStay Admin</div>
+      <ul class="sidebar-menu" id="admin-menu">
+        <li><a href="#applications" id="menu-applications" data-tab="applications">Quản trị (Sitter)</a></li>
+        <li><a href="#users" id="menu-users" data-tab="users">Người dùng</a></li>
+        <li><a href="#payments" id="menu-payments" data-tab="payments">Thanh toán</a></li>
+        <li><a href="#refunds" id="menu-refunds" data-tab="refunds">Hoàn tiền</a></li>
+        <li><a href="#withdrawals" id="menu-withdrawals" data-tab="withdrawals">Rút tiền</a></li>
+        <li><a href="#revenue" id="menu-revenue" data-tab="revenue">Doanh thu</a></li>
+        <li><a href="#reconcile" id="menu-reconcile" data-tab="reconcile">Đối soát</a></li>
+        <li><a href="#suspense" id="menu-suspense" data-tab="suspense">Giao dịch SUSPENSE</a></li>
+        <li><a href="#disputes" id="menu-disputes" data-tab="disputes">Đơn khiếu nại</a></li>
+        <li><a href="admin-messages.html" id="menu-messages">Tin nhắn</a></li>
+      </ul>
+    </aside>
+    <main class="main-content">
+      <div class="header-row admin-header-row">
+        <h2 id="page-title" class="admin-page-title">Quản trị hệ thống PawStay</h2>
+      </div>
+      <div id="error-msg"></div>
+      <div id="subtabs-container" class="hidden"></div>
+      <div id="list-container">Đang tải...</div>
+    </main>
+  </div>
+
+  <!-- Modal Hòa giải tranh chấp (SPLIT) -->
+  <div class="modal" id="split-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">Hòa giải tranh chấp (SPLIT)</h3>
+        <button class="modal-close" data-action="close-split-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="split-form">
+          <input type="hidden" id="split-booking-id" />
+          <input type="hidden" id="split-total-amount" />
+          <input type="hidden" id="split-commission-bps" value="1000" />
+          <div class="split-info-box">
+            <div class="split-info-row split-info-total">
+              <span>Tổng giá trị tạm giữ:</span>
+              <strong id="split-total-display">0 ₫</strong>
+            </div>
+            <div class="split-info-row">
+              <span>Hoàn lại cho Chủ nuôi:</span>
+              <strong id="split-owner-preview" class="split-val-owner">0 ₫</strong>
+            </div>
+            <div class="split-info-row text-muted">
+              <span id="split-fee-label">Phí dịch vụ nền tảng:</span>
+              <strong id="split-fee-preview" class="split-val-fee">0 ₫</strong>
+            </div>
+            <div class="split-info-row text-muted">
+              <span id="split-sitter-label">Người chăm sóc thực nhận:</span>
+              <strong id="split-sitter-preview" class="split-val-sitter">0 ₫</strong>
+            </div>
+          </div>
+
+          <div class="split-form-group">
+            <label class="split-form-label">Số tiền hoàn lại cho Chủ nuôi (₫) <span class="dispute-req-star">*</span></label>
+            <input type="number" id="split-refund-amount" required min="1000" step="1000" placeholder="Nhập số tiền hoàn (lớn hơn 0 và nhỏ hơn tổng tiền)..." class="split-form-input" />
+            <div id="split-amount-hint" class="split-amount-hint">Số tiền hoàn phải lớn hơn 0 ₫ và nhỏ hơn tổng đơn.</div>
+          </div>
+
+          <div class="split-violation-box">
+            <label class="split-violation-check-label">
+              <input type="checkbox" id="split-record-violation" />
+              ⚠️ Ghi nhận vi phạm đối với Người chăm sóc (Sitter)
+            </label>
+            <input type="text" id="split-violation-reason" placeholder="Lý do ghi nhận vi phạm (mặc định lấy theo ghi chú)..." class="split-violation-input" />
+          </div>
+
+          <div class="split-form-group">
+            <label class="split-form-label">Ghi chú kết luận của Admin (10 đến 500 ký tự) <span class="dispute-req-star">*</span></label>
+            <textarea id="split-note" required minlength="10" maxlength="500" placeholder="Mô tả căn cứ và phương án phân chia tiền giữa chủ nuôi và người chăm sóc..." class="split-form-textarea"></textarea>
+          </div>
+
+          <div class="split-form-footer">
+            <button type="button" class="btn btn-outline" data-action="close-split-modal">Hủy bỏ</button>
+            <button type="submit" class="btn btn-primary split-btn-submit">Xác nhận hòa giải (SPLIT)</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Xem STK giải mã -->
+  <div class="modal" id="bank-decrypt-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">Thông tin tài khoản ngân hàng</h3>
+        <button class="modal-close" data-action="close-bank-decrypt-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="bank-decrypt-warning">
+          🔒 <strong>Cảnh báo bảo mật:</strong> Thao tác xem tài khoản ngân hàng đầy đủ đã được ghi nhận vào Nhật ký Kiểm toán (Audit Log) kèm thông tin tài khoản Admin và IP của bạn.
+        </div>
+        <div class="bank-decrypt-card">
+          <div class="bank-decrypt-group">
+            <div class="bank-decrypt-label">Ngân hàng:</div>
+            <strong id="decrypt-bank-name" class="bank-decrypt-name">—</strong>
+          </div>
+          <div class="bank-decrypt-group">
+            <div class="bank-decrypt-label">Số tài khoản:</div>
+            <strong id="decrypt-account-number" class="bank-decrypt-number">—</strong>
+          </div>
+          <div class="bank-decrypt-group">
+            <div class="bank-decrypt-label">Tên chủ tài khoản:</div>
+            <strong id="decrypt-account-holder" class="bank-decrypt-name">—</strong>
+          </div>
+        </div>
+        <div class="bank-decrypt-footer">
+          <button type="button" class="btn btn-outline" data-action="close-bank-decrypt-modal">Đóng</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Rút doanh thu nền tảng (Revenue Sweep) -->
+  <!-- Modal Rút doanh thu nền tảng (Platform Sweep) -->
+  <div class="modal" id="sweep-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">Rút doanh thu nền tảng (Platform Sweep)</h3>
+        <button class="modal-close" data-action="close-sweep-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="sweep-form">
+          <div class="sweep-info-box">
+            <div class="sweep-info-row">
+              <span>Doanh thu tích lũy:</span>
+              <strong id="sweep-platform-revenue">—</strong>
+            </div>
+            <div class="sweep-info-row">
+              <span>Khoản đệm an toàn (Buffer):</span>
+              <strong id="sweep-buffer-amount" class="sweep-buffer-val">—</strong>
+            </div>
+            <div class="sweep-info-row total-row">
+              <span>Khả dụng rút tối đa:</span>
+              <strong id="sweep-max-transferable" class="sweep-max-val">—</strong>
+            </div>
+          </div>
+          <div class="sweep-form-group">
+            <label class="sweep-form-label">Số tiền rút (₫) *</label>
+            <input type="number" id="sweep-input-amount" required min="10000" step="1000" class="sweep-form-input" />
+          </div>
+          <div class="sweep-form-group">
+            <label class="sweep-form-label">Mã giao dịch ngân hàng / Tham chiếu *</label>
+            <input type="text" id="sweep-input-ref" required placeholder="VD: SWP20261024001" class="sweep-form-input" />
+          </div>
+          <div class="sweep-form-group">
+            <label class="sweep-form-label">Ghi chú / Mục đích *</label>
+            <input type="text" id="sweep-input-note" required placeholder="VD: Rút doanh thu tuần 4 tháng 10" class="sweep-form-input" />
+          </div>
+          <div class="sweep-form-footer">
+            <button type="button" class="btn btn-outline" data-action="close-sweep-modal">Hủy bỏ</button>
+            <button type="submit" class="btn btn-primary">Xác nhận rút doanh thu</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Gán giao dịch bất thường (SUSPENSE) vào đơn -->
+  <div class="modal" id="suspense-assign-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">Gán giao dịch bất thường vào Đơn đặt</h3>
+        <button class="modal-close" data-action="close-suspense-assign-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="suspense-assign-form">
+          <input type="hidden" id="assign-order-code" />
+          <div class="suspense-form-group">
+            <label class="suspense-form-label">Mã đơn đặt lịch (BookingId) *</label>
+            <input type="text" id="assign-booking-id" required placeholder="VD: 6718a..." class="suspense-form-input" />
+          </div>
+          <div class="suspense-form-group mb-15">
+            <label class="suspense-form-label">Ghi chú / Căn cứ giải trình *</label>
+            <textarea id="assign-note" required minlength="5" placeholder="Nhập căn cứ gán giao dịch..." class="suspense-form-textarea"></textarea>
+          </div>
+          <div class="suspense-form-footer">
+            <button type="button" class="btn btn-outline" data-action="close-suspense-assign-modal">Hủy</button>
+            <button type="submit" id="btn-submit-suspense-assign" class="btn btn-primary">Xác nhận gán (SUSPENSE -> ESCROW)</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Hoàn tiền cho giao dịch bất thường (SUSPENSE) -->
+  <div class="modal" id="suspense-refund-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">Hoàn tiền giao dịch bất thường (SUSPENSE)</h3>
+        <button class="modal-close" data-action="close-suspense-refund-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="suspense-refund-form">
+          <input type="hidden" id="refund-order-code" />
+          <div class="suspense-form-group mb-15">
+            <label class="suspense-form-label">Lý do hoàn trả *</label>
+            <textarea id="refund-reason" required minlength="5" placeholder="VD: Khách chuyển nhầm / thừa tiền, không xác định được dịch vụ..." class="suspense-form-textarea"></textarea>
+          </div>
+          <div class="suspense-form-footer">
+            <button type="button" class="btn btn-outline" data-action="close-suspense-refund-modal">Hủy</button>
+            <button type="submit" id="btn-submit-suspense-refund" class="btn btn-primary btn-danger-submit">Tạo yêu cầu hoàn tiền (SUSPENSE -> REFUND_PENDING)</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+    <script src="assets/data.js?v=4"></script>
+  <script src="assets/api.js?v=4"></script>
+  <script src="assets/components.js?v=4"></script>
+  <script src="js/admin/core.js?v=4"></script>
+  <script src="js/admin/applications.js?v=4"></script>
+  <script src="js/admin/users.js?v=4"></script>
+  <script src="js/admin/payments.js?v=4"></script>
+  <script src="js/admin/withdrawals.js?v=4"></script>
+  <script src="js/admin/revenue.js?v=4"></script>
+  <script src="js/admin/reconcile.js?v=4"></script>
+  <script src="js/admin/suspense.js?v=4"></script>
+  <script src="js/admin/disputes.js?v=4"></script>
+</body>
+</html>
