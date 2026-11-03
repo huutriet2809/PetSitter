@@ -309,6 +309,38 @@ namespace PetSitter.Controllers
             });
         }
 
+        /// <summary>
+        /// Nạp lại bộ dữ liệu giao dịch mẫu đồng bộ 3 bên (User, Sitter, Admin)
+        /// </summary>
+        [HttpPost("seed-demo-transactions")]
+        public async Task<IActionResult> SeedDemoTransactions()
+        {
+            var adminUser = await _context.Users.Find(u => u.Role == "ADMIN").FirstOrDefaultAsync();
+            var sitterUser = await _context.Users.Find(u => u.Role == "SITTER").FirstOrDefaultAsync();
+            var ownerUser = await _context.Users.Find(u => u.Role == "USER").FirstOrDefaultAsync();
+
+            if (adminUser == null || sitterUser == null || ownerUser == null)
+            {
+                return BadRequest(new { message = "Chưa có tài khoản demo ADMIN, SITTER hoặc USER để seed giao dịch." });
+            }
+
+            var sProfile = await _context.SitterProfiles.Find(p => p.UserId == sitterUser.UserId).FirstOrDefaultAsync();
+            var ownerPets = await _context.Pets.Find(p => p.OwnerId == ownerUser.UserId).ToListAsync();
+            if (sProfile == null)
+            {
+                return BadRequest(new { message = "Chưa có hồ sơ SitterProfile của SITTER demo." });
+            }
+
+            await PetSitter.Data.MongoSeeder.SeedDemoTransactionsAsync(_context, adminUser, sitterUser, sProfile, ownerUser, ownerPets);
+            await PetSitter.Data.MongoSeeder.SeedAdditionalSittersAndPetsAsync(_context, _config, ownerUser);
+
+            return Ok(new
+            {
+                success = true,
+                message = "Đã nạp thành công 14 đơn đặt lịch, 14 giao dịch PayOS, 20 bút toán sổ cái, 5 lệnh rút tiền, 2 lượt Sweeps, 5 Sitter mới, 4 thú cưng, 7 reviews và nhật ký chăm sóc!"
+            });
+        }
+
         [HttpPost("seed-e2e-data")]
         public async Task<IActionResult> SeedE2eData()
         {
